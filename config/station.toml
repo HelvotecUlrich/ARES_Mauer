@@ -1,0 +1,65 @@
+# ARES + UR5 brick laying – station parameters (single source for all RoboDK scripts).
+# Units: mm, deg. Frame "ARES" = base_link of the MA repo: floor, midpoint between the two steering axes,
+# x forward, y left, z up (REP-103). The STEP export 2026-09-23 uses exactly this frame (checked: steering
+# mounting plates at x = ±353.6, front scanner at (452.0, 192.0) = ares_geometry.yaml lidar_front).
+#
+# Status tags:  CONFIRMED = CAD / Samuel / measurement · ASSUMPTION = reasonable choice, no evidence ·
+#               PLACEHOLDER = only so the model is valid, must be replaced
+
+[ares]
+step_file = "cad/2026-09-23_030718_A_1-AMR_SIM.stp"   # CONFIRMED: NX export 2026-09-23 (Samuel), frame = base_link
+steer_axis_x = 353.625      # CONFIRMED: steering axes at ±353.625 mm (PLC FB_AmrKinematics, NX-MCD 2026-09-22)
+deck_top_z = 333.6          # CONFIRMED from STEP placement of 030250 Deckplatte (z axis down) – check with ray in RoboDK
+length = 1120.0             # CONFIRMED: chassis mesh x ±560 (MCD export 2026-09-22)
+width = 600.0               # CONFIRMED: chassis mesh y ±300
+
+[ur5]
+robot_file = "robodk/library/UR5.robot"   # RoboDK library, UR5 (CB3), downloaded 2026-10-02
+# Mount: "in axis with the front steering module, on top of the robot" (Samuel 2026-10-02).
+mount_x = 353.625           # CONFIRMED (axis of the front steering module); exact position follows (Samuel)
+mount_y = 0.0               # ASSUMPTION: on the centreline
+mount_z = 333.6             # PLACEHOLDER: deck top, no adapter plate; exact height follows (Samuel)
+mount_rz = 0.0              # PLACEHOLDER: rotation of the UR base about z [deg]
+
+[tool]
+# Gripper "Backengreifer" (Festo EHPS-20-A + ribbed jaws) taken from Gino's RoboDK station UR5_sim_v3.rdk (2026-10-02).
+# Tool frame: z along the flange axis, y = closing direction of the jaws, TCP = top centre of the held stone.
+tool_file = "cad/gripper_backengreifer_gino.tool"
+tcp_z = 135.0               # Gino UR5_sim_v3.rdk (older UR5_sim.rdk / test.urp: 155). ASSUMPTION: TCP = stone top
+                            # centre; without Bota SensONE (+35 mm if it is mounted between flange and gripper)
+
+[brick]
+# Full stone "Kompletter_Stein" (CAD 2026-10-01, cad/stone_full_2026-10-01.step): CONFIRMED from CAD.
+mesh = "cad/stone_full_2026-10-01.stl"   # stone frame: x 0..120 (width, ribbed faces), y -200..0 (length), z 0..120
+length = 200.0
+width = 120.0
+height = 120.0              # course pitch, assuming the pins seat fully (CAD: pins 23.5 mm, sockets 22.5 mm deep -> check)
+pin_length = 23.5
+head_joint = 0.0            # dry-stacked, interlocking
+bed_joint = 0.0
+mass_kg = 0.0               # UNKNOWN: volume 2270 cm3 (CAD); concrete ~2.3 g/cm3 would give ~5.2 kg > UR5 payload 5 kg
+
+[wall]
+side = "front"              # Samuel 2026-10-02: wall on the short (front) edge of ARES, ARES moves sideways (+y)
+courses = 3                 # PLACEHOLDER: number of courses
+bond_offset = 0.5           # running bond, half a stone (100 mm) = pin spacing of the stone
+base_z = 20.0               # PLACEHOLDER: first course stands on a 20 mm base plate with sockets (the existing plates
+                            # are for the older 144 mm stone)
+dist_nominal = 740.0        # from reach study 2026-10-02 (front): 8 stones/course/stop, 120 mm gap front edge – wall face
+u_from = -900.0             # nominal wall drawn along the wall, wall frame [mm] – station view only
+u_to = 1800.0
+
+[deck]
+holder_z = 20.0             # PLACEHOLDER: stones on the deck stand in a 20 mm holder with sockets
+layers = 2                  # PLACEHOLDER: stacked layers in the magazine
+
+[study]
+# Reach study grid. Wall frame: x along the wall (ARES travel direction), y towards ARES, origin on the wall centreline.
+wall_dist_min = 640.0       # ARES centre -> wall centreline [mm]; 640 = front edge 560 + half stone 60 + 20 clearance
+wall_dist_max = 1140.0
+wall_dist_step = 25.0
+u_min = -1000.0             # positions along the wall [mm]
+u_max = 1000.0
+u_step = 10.0
+approach = 150.0            # vertical approach / retract height above the place pose [mm] (> pin length 23.5)
+check_collisions = true     # RoboDK collision check for reachable poses (slower)

@@ -1,0 +1,12 @@
+# large / binary
+cad/*.stp
+cad/*.step
+robodk/library/*.robot
+robodk/*.rdk
+results/*.png
+__pycache__/
+*.pyc
+reference/*/**
+!reference/*/INDEX.md
+cad/*.stl
+cad/*.tool
