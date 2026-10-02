@@ -53,6 +53,28 @@ u_to = 1800.0
 holder_z = 20.0             # PLACEHOLDER: stones on the deck stand in a 20 mm holder with sockets
 layers = 2                  # PLACEHOLDER: stacked layers in the magazine
 
+[camera]
+# Eye-in-hand camera on the tool flange beside the gripper, looking along the tool z axis (Samuel 2026-10-02). It
+# looks at markers to reference (1) the place positions at the wall and (2) the fixed pick-up station where ARES reloads
+# its deck magazine when empty – ARES alone is not accurate enough (drive error, wheel slip). Not modelled in RoboDK yet.
+# Sources: IDS shop / 1stVision IDS uEye manual (GigE uEye CP Rev. 2.2) / INOSAKI lens pages, read 2026-10-02.
+model = "IDS GV-51F0CP-M-GL Rev.2.2"  # CONFIRMED: Samuel 2026-10-02; Sony IMX547, mono, global shutter, GigE, C-mount
+res_x = 2472                # CONFIRMED datasheet [px]
+res_y = 2064                # CONFIRMED datasheet [px]
+pixel_um = 2.74             # CONFIRMED datasheet [µm] -> active area 6.77 × 5.66 mm, diagonal 8.82 mm
+body = [29.0, 29.0, 29.0]   # CONFIRMED datasheet: housing W × H × D [mm], IP30; mass not in the datasheets read
+power_max_w = 4.2           # CONFIRMED datasheet (1.5–4.2 W). Supply: PoE (IEEE 802.3af/at) OR 12–24 V DC on the 8-pin
+                            # Hirose HR25 (pin 8 VCC, pin 1 GND) – never both at once (IDS: can destroy the camera)
+lens = "IDS-12M23-C1228"    # CONFIRMED: Samuel 2026-10-02; 2/3" image circle, 12 MP, F2.8–16, no IR correction,
+                            # Ø29 × 47.6 mm, 90 g (IDS shop listing); chosen over IDS-8M118-C1220 (same 12 mm, 1/1.8")
+focal = 12.0                # CONFIRMED datasheet [mm] -> field of view 31.5° × 26.5° on this sensor
+lens_mod = 80.0             # CONFIRMED datasheet: minimal object distance [mm]
+working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm field, 0.073 mm/px; focus + iris fixed and
+                            # locked (F5.6–8), changing them = new hand-eye calibration
+power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max 600 mA (UR5 manual 1.9.4), camera
+                            # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
+# mount: PLACEHOLDER – position on the flange still open (Samuel); the held stone and the jaws must stay out of view
+
 [study]
 # Reach study grid. Wall frame: x along the wall (ARES travel direction), y towards ARES, origin on the wall centreline.
 wall_dist_min = 640.0       # ARES centre -> wall centreline [mm]; 640 = front edge 560 + half stone 60 + 20 clearance

@@ -4,8 +4,9 @@ Side project to the master thesis (not part of it). A UR5 (CB3) on the mobile pl
 pallet on the robot into a wall beside it. ARES drives to the start, the UR5 places every brick it can reach, then
 ARES drives forward by a fixed stop pitch and the UR5 continues.
 
-Goal for now: **it just has to work** – no localisation, no sensors; accuracy comes from the ARES relative move
-(PLC v2.9, calibrated 01.10.2026) and the UR5 repeatability.
+Goal for now: **it just has to work** – no localisation of ARES; accuracy comes from the ARES relative move
+(PLC v2.9, calibrated 01.10.2026) and the UR5 repeatability, corrected by a camera on the UR5 flange that looks at
+markers at the wall and at the pick-up station (planned, see "Camera").
 
 ## Concept (2026-10-02)
 
@@ -97,6 +98,30 @@ front scanner at (452, 192) mm, deck top z = 333.6 mm by ray test in RoboDK).
   stop by RoboDK's live collision check).
 - **UR position**: 450 mm instead of 353.6 mm gains ≈ 40 mm reach per side (±860 instead of ±820 mm), not enough
   for one more stone per stop (still 21 per stop, 1.4 m) – kept at the front steering axis (better for tipping).
+
+## Camera (2026-10-02, planned – parameters in `config/station.toml` `[camera]`)
+
+- **Hardware**: IDS GV-51F0CP-M-GL (Sony IMX547 mono, global shutter, 2472 × 2064 px, 2.74 µm, GigE, 29 mm cube)
+  with IDS-12M23-C1228 (12 mm, F2.8–16, 2/3" image circle). Chosen over the IDS-8M118-C1220: same 12 mm, so the same
+  field of view, but the larger image circle keeps the corners of the 8.8 mm sensor diagonal sharp and the lens is
+  8 mm shorter; its smaller maximum aperture does not matter, it runs stopped down to F5.6–8 for depth of field.
+- **Use**: eye-in-hand on the tool flange beside the gripper. (1) Markers at the wall give the place frame per
+  stop. (2) When the deck magazine is empty, ARES drives to a fixed **pick-up station** and the UR5 reloads the
+  deck there; a marker at the station references it (ARES drive error, wheel slip).
+- **Field of view** 31.5° × 26.5°; at 320 mm (ASSUMPTION) 181 × 151 mm and 0.073 mm/px – a 60 mm marker stays fully in
+  view for ARES errors up to ±45 mm (80 mm marker: ±35 mm, limited by the short side). Accuracy will be limited by the hand-eye calibration (Samuel's plate from
+  the Heini thesis, HALCON `calibrate_hand_eye` ≥ 15 poses, or OpenCV) and by ARES swaying on its springs, not by
+  pixels.
+- **Power**: PoE (802.3af/at) or 12–24 V on the Hirose connector, max 4.2 W – never both. Planned: UR tool connector
+  24 V (max 600 mA), so only the GigE cable (high-flex, screw-lock RJ45, slack at the wrist) runs along the arm.
+  The gripper EHPS-20-A draws up to 2 A at 24 V: not from the tool connector, and at the 2 A limit of the control
+  box's internal 24 V → supply it from ARES 24 V, only the open/close signals from the UR.
+- **Open**: camera bracket and position on the flange (mass adds to a payload that the stone alone, ≈ 5.2 kg
+  estimated, already exceeds); marker positions that stay visible as the wall grows (the 120 mm gap between ARES
+  front edge and wall face may need an inclined view – check in RoboDK); two markers per stop for the heading (a
+  0.1° error gives 1.4 mm at u = ±800 mm); ARES tilt on the sprung casters while the arm reaches out (a look pose
+  in the middle does not see it); place poses relative to a frame measured at run time (laptop → UR, instead of
+  fixed `stop_k.urp`); tipping during reload starts with an empty deck → station within short reach.
 
 ## Results front wall (2026-10-02, `results/reach_summary.md`, coarse grid; placeholders: mount height, TCP 190 mm, base plate 20 mm, 3 courses)
 
