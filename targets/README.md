@@ -13,7 +13,7 @@ and `tools/make_plates.py` (DXF). Regenerate after any config change; do not edi
 - `<name>.pdf` at **100 %** (no "fit to page"), laser printer, matt paper.
 - Check the 100 mm scale bar with a ruler, then measure the board over all squares with a caliper and enter the real
   square size (and marker size × the same factor) in `[boards.ref]` / `[boards.calib]`.
-- Trim the paper along the white margin (one square = 16 mm / 15 mm around the board); keep the origin crosshair.
+- Cut along the dashed line (crop marks at the corners; 16 mm white margin, calib 8.7 mm); keep the origin crosshair.
 
 ## 2. Laser-cut the MDF (4 mm)
 - **Trotec Speedy / raster-engraving software: use `plates_all.svg`** (or `<name>_plate.svg`): cuts are red
