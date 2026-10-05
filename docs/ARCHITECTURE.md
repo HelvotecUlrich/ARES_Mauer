@@ -70,16 +70,19 @@ All in package `mauer/` (no RoboDK imports). Scripts with argparse in `tools/`. 
 
 ### `mauer.camera`
 `Frame` (dataclass: `image` uint8 (H, W), `t_start`, `t_end` = laptop `time.time()` around the exposure, `meta`).
-`Camera` protocol: `open()`, `close()`, `grab() -> Frame`, `set_exposure_us(us)`, `set_gain(g)`, `info() -> dict`,
-context manager. Implementations: `ids.IdsCamera` (IDS peak, software trigger, Mono8), `files.FileCamera` (replay a
-folder), RoboDK simulated camera in `robodk/sim_camera.py`.
+`Camera` ABC: `open()`, `close()`, `is_open`, `grab() -> Frame`, `set_exposure_us(us)`, `set_gain(g)` (both return
+the applied value), `info() -> dict`, context manager. `open_camera(cfg, kind='ids'|'files', **kw)` returns an
+opened camera. Implementations: `ids.IdsCamera` (IDS peak, software trigger, Mono8), `files.FileCamera` (replay a
+folder, JSON sidecars keep the timestamps), RoboDK simulated camera in `robodk/sim_camera.py` (duck-typed).
 
 ### `mauer.ur`
 - `rtde/`: vendored official UR RTDE client (BSD-3, with LICENSE).
-- `link.py`: `URLink(host, cfg)`: RTDE thread at 125 Hz with a time-stamped history (`state()`, `samples(t0, t1)`),
-  one persistent drained 30002 socket, `run_block(name, body, timeout_s) -> BlockResult` (wraps `def`, writes
-  start/done ids to output_int_register 24/25 after `is_steady()`, detects compile errors, protective stops,
-  stopped-without-done); `flange_T(sample) -> T_base_flange` (mm).
+- `link.py`: `URLink.from_config(cfg, host=None)` (or explicit ports/registers): RTDE thread at 125 Hz with a
+  time-stamped history (`state()`, `samples(t0, t1)`), one persistent drained 30002 socket,
+  `run_block(body, name=..., timeout_s=..., settle_s=...) -> BlockResult` (wraps `def`, writes start/done ids to
+  output_int_register 24/25 after `is_steady()`, error codes to register 26; detects compile errors, protective
+  stops, stopped-without-done), `abort()` (stopl program + Dashboard stop), `flange_T(sample) -> T_base_flange`
+  (mm, TCP offset from RTDE `tcp_offset`).
 - `dashboard.py`: `Dashboard(host)`: power on/off, brake release, robotmode, safetymode, unlock protective stop,
   close popup, stop, PolyScope version, robot model.
 - `script.py`: pure functions that return URScript text (set_tcp, set_payload, movej to a Cartesian pose via
@@ -87,10 +90,12 @@ folder), RoboDK simulated camera in `robodk/sim_camera.py`.
   voltage) – unit-testable without a robot.
 
 ### `mauer.ares`
-`AresAds(cfg["ares_ads"], connection_factory=None)`: `connect()`, `close()`, `status() -> AresStatus`,
-`preflight() -> list[str]` (empty = ok), `translate(dx_mm, dy_mm, speed, accel) -> MoveOutcome`,
-`rotate(dtheta_deg, ...)`, `abort()`. Pattern A only: never writes mode, jog, heartbeat or bCmdStop. A pyads-like
-fake PLC for tests.
+`AresAds(cfg["ares_ads"], connection_factory=None)`: `connect()` (TCP pre-check on 48898 first), `close()`,
+`status() -> AresStatus`, `preflight() -> list[str]` (empty = ok), `translate(dx_mm, dy_mm, speed, accel) ->
+MoveOutcome`, `rotate(dtheta_deg, ...)`, `abort()`. Raises `MoveRefused` (local check), `AresNotReady` (preflight
+failed, nothing written), `AresConnectionError`; a `MoveOutcome` means the command reached the PLC. Pattern A only:
+writes only the allow-list `WRITABLE` (move fields, id, start, abort), never mode, jog, heartbeat or bCmdStop.
+`tests/fake_plc.py`: pyads-like fake PLC with the MOVE_PRG handshake.
 
 ### `mauer.reference`
 `placements(cfg) -> list[Placement]` (`name, parent, T_parent_board`), `fit_frame(observed: dict[name,

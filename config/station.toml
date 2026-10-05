@@ -75,8 +75,17 @@ power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max
                             # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
 ip = "192.168.50.10"        # PLACEHOLDER: persistent camera IP (set once with ids_ipconfig) in its own subnet on a
                             # dedicated laptop NIC; must not collide with the ARES subnets 192.168.1/24, 192.168.200/24,
-                            # 169.254/16 (MA 10_robot/ipc_c6030/IP_CONFIG_erwan.md)
-serial = ""                 # PLACEHOLDER: camera serial number (label / IDS peak Cockpit); "" = first IDS camera found
+                            # 169.254/16 (MA 10_robot/ipc_c6030/IP_CONFIG_erwan.md). As delivered the camera answers at
+                            # 192.168.0.1 (IDS peak enumeration 2026-10-05) -> not openable until the IP is set
+serial = "4110073444"       # CONFIRMED: IDS peak 26.06.2 enumeration 2026-10-05, the only IDS camera attached (model
+                            # string "GV-51FxCP-M", MAC 00:1B:A2:21:21:13) – check against the camera label
+cti_path = ""               # "" = GENICAM_GENTL64_PATH, then the IDS install folder; on this laptop (CONFIRMED
+                            # 2026-10-05): C:\Program Files\IDS\ids_peak\ids_gevgentl\64\ids_gevgentlk.cti
+timeout_ms = 3000           # ASSUMPTION: grab timeout after the software trigger (exposure + ~45 ms GigE transfer)
+packet_size = "auto"        # ASSUMPTION: "auto" keeps the size the IDS GenTL negotiated (largest the network supports),
+                            # "max" = camera maximum (only if the NIC jumbo size is >= it), or a value in bytes
+n_buffers = 3               # ASSUMPTION: acquisition buffers (software trigger, one frame at a time)
+load_default_userset = true # ASSUMPTION: load the camera user set "Default" on open (known state), then apply the above
 pixel_format = "Mono8"      # ASSUMPTION: 5.1 MB per frame, ~45 ms on GigE, enough for the marker work
 exposure_us = 5000.0        # PLACEHOLDER: set at the first test with the real light (the arm stands still)
 gain = 1.0                  # PLACEHOLDER
@@ -100,6 +109,16 @@ handeye_file = "calib/handeye.json"
 min_corners = 8             # ASSUMPTION: minimum ChArUco corners for a board pose
 max_reproj_px = 1.0         # ASSUMPTION: reject a board pose with a larger RMS reprojection error
 border_px = 10              # ASSUMPTION: ignore corners closer to the image border (partial-tag outliers)
+calib_min_corners = 12      # ASSUMPTION: minimum ChArUco corners per intrinsics view
+holdout_every = 5           # ASSUMPTION: hand-eye validation holds out every 5th pose (research: 5–10 hold-out poses)
+max_qd_rad_s = 0.01         # ASSUMPTION: drop images taken while a joint moved faster (0.01 rad/s · 10 ms · 1 m = 0.1 mm)
+
+[vision.handeye_plan]
+# Look poses around the deck-fixed calib board (research 2026-10-05: >= 20 poses, large relative rotations).
+n_poses = 25                # ASSUMPTION
+dist_mm = [290.0, 355.0]    # ASSUMPTION: inside the depth of field around the 320 mm focus distance
+tilt_deg = [15.0, 30.0]     # ASSUMPTION
+roll_deg = [-90.0, 90.0]    # ASSUMPTION
 
 # ChArUco boards. Board frame = OpenCV 4.14 CharucoBoard frame: origin at the top-left outer corner of the printed
 # board, x to the right, y down, z into the board (checked 2026-10-05: corner 0 at (square, square, 0)).
@@ -217,6 +236,9 @@ rtde_port = 30004           # CONFIRMED: RTDE
 rtde_hz = 125.0             # CONFIRMED: CB3 RTDE maximum frequency
 reg_started = 24            # CONFIRMED range: output_int_register 24..47 belongs to RTDE (0..23 fieldbus)
 reg_done = 25
+reg_error = 26              # ASSUMPTION: output_int_register for block error codes (0 none, 1 IK unreachable)
+contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
+abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
 do_grip_close = 1           # PLACEHOLDER: Gino's code pulses standard DO1 to close, DO0 to open; real wiring open
 do_grip_open = 0            # PLACEHOLDER
@@ -241,6 +263,10 @@ timeout_ms = 1000                 # CONFIRMED: amr_hmi value
 speed_mms = 150.0                 # CONFIRMED: value used in E003 (01.10.2026); PLC clamps to 5..500 mm/s
 accel_mms2 = 200.0                # CONFIRMED: value used in E003; PLC clamps to 20..1000 mm/s²
 min_if_version = 2                # CONFIRMED: stFromPlc.nIfVersion of PLC v2.x
+min_plc_build = "2.1"             # CONFIRMED: +Y = left verified with PLC v2.1 (28.09.2026); v2.0 mirrored (MA D21)
+rot_speed_degs = 10.0             # CONFIRMED: E003 rotations at 10 deg/s (MA tools/imu_cal_run.py), amr_hmi default
+ack_timeout_s = 2.0               # ASSUMPTION: PLC acks in the cycle of the start edge; covers the 1 s ADS timeout
+deadline_margin_s = 15.0          # ASSUMPTION: client deadline = PLC timeout 2(d/v+v/a)+10 s + tAbortMax 10 s + this
 
 [study]
 # Reach study grid. Wall frame: x along the wall (ARES travel direction), y towards ARES, origin on the wall centreline.
