@@ -46,6 +46,15 @@ def page_for(spec: BoardSpec) -> tuple[str, float, float]:
     raise ValueError(f"board {spec.name} ({bw} x {bh} mm) does not fit on A0")
 
 
+def trim_margin_mm(spec: BoardSpec, scale: float = 1.0) -> float:
+    """White margin kept around the board when the print is cut out (= engraved rectangle on the MDF plate,
+    tools/make_plates.py): one square, reduced (min 5 mm) when the pre-scaled cut-out and its crop marks would not stay
+    10 mm inside the page edge (most printers cannot print the outer ~4-5 mm)."""
+    _, pw, _ = page_for(spec)
+    fit = (pw / 2.0 - 10.0) / scale - spec.size_mm[0] / 2.0
+    return float(min(spec.square_mm, max(5.0, fit)))
+
+
 def _wrap(text: str, width_mm: float, font: str, size: float) -> list[str]:
     words, lines, cur = text.split(), [], ""
     for w in words:
@@ -112,15 +121,21 @@ def rects_raster(spec: BoardSpec, px_per_mm: float = 20.0) -> np.ndarray:
     return img
 
 
-def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
-    """Write an exact-scale vector PDF of the board (page size from page_for)."""
+def board_pdf(spec: BoardSpec, path: str | Path, scale: float = 1.0, trim: bool = True) -> Path:
+    """Write an exact-scale vector PDF of the board (page size from page_for).
+
+    scale: pre-scale everything about the page centre to compensate a printer that does not print at true size
+    (e.g. 100 / 96 when the 100 mm scale bar comes out as 96 mm). trim: dashed cut line around the white quiet zone
+    (one square around the board = the engraved rectangle on the MDF plate) plus crop marks outside its corners."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     page_name, pw, ph = page_for(spec)
     bw, bh = spec.size_mm
     sq, mk = spec.square_mm, spec.marker_mm
     # board origin on the page (mm from the top-left page corner): board block centred horizontally
-    ox = (pw - (LEFT_MM + max(bw, SCALE_BAR_MM))) / 2.0 + LEFT_MM
+    ox = (pw - bw) / 2.0                          # board centred horizontally (pre-scale is about the page centre)
+    m = trim_margin_mm(spec, scale)               # white margin kept when cutting out
+    arm = min(12.0, m - 1.0)                      # crosshair arm length, stays inside the cut-out
     oy = MARGIN_MM + TOP_MM + max(0.0, (ph - 2 * MARGIN_MM - TOP_MM - bh - TEXT_MM) / 2.0)
 
     def P(x: float, y: float) -> tuple[float, float]:
@@ -133,6 +148,24 @@ def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
     c.setSubject(spec.describe())
     c.setFillColorRGB(0, 0, 0)
     c.setStrokeColorRGB(0, 0, 0)
+    if scale != 1.0:                              # pre-scale about the page centre
+        c.translate(pw * mm / 2, ph * mm / 2)
+        c.scale(scale, scale)
+        c.translate(-pw * mm / 2, -ph * mm / 2)
+
+    if trim:                                      # cut line = quiet zone border, crop marks 3..10 mm outside
+        x0, y0, x1, y1 = -m, -m, bw + m, bh + m
+        c.setStrokeColorRGB(0.55, 0.55, 0.55)
+        c.setLineWidth(0.15 * mm)
+        c.setDash(2 * mm, 1.5 * mm)
+        for a, b in (((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))):
+            c.line(*P(*a), *P(*b))
+        c.setDash()
+        c.setStrokeColorRGB(0, 0, 0)
+        c.setLineWidth(0.2 * mm)
+        for cx, cy, sx, sy in ((x0, y0, -1, -1), (x1, y0, 1, -1), (x1, y1, 1, 1), (x0, y1, -1, 1)):
+            c.line(*P(cx + 2.0 * sx, cy), *P(cx + 7.0 * sx, cy))
+            c.line(*P(cx, cy + 2.0 * sy), *P(cx, cy + 7.0 * sy))
 
     for x0, y0, w, h in board_rects(spec):
         x, y = P(x0, y0 + h)                     # reportlab: lower-left corner, y up
@@ -140,8 +173,8 @@ def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
 
     # origin crosshair (outside the board, along its top and left edges) and frame arrows
     c.setLineWidth(0.2 * mm)
-    c.line(*P(-12.0, 0.0), *P(-1.5, 0.0))
-    c.line(*P(0.0, -12.0), *P(0.0, -1.5))
+    c.line(*P(-arm, 0.0), *P(-1.5, 0.0))
+    c.line(*P(0.0, -arm), *P(0.0, -1.5))
     c.setLineWidth(0.3 * mm)
     _arrow(c, *P(0.0, -7.0), *P(30.0, -7.0))
     _arrow(c, *P(-7.0, 0.0), *P(-7.0, 30.0))
@@ -149,7 +182,7 @@ def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
     c.drawString(*P(31.5, -6.0), "x")
     c.drawString(*P(-8.2, 34.5), "y")
     c.setFont(FONT, 6.5)
-    c.drawString(*P(-18.0, -9.5), "origin")
+    c.drawString(*P(-min(15.0, m - 0.5), -3.0), "origin")   # inside the cut-out
 
     # text block and 100 mm scale bar below the board
     lines = [
@@ -157,6 +190,11 @@ def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
                     f"{spec.first_id}..{spec.last_id}"),
         (FONT, f"Nominal: square {sq:g} mm, marker {mk:g} mm, board {bw:g} x {bh:g} mm ({spec.n_corners} corners)."),
         (FONT_BOLD, "PRINT AT 100 % (actual size, no fit-to-page / scaling). Mount flat on a rigid plate."),
+        *([(FONT_BOLD, f"Pre-scaled x{scale:.4f} for the printer in use (config [plates] print_scale): the scale "
+                       "bar must measure 100 mm on paper - if it does not, set print_scale and regenerate.")]
+          if scale != 1.0 else []),
+        (FONT, f"Cut along the dashed line ({m:.1f} mm white margin around the board, crop marks at the corners): "
+               "the cut-out fits the engraved rectangle on the MDF plate."),
         (FONT, f"Check the scale bar with a ruler, measure the board width over all {spec.squares_x} squares "
                f"(nominal {bw:g} mm) and enter the measured square size in config/station.toml "
                "(0.1 % scale error = 0.32 mm depth error at 320 mm)."),
@@ -165,7 +203,7 @@ def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
         (FONT, f"{page_name}, generated {_dt.date.today().isoformat()} by tools/print_targets.py, "
                f"OpenCV {cv2.__version__}."),
     ]
-    y = bh + 7.0
+    y = bh + m + 10.0                             # below the cut line and the crop marks
     x_text = MARGIN_MM - ox                       # text from the left page margin (board coordinates)
     width = pw - 2 * MARGIN_MM
     for font, text in lines:
@@ -181,7 +219,7 @@ def board_pdf(spec: BoardSpec, path: str | Path) -> Path:
         c.line(*P(k * 10.0, y - t), *P(k * 10.0, y))
     c.setFont(FONT, 7)
     c.drawString(*P(0.0, y + 3.5), f"scale bar {SCALE_BAR_MM:g} mm (ticks 10 mm)")
-    if oy + y + 3.5 > ph - MARGIN_MM / 2:          # layout guard (fixed text, cannot happen with page_for)
+    if ph / 2 + (oy + y + 3.5 - ph / 2) * scale > ph - MARGIN_MM / 2:   # layout guard incl. the pre-scale
         raise RuntimeError(f"text block of {spec.name} runs off the {page_name} page")
     c.showPage()
     c.save()

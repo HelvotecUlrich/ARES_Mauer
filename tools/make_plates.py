@@ -27,6 +27,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from mauer import config, geometry as g  # noqa: E402
+from mauer.vision.printables import trim_margin_mm  # noqa: E402
 from mauer.vision.targets import board_specs  # noqa: E402
 
 CUT, ENGRAVE = "CUT", "ENGRAVE"
@@ -82,16 +83,17 @@ class Plate:
             dxf.text(ENGRAVE, tuple(np.asarray(p) + o), hgt, s)
 
 
-def board_marks(plate: Plate, spec, to_plate) -> None:
-    """Engrave board outline, paper quiet zone, origin crosshair and x/y arrows (as on the PDF). to_plate maps board
-    coordinates (mm, x right / y down on the print) to plate coordinates."""
+def board_marks(plate: Plate, spec, to_plate, q: float) -> None:
+    """Engrave board outline, paper cut-out (board + margin q, as cut along the PDF's dashed line), origin crosshair and
+    x/y arrows (as on the PDF). to_plate maps board coordinates (mm, x right / y down on the print) to plate
+    coordinates."""
     bw, bh = spec.size_mm
-    q = spec.square_mm
+    arm = min(12.0, q - 1.0)
     P = lambda x, y: tuple(to_plate(x, y))                                     # noqa: E731
     rect = lambda x0, y0, x1, y1: [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)]  # noqa: E731
     for pts in (rect(0, 0, bw, bh), rect(-q, -q, bw + q, bh + q)):
         plate.eng_lines += list(zip(pts, pts[1:] + pts[:1]))
-    plate.eng_lines += [(P(-12.0, 0.0), P(-1.5, 0.0)), (P(0.0, -12.0), P(0.0, -1.5))]   # crosshair outside the corner
+    plate.eng_lines += [(P(-arm, 0.0), P(-1.5, 0.0)), (P(0.0, -arm), P(0.0, -1.5))]     # crosshair outside the corner
     for (dx, dy), lab in (((1, 0), "x"), ((0, 1), "y")):                          # arrows along the board edges
         a, b = P(0.0, 0.0), P(28.0 * dx, 28.0 * dy)
         plate.eng_lines.append((a, b))
@@ -130,11 +132,12 @@ def wall_plate(cfg: dict, spec, T_wall_board: np.ndarray) -> Plate:
         top += [(x + nw / 2, D / 2), (x, D / 2 - nd), (x - nw / 2, D / 2)]
     top += [(-L / 2, D / 2)]
     pl.cut_polys.append(top + [(-L / 2, -D / 2), (L / 2, -D / 2)])
-    qz = spec.size_mm[0] / 2 + spec.square_mm                                    # half quiet-zone width along X
+    m = trim_margin_mm(spec, pc.get("print_scale", 1.0))
+    qz = spec.size_mm[0] / 2 + m                                                 # half cut-out width along X
     hx = (qz + L / 2) / 2
     for sx in (-1, 1):
         pl.cut_circles.append(((sx * hx, -8.0), pc["finger_hole_d"] / 2))
-    board_marks(pl, spec, to_plate)
+    board_marks(pl, spec, to_plate, m)
     # labels outside the paper quiet zone (|X| > qz): joint marks under the notches, name and orientation beside
     for x in xs:
         pl.texts.append(((x - 4.5 if x < 0 else x - 10.5, D / 2 - nd - 5.0), 3.0, "joint"))
@@ -150,12 +153,12 @@ def wall_plate(cfg: dict, spec, T_wall_board: np.ndarray) -> Plate:
 def plain_plate(cfg: dict, spec) -> Plate:
     m = cfg["plates"]["margin"]
     bw, bh = spec.size_mm
-    q = spec.square_mm
+    q = trim_margin_mm(spec, cfg["plates"].get("print_scale", 1.0))
     W, H = bw + 2 * q + 2 * m, bh + 2 * q + 2 * m + 8.0                          # + 8 mm for the label
     pl = Plate(spec.name, W, H)
     pl.cut_polys.append([(-W / 2, -H / 2), (W / 2, -H / 2), (W / 2, H / 2), (-W / 2, H / 2)])
     to_plate = lambda x, y: np.array([x - bw / 2, -(y - bh / 2) + 4.0])         # noqa: E731  print as read
-    board_marks(pl, spec, to_plate)
+    board_marks(pl, spec, to_plate, q)
     pl.texts.append(((-W / 2 + 4.0, -H / 2 + 4.0), 4.0, f"{spec.name} ids {spec.first_id}-{spec.last_id}"))
     return pl
 

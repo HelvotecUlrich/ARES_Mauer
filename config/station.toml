@@ -235,6 +235,8 @@ rpy_deg = [180.0, 0.0, 0.0]
 # Laser-cut MDF carrier plates for the printed boards (tools/make_plates.py -> targets/*_plate.dxf).
 mdf_t = 4.0                 # CONFIRMED: Samuel 2026-10-05
 paper_t = 0.1               # ASSUMPTION: printed sheet + glue
+print_scale = 1.0416667     # CONFIRMED: Samuel's print 2026-10-05: the 100 mm scale bar measured 96 mm -> PDFs
+                            # pre-scaled by 100/96 (tools/print_targets.py). Set 1.0 when printing at true 100 %
 block_width = 120.0         # PLACEHOLDER: female-pin base block across the wall (assumed = stone width, centred on the
                             # wall centreline -> side face at wall y = 60)
 block_length = 200.0        # PLACEHOLDER: block along the wall (assumed = stone length; blocks butt, joints at

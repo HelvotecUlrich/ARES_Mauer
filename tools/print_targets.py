@@ -85,6 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--png-px-per-mm", type=float, default=20.0,
                     help="PNG resolution, rounded to whole pixels per square (default 20)")
     ap.add_argument("--no-check", action="store_true", help="skip the geometry checks")
+    ap.add_argument("--print-scale", type=float, default=None,
+                    help="pre-scale the PDFs (default [plates] print_scale, else 1.0; 100/96 if the 100 mm bar "
+                         "prints as 96 mm)")
     args = ap.parse_args(argv)
 
     cfg = config.load(args.config)
@@ -97,9 +100,13 @@ def main(argv: list[str] | None = None) -> int:
     out = config.repo_path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     fails: list[str] = []
+    scale = args.print_scale if args.print_scale is not None else float(cfg.get("plates", {}).get("print_scale", 1.0))
+    if scale != 1.0:
+        print(f"PDFs pre-scaled x{scale:.4f} (printer compensation) - the 100 mm scale bar must print as 100 mm",
+              flush=True)
     for name in names:
         spec = specs[name]
-        pdf = printables.board_pdf(spec, out / f"{name}.pdf")
+        pdf = printables.board_pdf(spec, out / f"{name}.pdf", scale=scale)
         png = out / f"{name}.png"
         w_mm, h_mm = printables.board_png(spec, png, args.png_px_per_mm)
         n_sq = int(round(spec.square_mm * args.png_px_per_mm))
