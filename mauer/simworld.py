@@ -14,7 +14,10 @@ Model (all error parameters are ASSUMPTIONS with the source given at the field):
   closes its loop on odometry; slip is invisible to it - MA PLC README:127-128, mauer/ares/ads.py). Rotations get
   scatter and a loss after reversing the rotation direction (E003, mauer/ares/ads.py AresAds.rotate). Moves below the
   PLC minimum (2 mm / 0.2 deg) are refused like the real client (ads.check_move). ARES tilt on the casters is not
-  modelled.
+  modelled. Floor check (L jobs, mauer.floor.job_obstacles: legs, board plates, station table at its TRUE place): the
+  area swept by every true move (hull of the start and end footprints; a rotation in 1 deg pieces) must not overlap
+  an obstacle deeper than where the move started - otherwise a world violation "ARES footprint overlaps ..."
+  (a start pose already on a plate is a note: the operator's start placement).
 - UR5: true base = ARES pose @ T_ares_base (config) @ optional mount error. The arm reaches commanded Cartesian poses
   exactly (optional repeatability noise) and joint targets through the nominal UR5 DH forward kinematics (`ur5_fk`).
   With check_ik=True a target without any IK solution fails like the controller's IK guard. The robot reports its
@@ -30,7 +33,10 @@ Model (all error parameters are ASSUMPTIONS with the source given at the field):
   with its nominal wall pose; it counts as seated when the horizontal error at both pins is within the pin capture
   range (README "capture range ~ 10 mm"; pins at +-half the pin spacing along the stone, pin spacing = bond offset
   100 mm, config [wall] bond_offset comment). Magazine holders have sockets as well ([deck] holder_z comment) and
-  re-centre a stone the same way.
+  re-centre a stone the same way. Half stones ([half_brick], PLACEHOLDER): ONE pin pair centred along the stone,
+  +-pin_across/2 across it; the jaws hold it along the stone only up to half the full-stone limit (ASSUMPTION: jaw
+  contact scales with the stone length). Every stone keeps its type from the magazine / station to the wall; picking
+  or placing a stone of another type than the sequencer expects is a world violation.
 
 UR5 kinematics: UR's published nominal DH parameters (Universal Robots, "DH parameters for calculations of kinematics
 and dynamics", universal-robots.com/articles/ur/application-installation/dh-parameters-for-calculations-of-kinematics-
@@ -49,6 +55,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from . import config as _config
+from . import floor as _floor
 from . import geometry as g
 from .ares.ads import (MOVE_DONE, RES_OK, MoveOutcome, MoveRefused, OdomPose, check_move)
 from .backends import RobotError, Shot
@@ -230,20 +237,25 @@ class PlacementRecord:
     seated: bool
     grasp_x_mm: float = 0.0
     grasp_z_mm: float = 0.0
+    kind: str = "full"
 
     def to_dict(self) -> dict:
-        return {"key": list(self.key), "dx_mm": self.dx_mm, "dy_mm": self.dy_mm, "dz_mm": self.dz_mm,
-                "yaw_deg": self.yaw_deg, "horiz_mm": self.horiz_mm, "pin_mm": self.pin_mm, "seated": self.seated,
-                "grasp_x_mm": self.grasp_x_mm, "grasp_z_mm": self.grasp_z_mm}
+        return {"key": list(self.key), "kind": self.kind, "dx_mm": self.dx_mm, "dy_mm": self.dy_mm,
+                "dz_mm": self.dz_mm, "yaw_deg": self.yaw_deg, "horiz_mm": self.horiz_mm, "pin_mm": self.pin_mm,
+                "seated": self.seated, "grasp_x_mm": self.grasp_x_mm, "grasp_z_mm": self.grasp_z_mm}
 
 
-def pose_errors(T_nom: np.ndarray, T_act: np.ndarray, pin_half_mm: float, height_mm: float) -> dict:
+def pose_errors(T_nom: np.ndarray, T_act: np.ndarray, pin_half_mm: float, height_mm: float,
+                pins_xy: Sequence[Sequence[float]] | None = None) -> dict:
     """Errors of a stone pose in the axes of the parent frame: dx, dy, dz [mm], yaw [deg] about z, horizontal error of
-    the top centre and the max horizontal error at the two pins (+-pin_half_mm along the stone, at its bottom)."""
+    the top centre and the max horizontal error at the pins (default: +-pin_half_mm along the stone; pins_xy =
+    explicit (along, across) pin positions in the TCP frame), at the stone bottom."""
     d = T_act[:3, 3] - T_nom[:3, 3]
     xa, xn = T_act[:3, 0], T_nom[:3, 0]
     yaw = math.degrees(math.atan2(xn[0] * xa[1] - xn[1] * xa[0], xn[0] * xa[0] + xn[1] * xa[1]))
-    pts = np.array([[pin_half_mm, 0.0, height_mm], [-pin_half_mm, 0.0, height_mm]])
+    if pins_xy is None:
+        pins_xy = ((pin_half_mm, 0.0), (-pin_half_mm, 0.0))
+    pts = np.array([[float(x), float(y), height_mm] for x, y in pins_xy])
     pin = np.linalg.norm((g.apply(T_act, pts) - g.apply(T_nom, pts))[:, :2], axis=1)
     return {"dx_mm": float(d[0]), "dy_mm": float(d[1]), "dz_mm": float(d[2]), "yaw_deg": yaw,
             "horiz_mm": float(math.hypot(d[0], d[1])), "pin_mm": float(pin.max())}
@@ -326,6 +338,7 @@ class SimAres:
         c, s = math.cos(p.theta_rad), math.sin(p.theta_rad)
         self.world.ares_true = Pose2D(p.x_mm + c * bx - s * by, p.y_mm + s * bx + c * by,
                                       wrap_angle(p.theta_rad + dth))
+        self.world.floor_check("translate", p, self.world.ares_true)
         before = self.odom
         t = math.radians(before.theta_deg)
         self.odom = OdomPose(before.x_mm + math.cos(t) * dx_mm - math.sin(t) * dy_mm,
@@ -345,11 +358,13 @@ class SimAres:
         if self.last_rot_sign and sign != self.last_rot_sign and e.rot_reversal_loss_deg > 0:
             act = sign * max(abs(act) - e.rot_reversal_loss_deg, 0.0)
         self.last_rot_sign = sign
+        p0 = self.world.ares_true
         p = after_rotation(self.world.ares_true, math.radians(act))
         if e.rot_drift_sigma_mm > 0:
             p = Pose2D(p.x_mm + r.normal(0.0, e.rot_drift_sigma_mm), p.y_mm + r.normal(0.0, e.rot_drift_sigma_mm),
                        p.theta_rad)
         self.world.ares_true = p
+        self.world.floor_check("rotate", p0, p, math.radians(act))
         before = self.odom
         self.odom = OdomPose(before.x_mm, before.y_mm, (before.theta_deg + dtheta_deg + 180.0) % 360.0 - 180.0)
         elapsed = abs(dtheta_deg) / self.rot_speed + 1.0
@@ -445,12 +460,16 @@ class SimRobot:
         return Shot(frame, self.T_bf.copy(), None if self.q is None else self.q.copy(), 0.0, 1,
                     {"sim": True})
 
-    def _grip(self, stone_id: str, T_world_stone: np.ndarray) -> None:
+    def _grip(self, stone_id: str, T_world_stone: np.ndarray, expected_kind: str | None = None) -> None:
         T_tcp_stone = g.inv(self.T_world_tcp()) @ T_world_stone
         off = T_tcp_stone[:3, 3]
-        if self.world.grasp_check and (abs(off[1]) > self.grasp_across_mm or abs(off[0]) > self.grasp_along_mm):
-            raise RobotError(f"gripper missed stone {stone_id}: offset ({off[0]:.1f}, {off[1]:.1f}) mm",
+        kind = self.world.kind_of.get(stone_id, "full")
+        along = self.grasp_along_mm * self.world.length_of(kind) / self.world.length_of("full")
+        if self.world.grasp_check and (abs(off[1]) > self.grasp_across_mm or abs(off[0]) > along):
+            raise RobotError(f"gripper missed stone {stone_id} ({kind}): offset ({off[0]:.1f}, {off[1]:.1f}) mm",
                              action="grip")
+        if expected_kind is not None and kind != expected_kind:
+            self.world.violations.append(f"picked {kind} stone {stone_id} where a {expected_kind} stone was expected")
         self.holding = (stone_id, g.transl(off[0], 0.0, off[2]))   # jaws centre across, square the stone
 
     def _release(self) -> tuple[str, np.ndarray, np.ndarray]:
@@ -460,19 +479,22 @@ class SimRobot:
         self.holding = None
         return sid, self.T_world_tcp() @ T_tcp_stone, T_tcp_stone
 
-    def pick_magazine(self, slot, T_base_ares):
+    def pick_magazine(self, slot, T_base_ares, kind: str = "full"):
         self._call("pick_magazine")
         self._move_tcp(np.asarray(T_base_ares, float) @ slot.T_ares_tcp, f"pick magazine {slot.id}")
         sid, T_ares_stone = self.world.mag_stones.pop(slot.id, (None, None))
         if sid is None:
             raise RobotError(f"magazine slot {slot.id} is empty (gripper closes on air)", action="pick_magazine")
-        self._grip(sid, self.world.T_wall_ares_true() @ T_ares_stone)
+        self._grip(sid, self.world.T_wall_ares_true() @ T_ares_stone, kind)
 
     def place_wall(self, T_base_wall, stone):
         self._call("place_wall")
         self._move_tcp(np.asarray(T_base_wall, float) @ stone.T_wall_tcp, f"place {stone.key}")
         sid, T_wall_stone, T_tcp_stone = self._release()
-        self.world.record_placement(stone, T_wall_stone, T_tcp_stone)
+        kind = self.world.kind_of.get(sid, "full")
+        if kind != getattr(stone, "kind", "full"):
+            self.world.violations.append(f"{kind} stone {sid} placed as {stone.key} ({stone.kind})")
+        self.world.record_placement(stone, T_wall_stone, T_tcp_stone, kind)
 
     def pick_station(self, T_base_station, slot):
         self._call("pick_station")
@@ -480,14 +502,18 @@ class SimRobot:
         sid, T_st_stone = self.world.station_stones.pop(slot.id, (None, None))
         if sid is None:
             raise RobotError(f"station slot {slot.id} is empty (gripper closes on air)", action="pick_station")
-        self._grip(sid, self.world.T_wall_station_true @ T_st_stone)
+        self._grip(sid, self.world.T_wall_station_true @ T_st_stone, getattr(slot, "kind", "full"))
 
-    def place_magazine(self, slot, T_base_ares):
+    def place_magazine(self, slot, T_base_ares, kind: str = "full"):
         self._call("place_magazine")
         self._move_tcp(np.asarray(T_base_ares, float) @ slot.T_ares_tcp, f"place magazine {slot.id}")
         sid, T_wall_stone, _ = self._release()
+        true_kind = self.world.kind_of.get(sid, "full")
+        if true_kind != kind:
+            self.world.violations.append(f"{true_kind} stone {sid} put into magazine slot {slot.id} as {kind}")
         T_ares_stone = g.inv(self.world.T_wall_ares_true()) @ T_wall_stone
-        err = pose_errors(slot.T_ares_tcp, T_ares_stone, self.world.pin_half_mm, self.world.height_mm)
+        err = pose_errors(slot.T_ares_tcp, T_ares_stone, self.world.pin_half_mm, self.world.height_mm,
+                          self.world.pins_xy(true_kind))
         if err["pin_mm"] <= self.capture_mm:
             T_ares_stone = np.asarray(slot.T_ares_tcp, float).copy()      # holder sockets centre it
         else:
@@ -522,6 +548,10 @@ class SimWorld:
         self.height_mm = float(b["height"])
         # pin spacing = bond offset (station.toml [wall] bond_offset: "half a stone (100 mm) = pin spacing")
         self.pin_half_mm = 0.5 * float(cfg["wall"]["bond_offset"]) * (float(b["length"]) + float(b["head_joint"]))
+        hb = cfg.get("half_brick", {}) or {}
+        self.half_pin_across_mm = float(hb.get("pin_across", 53.0))       # [half_brick] pin_across (PLACEHOLDER)
+        self._lengths = {"full": float(b["length"]), "half": float(hb.get("length", float(b["length"]) / 2.0))}
+        self.kind_of: dict[str, str] = {}                                  # stone id -> "full" / "half"
         self.capture_mm = float(capture_mm)          # README: conical pins, capture range ~ 10 mm
         self.grasp_check = bool(grasp_check)         # False: never "miss" a stone (compare dead reckoning to the end)
         self.specs = board_specs(cfg)
@@ -534,23 +564,36 @@ class SimWorld:
         self.T_ares_base_true = self.T_ares_base_nominal @ g.pose_xyz_rpy(e.mount_xyz_mm, e.mount_rpy_deg)
         self.T_wall_station_true = (np.asarray(job.station.T_wall_station, float)
                                     @ g.pose_xyz_rpy(e.station_xyz_mm, e.station_rpy_deg))
+        self.ares_shape = _floor.AresShape.from_config(cfg) if "ares" in cfg else _floor.AresShape()
+        self.floor: list = []                         # obstacles of the floor check (L jobs only)
+        if job.legs:
+            self.floor = _floor.job_obstacles(cfg, job.legs, self.T_wall_station_true,
+                                              {n: sp.size_mm for n, sp in self.specs.items()})
+        self.floor_hits: list[dict] = []
+        self.floor_min_gap_mm = math.inf
+        self.notes: list[str] = []
         p0 = job.stops[start_stop].ares
         self.ares_true = Pose2D(p0.x_mm + (self.rng.normal(0, e.start_sigma_mm) if e.start_sigma_mm else 0.0),
                                 p0.y_mm + (self.rng.normal(0, e.start_sigma_mm) if e.start_sigma_mm else 0.0),
                                 p0.theta_rad + (math.radians(self.rng.normal(0, e.start_sigma_deg))
                                                 if e.start_sigma_deg else 0.0))
         self.ares_start = self.ares_true
+        for o in self.floor:
+            d = _floor.penetration(self.ares_shape.footprint(self.ares_true), o.poly)
+            if d > 0:
+                self.floor_hits.append({"move": 0, "kind": "start", "obstacle": o.name, "depth_mm": d})
+                self.notes.append(f"start pose overlaps {o.name} by {d:.1f} mm (operator's start placement)")
         self.hidden_boards: set[str] = set()
         self.forced_slips: dict[int, tuple[float, float, float]] = {}   # translation no. (1-based) -> (dx, dy, dth_deg)
         self.violations: list[str] = []
-        self.notes: list[str] = []
         self.records: list[PlacementRecord] = []
         self.n_blocks = self.n_shots = self.n_reloaded = 0
         self._n_stone = 0
         # stones: magazine (ARES frame) and station (station frame), true poses
         self.mag_stones: dict[str, tuple[str, np.ndarray]] = {}
         for sid in job.magazine.initial_fill:
-            self.mag_stones[sid] = (self._new_stone("mag"), self._jitter(job.magazine.slot(sid).T_ares_tcp))
+            kind = job.magazine.initial_kinds.get(sid, "full")
+            self.mag_stones[sid] = (self._new_stone("mag", kind), self._jitter(job.magazine.slot(sid).T_ares_tcp))
         self.station_stones: dict[str, tuple[str, np.ndarray]] = {}
         self.refill_station()
         self.robot = SimRobot(self, seed, check_ik, fail_on)
@@ -561,9 +604,21 @@ class SimWorld:
         self.camera.open()
 
     # ── stones ───────────────────────────────────────────────────────────────
-    def _new_stone(self, where: str) -> str:
+    def _new_stone(self, where: str, kind: str = "full") -> str:
         self._n_stone += 1
-        return f"{where}{self._n_stone:03d}"
+        sid = f"{where}{self._n_stone:03d}" + ("h" if kind == "half" else "")
+        self.kind_of[sid] = kind
+        return sid
+
+    def length_of(self, kind: str) -> float:
+        return self._lengths.get(kind, self._lengths["full"])
+
+    def pins_xy(self, kind: str) -> list[tuple[float, float]]:
+        """Pin positions (along, across) in the TCP frame: full stone +-pin_half along (model of this module), half
+        stone one pair at the centre, +-pin_across/2 across ([half_brick], PLACEHOLDER)."""
+        if kind == "half":
+            return [(0.0, self.half_pin_across_mm / 2.0), (0.0, -self.half_pin_across_mm / 2.0)]
+        return [(self.pin_half_mm, 0.0), (-self.pin_half_mm, 0.0)]
 
     def _jitter(self, T: np.ndarray) -> np.ndarray:
         s = self.errors.slot_sigma_mm
@@ -577,18 +632,42 @@ class SimWorld:
         n = 0
         for sid in self.job.station.take_order:
             if sid not in self.station_stones:
-                T = self.job.station.slot(sid).T_station_tcp
-                self.station_stones[sid] = (self._new_stone("st"), self._jitter(T))
+                slot = self.job.station.slot(sid)
+                self.station_stones[sid] = (self._new_stone("st", slot.kind), self._jitter(slot.T_station_tcp))
                 n += 1
         return n
 
-    def record_placement(self, stone, T_wall_stone: np.ndarray, T_tcp_stone: np.ndarray) -> PlacementRecord:
-        e = pose_errors(np.asarray(stone.T_wall_tcp, float), T_wall_stone, self.pin_half_mm, self.height_mm)
+    def record_placement(self, stone, T_wall_stone: np.ndarray, T_tcp_stone: np.ndarray,
+                         kind: str | None = None) -> PlacementRecord:
+        kind = kind or getattr(stone, "kind", "full")
+        e = pose_errors(np.asarray(stone.T_wall_tcp, float), T_wall_stone, self.pin_half_mm, self.height_mm,
+                        self.pins_xy(kind))
         rec = PlacementRecord(stone.key, np.asarray(stone.T_wall_tcp, float), T_wall_stone, e["dx_mm"], e["dy_mm"],
                               e["dz_mm"], e["yaw_deg"], e["horiz_mm"], e["pin_mm"], e["pin_mm"] <= self.capture_mm,
-                              float(T_tcp_stone[0, 3]), float(T_tcp_stone[2, 3]))
+                              float(T_tcp_stone[0, 3]), float(T_tcp_stone[2, 3]), kind)
         self.records.append(rec)
         return rec
+
+    # ── floor ────────────────────────────────────────────────────────────────
+    def floor_check(self, kind: str, a: Pose2D, b: Pose2D, dtheta_rad: float | None = None) -> None:
+        """True move a -> b (see module docstring): a violation for every obstacle the swept area enters deeper than
+        the start footprint already was; tracks the smallest gap of an end footprint to any obstacle."""
+        if not self.floor:
+            return
+        n = len(self.ares.moves) + 1
+        sh = self.ares_shape
+        pieces = ([_floor.swept_translation(sh, a, b)] if kind == "translate"
+                  else _floor.swept_rotation(sh, a, b, dtheta_rad))
+        fa = sh.footprint(a)
+        for o in self.floor:
+            d = max(_floor.penetration(pc, o.poly) for pc in pieces)
+            if d > _floor.penetration(fa, o.poly) + 0.05:
+                self.floor_hits.append({"move": n, "kind": kind, "obstacle": o.name, "depth_mm": d,
+                                        "from": a.to_dict(), "to": b.to_dict()})
+                self.violations.append(f"ARES footprint overlaps {o.name} by {d:.1f} mm during {kind} no. {n} "
+                                       f"({a.describe()} -> {b.describe()})")
+        fb = sh.footprint(b)
+        self.floor_min_gap_mm = min(self.floor_min_gap_mm, min(_floor.poly_dist(fb, o.poly) for o in self.floor))
 
     # ── frames ───────────────────────────────────────────────────────────────
     def T_wall_ares_true(self) -> np.ndarray:
@@ -630,6 +709,9 @@ class SimWorld:
     def placement_stats(self) -> dict:
         r = self.records
         return {"n": len(r), "seated": int(sum(x.seated for x in r)),
+                "by_kind": {k: {"n": sum(x.kind == k for x in r), "seated": sum(x.seated for x in r if x.kind == k),
+                                "pin_max_mm": max((x.pin_mm for x in r if x.kind == k), default=None)}
+                            for k in ("full", "half")},
                 "horiz_mm": stats([x.horiz_mm for x in r]), "pin_mm": stats([x.pin_mm for x in r]),
                 "dx_mm": stats([x.dx_mm for x in r]), "dy_mm": stats([x.dy_mm for x in r]),
                 "dz_mm": stats([x.dz_mm for x in r]), "yaw_deg": stats([x.yaw_deg for x in r])}
@@ -642,7 +724,10 @@ class SimWorld:
                          "slips": sum(1 for m in moves if m.get("slip")), "drive_time_s": self.ares.t_s,
                          "true_pose": self.ares_true.to_dict()},
                 "robot": {"blocks": self.n_blocks, "shots": self.n_shots, "calls": dict(self.robot.calls)},
-                "reloaded_stones": self.n_reloaded, "violations": list(self.violations), "notes": list(self.notes)}
+                "reloaded_stones": self.n_reloaded, "violations": list(self.violations), "notes": list(self.notes),
+                "floor": {"checked": bool(self.floor), "hits": [h for h in self.floor_hits if h["kind"] != "start"],
+                          "start_overlaps": [h for h in self.floor_hits if h["kind"] == "start"],
+                          "min_gap_mm": None if not math.isfinite(self.floor_min_gap_mm) else self.floor_min_gap_mm}}
 
 
 SCENARIOS = ("none", "e003", "slip", "realistic")

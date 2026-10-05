@@ -1,8 +1,9 @@
 """Backends the sequencer talks to - one interface for the real hardware and the simulation (mauer.simworld).
 
-    Robot   park(), goto_look(look), shot(camera) -> Shot, pick_magazine(slot, T_base_ares), place_wall(T_base_wall,
-            stone), pick_station(T_base_station, slot), place_magazine(slot, T_base_ares), is_parked(), is_idle(),
-            abort(). Every motion is one atomic robot program; a failed one raises RobotError (the arm is then NOT
+    Robot   park(), goto_look(look), shot(camera) -> Shot, pick_magazine(slot, T_base_ares, kind="full"),
+            place_wall(T_base_wall, stone), pick_station(T_base_station, slot), place_magazine(slot, T_base_ares,
+            kind="full"), is_parked(), is_idle(), abort(). kind = stone type "full" / "half" (stone.kind, slot.kind
+            for the station holders) - it sets the payload. Every motion is one atomic robot program; a failed one raises RobotError (the arm is then NOT
             parked - the sequencer never moves ARES in that state).
     Ares    translate(dx_mm, dy_mm) / rotate(dtheta_deg) -> mauer.ares.MoveOutcome, preflight() -> [problems],
             status(), idle() -> bool, abort(). Body frame at the start pose: +x forward, +y left, +theta CCW.
@@ -19,8 +20,9 @@ Real implementations:
 - `AdsAres`: thin adapter around mauer.ares.AresAds (pattern A, amr_hmi owns heartbeat/MANUAL/HALT).
 
 Conventions: docs/ARCHITECTURE.md (T_a_b, mm, rad). Payload: [ur] payload_tool_kg / payload_cog_mm (PLACEHOLDER 0 =
-unknown -> URRobot refuses unless sim=True), stone [brick] mass_kg (UNKNOWN 0) with its centre of gravity half a
-stone height below the TCP (TCP = top centre of the held stone, z into the stone).
+unknown -> URRobot refuses unless sim=True), stone [brick] mass_kg / half stone [half_brick] mass_kg (UNKNOWN 0) with
+the centre of gravity half a stone height below the TCP (TCP = top centre of the held stone, z into the stone, the
+same for both types).
 """
 from __future__ import annotations
 
@@ -82,10 +84,10 @@ class Robot(Protocol):
     def park(self) -> Any: ...
     def goto_look(self, look) -> Any: ...
     def shot(self, camera) -> Any: ...
-    def pick_magazine(self, slot, T_base_ares: np.ndarray) -> Any: ...
+    def pick_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full") -> Any: ...
     def place_wall(self, T_base_wall: np.ndarray, stone) -> Any: ...
     def pick_station(self, T_base_station: np.ndarray, slot) -> Any: ...
-    def place_magazine(self, slot, T_base_ares: np.ndarray) -> Any: ...
+    def place_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full") -> Any: ...
     def is_parked(self) -> bool: ...
     def is_idle(self) -> bool: ...
     def abort(self) -> Any: ...
@@ -155,6 +157,15 @@ class URRobot:
         if stone_kg <= 0.0 and not sim:
             raise ValueError("[brick] mass_kg is 0 (UNKNOWN) - refusing to drive the real robot")
         self.with_stone = stone_payload(self.tool_kg, self.tool_cog, stone_kg, self.T_flange_tcp, float(b["height"]))
+        self.payloads = {"full": self.with_stone}
+        if any(getattr(t, "kind", "full") == "half" for t in job.stones()):
+            hb = cfg.get("half_brick", {}) or {}
+            half_kg = float(hb.get("mass_kg", 0.0) or 0.0)
+            if half_kg <= 0.0 and not sim:
+                raise ValueError("[half_brick] mass_kg is 0 (UNKNOWN) - refusing to drive the real robot")
+            self.payloads["half"] = stone_payload(self.tool_kg, self.tool_cog, half_kg, self.T_flange_tcp,
+                                                  float(hb.get("height", b["height"])))
+        self.held_kind = "full"
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _q_now(self) -> np.ndarray:
@@ -174,7 +185,7 @@ class URRobot:
         return q0 if q is None else q
 
     def _preamble(self, holding: bool) -> str:
-        kg, cog = self.with_stone if holding else (self.tool_kg, self.tool_cog)
+        kg, cog = self.payloads[self.held_kind] if holding else (self.tool_kg, self.tool_cog)
         return self.script.preamble(self.T_flange_tcp, kg, cog)
 
     def _vias(self, vias) -> list[str]:
@@ -210,14 +221,17 @@ class URRobot:
         except CaptureError as e:
             raise ShotError(str(e)) from e
 
-    def _pick(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str):
+    def _pick(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str, kind: str = "full"):
+        if kind not in self.payloads:
+            raise RobotError(f"{name}: no payload for stone type {kind!r}", action=name)
+        self.held_kind = kind
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
         body = "\n".join([self._preamble(False), *self._vias(vias),
                           self.script.pick_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                  self.do_close, self.pulse_s, self.wait_s, do_open=self.do_open,
                                                  contact_mm=self.contact_mm, open_first=True,
-                                                 payload_after=self.with_stone)])
+                                                 payload_after=self.payloads[kind])])
         return self._run(body, name)
 
     def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str):
@@ -230,16 +244,19 @@ class URRobot:
                                                   payload_after=(self.tool_kg, self.tool_cog))])
         return self._run(body, name)
 
-    def pick_magazine(self, slot, T_base_ares):
-        return self._pick(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_pick_mag")
+    def pick_magazine(self, slot, T_base_ares, kind: str = "full"):
+        return self._pick(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_pick_mag", kind)
 
     def place_wall(self, T_base_wall, stone):
+        self.held_kind = getattr(stone, "kind", self.held_kind)
         return self._place(T_base_wall, stone.T_wall_tcp, stone.qnear_rad, stone.via_q_rad, "mauer_place_wall")
 
     def pick_station(self, T_base_station, slot):
-        return self._pick(T_base_station, slot.T_station_tcp, slot.qnear_rad, None, "mauer_pick_station")
+        return self._pick(T_base_station, slot.T_station_tcp, slot.qnear_rad, None, "mauer_pick_station",
+                          getattr(slot, "kind", "full"))
 
-    def place_magazine(self, slot, T_base_ares):
+    def place_magazine(self, slot, T_base_ares, kind: str = "full"):
+        self.held_kind = kind
         return self._place(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_place_mag")
 
     def is_parked(self) -> bool:

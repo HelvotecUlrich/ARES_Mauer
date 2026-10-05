@@ -1,21 +1,25 @@
-"""Run a job (mauer.job v1) - in the pure-Python simulated world, on the real hardware, or just print the plan.
+"""Run a job (mauer.job v1/v2) - in the pure-Python simulated world, on the real hardware, or just print the plan.
 
-    py.exe tools/run_job.py data/jobs/nominal_L24.json --dry-run
-    py.exe tools/run_job.py --nominal 24 --sim [--scenario realistic] [--seed 1] [--compare] [--stops 0:1]
+    py.exe tools/run_job.py data/jobs/nominal_L.json --dry-run
+    py.exe tools/run_job.py --nominal L --sim [--scenario realistic] [--seed 1] [--compare] [--stops 0:1]
+    py.exe tools/run_job.py --nominal 24 --sim ...           # straight wall (config without legs)
     py.exe tools/run_job.py data/jobs/nominal_L24.json --real [--step] [--stops 0]
 
 --sim       mauer.simworld: ARES drive errors and slip (--scenario none | e003 | slip | realistic, mauer.simworld
             .scenario), simulated UR5 and flange camera (rendered ChArUco boards). Prints a table of the placement
             errors (stone pose at release vs nominal wall pose: horizontal, at the pins, dx along / dy across the
             wall, dz, yaw; seated = pin error within the capture range ~10 mm, README). --no-camera = pure dead
-            reckoning (nominal moves and frames, no images); --compare runs both with the same seed.
+            reckoning (nominal moves and frames, no images); --compare runs both with the same seed. L jobs: the
+            true ARES path is checked against legs, plates and table (FLOOR CONTACT lines, mauer.simworld).
             --lenient-grasp: the simulated gripper never misses a stone (lets dead reckoning run to the end).
 --real      URLink ([ur]), AresAds ([ares_ads], amr_hmi v2 open, MANUAL), IDS camera ([camera]), calibration files
             ([vision] intrinsics_file / handeye_file). Refuses to start while safety-relevant values are
             PLACEHOLDER/unknown (mauer.sequencer.preflight_real lists every problem); there is no override for real
             runs (--i-know only applies to --sim --preflight). --step asks before every motion.
---dry-run   print the plan (stops, ARES moves, looks, stones with magazine slots, predicted reloads).
---nominal N build the job on the fly with tools/make_job.py build_nominal(length=N) instead of a job file.
+--dry-run   print the plan (stops, ARES moves and routes, looks, stones with type and magazine slot, predicted
+            reloads with the stone types).
+--nominal N build the job on the fly with tools/make_job.py build_nominal(length=N) instead of a job file;
+            --nominal L builds the L of the config ([[wall.legs]]).
 
 The run log (JSON lines, every measurement and decision) goes to --log-dir, default data/runs/<timestamp>/.
 """
@@ -39,6 +43,7 @@ if str(TOOLS) not in sys.path:
 from mauer import config as mconfig  # noqa: E402
 from mauer import job as mjob  # noqa: E402
 from mauer.reference import relative_move  # noqa: E402
+from mauer.floor import route_stats, segments  # noqa: E402
 from mauer.sequencer import Sequencer, SequencerError, preflight_real  # noqa: E402
 
 
@@ -56,43 +61,83 @@ def parse_stops(text: str | None, n: int) -> tuple[int, int | None]:
 def load_job(args, cfg: dict) -> mjob.Job:
     if args.nominal:
         import make_job
-        return make_job.build_nominal(cfg, args.nominal)
+        if str(args.nominal).upper() == "L":
+            return make_job.build_l(cfg)
+        return make_job.build_nominal(cfg, int(args.nominal))
     if not args.job:
         raise SystemExit("give a job file or --nominal LENGTH")
     return mjob.load(args.job)
 
 
 # ── dry run ───────────────────────────────────────────────────────────────────
+def print_route(route, indent: str = "      ") -> None:
+    """Every leg of a route as the PLC relative move (body frame of the leg's start waypoint)."""
+    segs, _ = segments(route)
+    for i, sg in enumerate(segs):
+        if sg.kind == "translate":
+            dx, dy, _ = relative_move(sg.start, sg.end)
+            print(f"{indent}{i}: translate dx {dx:+.1f} mm, dy {dy:+.1f} mm -> {sg.end.describe()}")
+        else:
+            print(f"{indent}{i}: rotate {math.degrees(sg.angle_rad):+.1f} deg at ({sg.start.x_mm:.0f}, "
+                  f"{sg.start.y_mm:.0f}) mm")
+
+
 def dry_run(job: mjob.Job) -> None:
     print(job.summary())
     mag = mjob.SlotState.magazine(job.magazine)
+    full_station = mjob.SlotState.station(job.station)
+    station = full_station.copy()
     n_st = len(job.station.take_order)
-    reloads = 0
+    reloads = refills = 0
     prev = None
+    stones = job.stones()
+    done = 0
+    so = float((job.meta.get("route_check") or {}).get("arrival_standoff_mm", 0.0) or 0.0)
+    last = (f"the last leg ends {so:g} mm before the stop, closed loop from the wall measurement there" if so > 0
+            else "last leg closed loop")
     for s in job.stops:
-        if prev is not None:
+        leg = f" (leg {s.leg}, a {s.a_mm:.0f} mm)" if s.leg else ""
+        if prev is not None and s.route:
+            st = route_stats(s.route)
+            print(f"stop {s.index}{leg}: ARES route, {st['translations']} translations + {st['rotations']} "
+                  f"rotation(s), {st['length_mm']:.0f} mm (wall frame waypoints, dead reckoning, {last}):")
+            print_route(s.route)
+        elif prev is not None:
             dx, dy, dth = relative_move(prev, s.ares)
-            print(f"stop {s.index}: ARES translate dx {dx:+.1f} mm, dy {dy:+.1f} mm (body frame), "
+            print(f"stop {s.index}{leg}: ARES translate dx {dx:+.1f} mm, dy {dy:+.1f} mm (body frame), "
                   f"rotate {math.degrees(dth):+.2f} deg")
         else:
-            print(f"stop {s.index}: ARES at the start mark {s.ares.describe()} (wall frame)")
+            print(f"stop {s.index}{leg}: ARES at the start mark {s.ares.describe()} (wall frame)")
+        if s.route_to_station:
+            a, b = route_stats(s.route_to_station), route_stats(s.route_from_station)
+            print(f"   station trip: {a['length_mm']:.0f} mm out ({len(s.route_to_station)} waypoints), "
+                  f"{b['length_mm']:.0f} mm back ({len(s.route_from_station)} waypoints)")
         for lk in s.looks:
             q = "" if lk.qnear_rad is None else f", qnear {[round(math.degrees(v), 1) for v in lk.qnear_rad]} deg"
             print(f"   look {lk.name}: boards {lk.boards}{q}")
         for t in s.stones:
             if mag.empty():
                 reloads += 1
-                n = min(mag.n_free, n_st)
-                for _ in range(n):
-                    mag.fill(mag.next_fill())
-                print(f"   -- reload {reloads}: station -> magazine, {n} stones")
-            sid = mag.next_take(t.slot)
+                upcoming = [x.kind for x in stones[done:]]
+                if mjob.reload_short(station, full_station, mag, upcoming):
+                    station = full_station.copy()
+                    refills += 1
+                plan = mjob.reload_plan(mag, station, upcoming)
+                for ssid, mid, kind in plan:
+                    station.take(ssid)
+                    mag.fill(mid, kind)
+                kinds = {k: sum(1 for p in plan if p[2] == k) for k in ("full", "half")}
+                print(f"   -- reload {reloads}: station -> magazine, {len(plan)} stones ({kinds['full']} full, "
+                      f"{kinds['half']} half)")
+            sid = mag.next_take(t.slot, kind=t.kind)
             mag.take(sid)
-            print(f"   stone {t.label}: u {t.u_mm:6.0f} mm, top {t.z_top_mm:5.0f} mm, slot {sid}"
+            done += 1
+            print(f"   stone {t.label}: {t.kind:4s} u {t.u_mm:6.0f} mm, top {t.z_top_mm:5.0f} mm, slot {sid}"
                   + (" (flip)" if t.flip else ""))
         prev = s.ares
-    print(f"{job.n_stones} stones, {len(job.stops)} stops, {reloads} reloads predicted "
-          f"(magazine {job.magazine.capacity}, station {n_st} usable slots)")
+    n_half = sum(t.kind == "half" for t in stones)
+    print(f"{job.n_stones} stones ({n_half} half), {len(job.stops)} stops, {reloads} reloads predicted, "
+          f"{refills} station refills (magazine {job.magazine.capacity}, station {n_st} usable slots)")
 
 
 # ── simulation ────────────────────────────────────────────────────────────────
@@ -138,10 +183,17 @@ def print_table(rows: list[tuple[str, dict]]) -> None:
               f"{r['ares']['moves']:5d} {r['ares']['slips']:5d} {r['corrections']:4d} {r['reloads']:6d} "
               f"{r['robot']['shots']:5d}")
     for name, r in rows:
+        bk = r["placement"].get("by_kind", {})
+        if bk.get("half", {}).get("n"):
+            print(f"{name}: full {bk['full']['seated']}/{bk['full']['n']} seated (pin max "
+                  f"{bk['full']['pin_max_mm'] or 0:.2f} mm), half {bk['half']['seated']}/{bk['half']['n']} seated "
+                  f"(pin max {bk['half']['pin_max_mm'] or 0:.2f} mm)")
+    for name, r in rows:
         if r["error"]:
             print(f"{name}: stopped - {r['error']}")
         for v in r["violations"]:
-            print(f"{name}: INTERLOCK VIOLATION - {v}")
+            kind = "FLOOR CONTACT" if v.startswith("ARES footprint") else "INTERLOCK VIOLATION"
+            print(f"{name}: {kind} - {v}")
     print("units: mm, deg; errors = stone pose at release vs nominal wall pose (wall frame axes: dx along, dy across)")
 
 
@@ -234,7 +286,8 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("job", nargs="?", help="job JSON (tools/make_job.py or the RoboDK planner)")
-    ap.add_argument("--nominal", type=int, default=None, metavar="LENGTH", help="build a nominal job on the fly")
+    ap.add_argument("--nominal", default=None, metavar="LENGTH|L",
+                    help="build a nominal job on the fly: a straight wall of LENGTH stones, or L = the config's L")
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--sim", action="store_true", help="pure-Python simulated world (mauer.simworld)")
     mode.add_argument("--real", action="store_true", help="real UR5 + ARES + IDS camera")
@@ -259,7 +312,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.ERROR if args.quiet else logging.WARNING, format="%(levelname)s %(message)s")
     cfg = mconfig.load(args.config)
-    job = load_job(args, cfg)
+    try:
+        job = load_job(args, cfg)
+    except (ValueError, mjob.JobError) as e:
+        print(f"FAILED to build/load the job: {e}", file=sys.stderr)
+        return 1
     if args.dry_run:
         dry_run(job)
         return 0

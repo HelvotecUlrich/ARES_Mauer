@@ -32,6 +32,7 @@ Free software only: OpenCV 4.14.0.94 (ArUco/ChArUco, solvePnP, calibrateCamera, 
 | `board` | OpenCV 4.14 CharucoBoard frame: origin = top-left outer corner of the printed board, x right, y down, z into the board |
 | `wall` | origin on the wall centreline at floor level, x along the wall (ARES travel direction), y towards ARES, z up |
 | `station` | pick-up station: origin at the front-left corner of the table top, x along the front edge, y away from ARES, z up |
+| `leg` | L wall ([[wall.legs]]): one frame per leg, same convention as `wall` (origin on the leg centreline at the leg start, x along the leg, y towards that leg's ARES side, z up); leg A = `wall`; `T_wall_leg` from xyz_in_wall / rpy_in_wall_deg |
 
 `T_a_b` = pose of frame b in frame a (`p_a = T_a_b @ p_b`), numpy 4x4 float64, **mm and rad**. UR poses on the wire
 are `[x, y, z (m), rx, ry, rz (rad rotation vector)]` – convert only at the URScript/RTDE boundary
@@ -56,8 +57,10 @@ All in package `mauer/` (no RoboDK imports). Scripts with argparse in `tools/`. 
   `first_id .. first_id + n_markers - 1`), `corners_obj(spec) -> (N, 3)` chessboard corners in the board frame.
 - `detect.py`: `BoardDetection` (`board, corner_ids (N,), img_pts (N, 2), obj_pts (N, 3), marker_ids`),
   `detect_boards(img, specs, border_px) -> dict[str, BoardDetection]`; `BoardPose` (`board, T_cam_board, n_corners,
-  rms_px, ok, reason`), `estimate_pose(det, intr, min_corners, max_reproj_px) -> BoardPose` (SOLVEPNP_IPPE +
-  solvePnPRefineLM, finite/plausibility checks), `measure(img, specs, intr, vcfg) -> dict[str, BoardPose]`.
+  rms_px, ok, reason`), `estimate_pose(det, intr, min_corners, max_reproj_px) -> BoardPose` (both SOLVEPNP_IPPE
+  solutions via solvePnPGeneric, SQPNP fallback, each refined with solvePnPRefineLM from its normalised rotation
+  vector (`normalised_rvec`, |rvec| <= pi), lowest RMS kept; finite/plausibility checks),
+  `measure(img, specs, intr, vcfg) -> dict[str, BoardPose]`.
 - `intrinsics.py`: `Intrinsics` (`K (3x3), D (5,), width, height, rms_px, n_views, meta`), `save/load` JSON
   (`calib/camera_intrinsics.json`), `nominal(cfg)` (pinhole from focal/pixel, zero distortion, cx = (W-1)/2 – the
   RoboDK simulated camera), `calibrate(images, spec) -> (Intrinsics, report)`.
@@ -102,10 +105,42 @@ writes only the allow-list `WRITABLE` (move fields, id, start, abort), never mod
 T_base_board], placements, specs) -> FrameFit` (`T_base_parent`, per-board residuals, rms/max mm): rigid fit of all
 board corner points (heading from the baseline between boards), single board = its full 6D pose.
 
+### `mauer.floor` (L wall)
+Floor plan in the wall frame (pure Python): `AresShape` (chassis footprint, rotation radius), `Obstacle`, plate sites
+(`plate_site`, `site_from_target`, `check_sites`), `validate_route(route, obstacles, ares, clearance_mm) -> [problems]`
+(one translation OR one rotation per leg, PLC minimum move, swept hull per translation, swept circle per rotation,
+intermediate waypoints >= clearance; a swept overlap counts also at clearance 0), `plan_route(start, goal, ...) ->
+RoutePlan` (back off, axis-parallel legs, one rotation close to the goal, approach), `job_obstacles(cfg, legs,
+T_wall_station, board_sizes)` (the same floor model from a job, without robodk/wallplan.py), `penetration`,
+`swept_translation` / `swept_rotation`. Used by tools/make_job.py (build fails on any violation), tools/plan_layout.py,
+the sequencer (resume check, `preflight_real` route re-check) and mauer.simworld (floor check of the true ARES path).
+
+### `mauer.armcheck` (look planning)
+Coarse collision test of a UR5 configuration (nominal DH links with the real shoulder / elbow offsets, gripper with
+open jaws, camera and adapter - capsules with ASSUMED radii) against boxes in the wall frame (`stone_boxes`: the
+stones built so far, over the ribs, plus the base plate). tools/make_job.py and tools/plan_layout.py accept a look
+only if it is clear of the wall built by the END of its stop, for ARES at the stop, +-50 mm around it and at the
+arrival standoff. A planning filter, not RoboDK's collision check.
+
+### `mauer.job` v2
+Adds `legs`, per stop `leg`, `route` (from the previous stop), `route_to_station` / `route_from_station` (wall-frame
+Pose2D lists), per stone `leg` / `kind` ("full" | "half") / `length_mm` (key `(leg, course, index)`), station slot
+`kind`, magazine `initial_kinds`; version-1 files still load (defaults: no legs, full stones, direct moves).
+`SlotState` tracks the stone type per slot; `reload_plan` / `reload_short` are the shared reload rule.
+
 ### `mauer.sequencer`
 Runs a job (JSON exported by the RoboDK planner) against backends with the same interfaces for real hardware and
 simulation: per stop ARES relative move → look poses → images → `fit_frame` → place stones with poses relative to
 the measured wall frame; magazine empty → drive to the pick-up station, measure it, reload, drive back, re-measure.
+Job v2 routes: intermediate legs steered dead-reckoned to the waypoints; a route to a stop ends
+`arrival_standoff_mm` before it (from the job's meta.route_check), the wall is measured there and the closed-loop
+correction reaches the stop; a partly visible board (too few ChArUco corners) re-aims the looks by its position
+(`vision.detect.coarse_poses`), nothing in view → bounded board search; the stone type selects the magazine slot and
+the payload. Route progress (`RouteProgress`: route, next leg) survives an interruption: `run(stop_k)` continues the
+interrupted route (a station trip still reloads), its first move is checked against `floor.job_obstacles`. A move
+that ends not ok updates the estimate from the outcome's odometry (pose "unverified" → `confirm_pose()`), an ARES
+error without outcome makes it unknown (→ `set_pose(pose)`); the first measurement after a resumed route / return uses
+the route / station jump limits. A frame fit over boards of two legs that does not agree names the legs.
 Real runs refuse to start while safety-relevant config values are PLACEHOLDER/unknown (payload, host, calibration).
 
 ## Calibration files (`calib/`, versioned)

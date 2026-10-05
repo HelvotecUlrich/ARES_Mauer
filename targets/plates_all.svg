@@ -25,7 +25,7 @@
 <text x="9.000" y="23.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="9.000" y="89.000" font-family="Arial" font-size="4.900" fill="#0000FF">W0</text>
 <text x="9.000" y="95.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 30-39</text>
-<text x="9.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 100 mm</text>
+<text x="9.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">A: u = 100 mm</text>
 <text x="9.000" y="110.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="455.000,5.000 448.000,5.000 445.000,9.000 442.000,5.000 248.000,5.000 245.000,9.000 242.000,5.000 235.000,5.000 235.000,115.000 455.000,115.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="262.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -53,7 +53,7 @@
 <text x="239.000" y="23.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="239.000" y="89.000" font-family="Arial" font-size="4.900" fill="#0000FF">W1</text>
 <text x="239.000" y="95.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 40-49</text>
-<text x="239.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 900 mm</text>
+<text x="239.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">A: u = 500 mm</text>
 <text x="239.000" y="110.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="225.000,125.000 218.000,125.000 215.000,129.000 212.000,125.000 18.000,125.000 15.000,129.000 12.000,125.000 5.000,125.000 5.000,235.000 225.000,235.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="32.000" cy="188.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -81,7 +81,7 @@
 <text x="9.000" y="143.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="9.000" y="209.000" font-family="Arial" font-size="4.900" fill="#0000FF">W2</text>
 <text x="9.000" y="215.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 50-59</text>
-<text x="9.000" y="221.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 1700 mm</text>
+<text x="9.000" y="221.000" font-family="Arial" font-size="4.200" fill="#0000FF">A: u = 900 mm</text>
 <text x="9.000" y="230.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="455.000,125.000 448.000,125.000 445.000,129.000 442.000,125.000 248.000,125.000 245.000,129.000 242.000,125.000 235.000,125.000 235.000,235.000 455.000,235.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="262.000" cy="188.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -109,7 +109,7 @@
 <text x="239.000" y="143.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="239.000" y="209.000" font-family="Arial" font-size="4.900" fill="#0000FF">W3</text>
 <text x="239.000" y="215.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 60-69</text>
-<text x="239.000" y="221.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 2500 mm</text>
+<text x="239.000" y="221.000" font-family="Arial" font-size="4.200" fill="#0000FF">A: u = 1500 mm</text>
 <text x="239.000" y="230.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="225.000,245.000 218.000,245.000 215.000,249.000 212.000,245.000 18.000,245.000 15.000,249.000 12.000,245.000 5.000,245.000 5.000,355.000 225.000,355.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="32.000" cy="308.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -137,7 +137,7 @@
 <text x="9.000" y="263.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="9.000" y="329.000" font-family="Arial" font-size="4.900" fill="#0000FF">W4</text>
 <text x="9.000" y="335.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 70-79</text>
-<text x="9.000" y="341.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 3300 mm</text>
+<text x="9.000" y="341.000" font-family="Arial" font-size="4.200" fill="#0000FF">A: u = 2100 mm</text>
 <text x="9.000" y="350.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="455.000,245.000 448.000,245.000 445.000,249.000 442.000,245.000 248.000,245.000 245.000,249.000 242.000,245.000 235.000,245.000 235.000,355.000 455.000,355.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="262.000" cy="308.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -165,7 +165,7 @@
 <text x="239.000" y="263.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="239.000" y="329.000" font-family="Arial" font-size="4.900" fill="#0000FF">W5</text>
 <text x="239.000" y="335.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 80-89</text>
-<text x="239.000" y="341.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 4100 mm</text>
+<text x="239.000" y="341.000" font-family="Arial" font-size="4.200" fill="#0000FF">B: u = 100 mm</text>
 <text x="239.000" y="350.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="225.000,365.000 218.000,365.000 215.000,369.000 212.000,365.000 18.000,365.000 15.000,369.000 12.000,365.000 5.000,365.000 5.000,475.000 225.000,475.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="32.000" cy="428.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -193,7 +193,7 @@
 <text x="9.000" y="383.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="9.000" y="449.000" font-family="Arial" font-size="4.900" fill="#0000FF">W6</text>
 <text x="9.000" y="455.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 90-99</text>
-<text x="9.000" y="461.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 4900 mm</text>
+<text x="9.000" y="461.000" font-family="Arial" font-size="4.200" fill="#0000FF">B: u = 500 mm</text>
 <text x="9.000" y="470.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="455.000,365.000 448.000,365.000 445.000,369.000 442.000,365.000 248.000,365.000 245.000,369.000 242.000,365.000 235.000,365.000 235.000,475.000 455.000,475.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <circle cx="262.000" cy="428.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
@@ -221,7 +221,7 @@
 <text x="239.000" y="383.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="239.000" y="449.000" font-family="Arial" font-size="4.900" fill="#0000FF">W7</text>
 <text x="239.000" y="455.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 100-109</text>
-<text x="239.000" y="461.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 5700 mm</text>
+<text x="239.000" y="461.000" font-family="Arial" font-size="4.200" fill="#0000FF">B: u = 1100 mm</text>
 <text x="239.000" y="470.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 <polygon points="465.000,497.000 605.000,497.000 605.000,365.000 465.000,365.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
 <polygon points="494.850,394.850 575.150,394.850 575.150,395.150 494.850,395.150" fill="#0000FF" stroke="none"/>

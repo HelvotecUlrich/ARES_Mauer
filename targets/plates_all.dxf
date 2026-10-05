@@ -669,7 +669,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 100 mm
+A: u = 100 mm
 0
 TEXT
 8
@@ -1309,7 +1309,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 900 mm
+A: u = 500 mm
 0
 TEXT
 8
@@ -1949,7 +1949,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 1700 mm
+A: u = 900 mm
 0
 TEXT
 8
@@ -2589,7 +2589,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 2500 mm
+A: u = 1500 mm
 0
 TEXT
 8
@@ -3229,7 +3229,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 3300 mm
+A: u = 2100 mm
 0
 TEXT
 8
@@ -3869,7 +3869,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 4100 mm
+B: u = 100 mm
 0
 TEXT
 8
@@ -4509,7 +4509,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 4900 mm
+B: u = 500 mm
 0
 TEXT
 8
@@ -5149,7 +5149,7 @@ ENGRAVE
 40
 3.0000
 1
-u = 5700 mm
+B: u = 1100 mm
 0
 TEXT
 8

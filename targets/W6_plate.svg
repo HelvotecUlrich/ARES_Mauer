@@ -25,6 +25,6 @@
 <text x="9.000" y="23.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
 <text x="9.000" y="89.000" font-family="Arial" font-size="4.900" fill="#0000FF">W6</text>
 <text x="9.000" y="95.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 90-99</text>
-<text x="9.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 4900 mm</text>
+<text x="9.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">B: u = 500 mm</text>
 <text x="9.000" y="110.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
 </svg>

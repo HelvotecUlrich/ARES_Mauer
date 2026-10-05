@@ -51,16 +51,26 @@ class Placement:
 
 def placements(cfg: Mapping) -> list[Placement]:
     """All board placements from the config: the calib board ([boards.calib] xyz/rpy_deg, parent "deck") and every
-    [[targets]] entry (parent "wall" / "station" / "deck"). ValueError for an unknown parent or a duplicate name."""
+    [[targets]] entry (parent "wall" / "station" / "deck"). A wall target with `leg = "<name>"` gives xyz/rpy_deg in
+    that leg's frame ([[wall.legs]], config.leg_frames): T_wall_board = T_wall_leg @ pose(xyz, rpy). ValueError for an
+    unknown parent or leg, a leg on a non-wall target, or a duplicate name."""
     out: list[Placement] = []
     c = cfg.get("boards", {}).get("calib", {})
     if "xyz" in c:
         out.append(Placement("calib", "deck", _config.pose(c)))
+    legs = _config.leg_frames(dict(cfg))
     for t in cfg.get("targets", []):
         parent = str(t["parent"])
         if parent not in PARENTS:
             raise ValueError(f"target {t.get('name')!r}: parent {parent!r} not in {PARENTS}")
-        out.append(Placement(str(t["name"]), parent, g.pose_xyz_rpy(t["xyz"], t.get("rpy_deg", (0.0, 0.0, 0.0)))))
+        T = g.pose_xyz_rpy(t["xyz"], t.get("rpy_deg", (0.0, 0.0, 0.0)))
+        if "leg" in t:
+            if parent != "wall":
+                raise ValueError(f"target {t.get('name')!r}: leg {t['leg']!r} given for parent {parent!r}")
+            if str(t["leg"]) not in legs:
+                raise ValueError(f"target {t.get('name')!r}: unknown leg {t['leg']!r} (legs {sorted(legs)})")
+            T = legs[str(t["leg"])] @ T
+        out.append(Placement(str(t["name"]), parent, T))
     names = [p.name for p in out]
     dup = sorted({n for n in names if names.count(n) > 1})
     if dup:

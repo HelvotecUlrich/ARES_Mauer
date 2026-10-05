@@ -77,15 +77,16 @@ def _heading_err_deg(T_fit, T_true):
 
 def test_two_boards_far_apart_give_the_heading(pl, specs, T_base_wall):
     """Each board measured with a 0.1 deg yaw error and 0.05 mm lateral error (opposite signs): one board gives the
-    full 0.1 deg heading error, two boards far apart (W0, W2: 1600 mm with the 800 mm layout) only ~(0.1 mm / 1400 mm) rad."""
-    errs = {"W0": g.pose_xyz_rpy([0.0, 0.05, 0.0], [0, 0, 0.1]), "W2": g.pose_xyz_rpy([0.0, -0.05, 0.0], [0, 0, -0.1])}
+    full 0.1 deg heading error, two boards far apart (W0, W4: 2000 mm on leg A of the L layout) only ~(0.1 mm / 2000
+    mm) rad."""
+    errs = {"W0": g.pose_xyz_rpy([0.0, 0.05, 0.0], [0, 0, 0.1]), "W4": g.pose_xyz_rpy([0.0, -0.05, 0.0], [0, 0, -0.1])}
     obs = {n: T_base_wall @ _pl(pl, n).T_parent_board @ e for n, e in errs.items()}
     one = fit_frame({"W0": obs["W0"]}, pl, specs, "wall")
     two = fit_frame(obs, pl, specs, "wall")
     assert _heading_err_deg(one.T_base_parent, T_base_wall) == pytest.approx(0.1, abs=1e-6)
     assert _heading_err_deg(two.T_base_parent, T_base_wall) < 0.01
-    u = {t["name"]: t["xyz"][0] for t in config.load()["targets"]}
-    assert two.baseline_mm == pytest.approx(abs(u["W2"] - u["W0"]), abs=1e-6)       # layout from the config
+    c = {n: _pl(pl, n).T_parent_board[:3, 3] for n in ("W0", "W4")}                 # layout from the config
+    assert two.baseline_mm == pytest.approx(float(np.linalg.norm(c["W4"] - c["W0"])), abs=1e-6)
     assert two.n_boards == 2 and two.rms_mm > 0.0
 
 
@@ -162,3 +163,19 @@ def test_relative_move_conventions():
     assert abs(dth) == pytest.approx(math.pi)
     assert wrap_angle(-math.pi) == pytest.approx(math.pi) and wrap_angle(3 * math.pi / 2) == pytest.approx(-math.pi / 2)
     assert Pose2D.from_dict(c.to_dict()) == c
+
+
+def test_leg_placements(cfg, pl):
+    """Wall boards with `leg`: xyz/rpy in the leg frame, composed with [[wall.legs]] (T_wall_leg @ pose)."""
+    T_legs = config.leg_frames(cfg)
+    for t in cfg["targets"]:
+        if "leg" in t:
+            assert np.allclose(_pl(pl, t["name"]).T_parent_board,
+                               T_legs[t["leg"]] @ g.pose_xyz_rpy(t["xyz"], t["rpy_deg"]))
+    bad = dict(cfg)
+    bad["targets"] = [dict(cfg["targets"][0], leg="Z")]
+    with pytest.raises(ValueError, match="unknown leg"):
+        placements(bad)
+    bad["targets"] = [dict(cfg["targets"][-1], leg="A")]                     # a station board with a leg
+    with pytest.raises(ValueError, match="leg 'A' given for parent 'station'"):
+        placements(bad)

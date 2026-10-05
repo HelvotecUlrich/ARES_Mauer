@@ -39,20 +39,74 @@ height = 120.0              # course pitch, assuming the pins seat fully (CAD: p
 pin_length = 23.5
 head_joint = 0.0            # dry-stacked, interlocking
 bed_joint = 0.0
-mass_kg = 0.0               # UNKNOWN: volume 2270 cm3 (CAD); concrete ~2.3 g/cm3 would give ~5.2 kg > UR5 payload 5 kg
+rib_mm = 1.69               # CONFIRMED (CAD): horizontal ribs on both long faces, full length, 1.6858 mm high (mesh bbox
+                            # x -1.6858..121.6858, checked 2026-10-05) -> width over the ribs 123.37 mm; end faces flat
+mass_kg = 0.0               # UNKNOWN: volume 2880 cm3 (CAD mesh, consistently oriented; the raw STL has 516 of 1980
+                            # faces flipped and gave 2270 - wrong). Concrete ~2.3 g/cm3 would give ~6.6 kg > UR5 payload
+                            # 5 kg -> check the STEP volume and weigh a stone
+
+[half_brick]
+# Half stone (Samuel 2026-10-05: "half stones will go on the end and maybe also the corners"): closes the odd courses
+# at both leg ends, so every leg is a rectangle (robodk/wallplan.py layout_leg). The CAD of the CURRENT half stone is not
+# available: Gino's archive half stone (reference/2026-10-02_Gino/CAD/Halber Stein/Halber_Stein-Body.step) is the OLD
+# design (147 x 120 x 183 mm incl. 15 mm pins, measured 2026-10-05) and does not match the current full stone
+# (123 x 200 x 143.5 mm incl. ribs and 23.5 mm pins). Everything here is derived from the full stone until the real
+# half stone is measured. Pin pattern of the full stone (cad/stone_full_2026-10-01.stl, checked 2026-10-05): 4 pins,
+# 100.5 mm along (y -49.75 / -150.25) x ~53 mm across.
+length = 100.0              # PLACEHOLDER: half of [brick] length = bond offset (a rectangle needs exactly this)
+width = 120.0               # PLACEHOLDER: = [brick] width
+height = 120.0              # PLACEHOLDER: = [brick] height (course pitch)
+pin_across = 53.0           # PLACEHOLDER: ONE pin pair centred along the length, 53 mm apart across (x 33.5 / 86.5 of
+                            # the width, same cones as the full stone), ONE socket pair on top at the same place. On the
+                            # end of a full stone its pins meet the full stone's end socket pair 0.25 mm off (50 vs
+                            # 100 - 50.25 = 49.75 mm from the end), inside the ~10 mm capture range
+pin_length = 23.5           # PLACEHOLDER: = [brick] pin_length
+mass_kg = 0.0               # UNKNOWN: like the full stone (CAD volume of the current half stone unknown)
 
 [wall]
 side = "front"              # Samuel 2026-10-02: wall on the short (front) edge of ARES, ARES moves sideways (+y)
-courses = 3                 # PLACEHOLDER: number of courses
+courses = 4                 # CONFIRMED: Samuel 2026-10-05 (4 stones high); was 3 (PLACEHOLDER)
 bond_offset = 0.5           # running bond, half a stone (100 mm) = pin spacing of the stone
 base_z = 20.0               # PLACEHOLDER: first course stands on a 20 mm base plate with sockets (the existing plates
                             # are for the older 144 mm stone)
 dist_nominal = 740.0        # from reach study 2026-10-02 (front): 8 stones/course/stop, 120 mm gap front edge – wall face
 u_from = -900.0             # nominal wall drawn along the wall, wall frame [mm] – station view only
 u_to = 1800.0
+shape = "L"                 # CONFIRMED: Samuel 2026-10-05 ("we also want to make a small L with the wall"); the legs
+                            # below; without [[wall.legs]] the wall is straight (tools/make_job.py --length N)
+half_stones = true          # CONFIRMED: Samuel 2026-10-05 (half stones on the ends) -> every leg is a rectangle
+corner_gap_mm = 1.0         # ASSUMPTION: L corner, gap between leg B's flat end face and the rib crests of leg A's
+                            # inside face (stone tolerance; corner detail to be confirmed with Gino / Samuel). Leg B's
+                            # base blocks are set this far + [brick] rib_mm off A's blocks
+reach_margin_mm = 20.0      # ASSUMPTION: L plan - a stone counts as reachable from a stop only if every reach-table
+                            # point within +-20 mm is ok (= [sequencer] stop_tol_mm: ARES may stand that far off the
+                            # nominal stop after the closed loop). The straight-wall plan (simulate.py) keeps 0
+
+# Legs of the L (robodk/wallplan.py legs / butt_corner, tools/plan_layout.py). Wall frame = leg A frame. Leg B is
+# perpendicular at A's far end on the side away from ARES: A runs through the corner (A's course-0 end flush with the
+# BODY of B's outer face - B's ribs stand 1.69 mm proud of it), B starts at A's inside face - a vertical BUTT joint in
+# every course (the 53 x 100.5 mm pin pattern is not square: a stone turned by 90 deg can never engage the sockets
+# below, so the legs cannot interlock). A's inside face carries the ribs, so B's flat end face stands rib_mm +
+# corner_gap_mm off A's body: B frame = transl(length * n0_A - width / 2, -(width / 2 + rib_mm + corner_gap_mm), 0)
+# @ rotz(-90 deg) (review 2026-10-05: at -width / 2 every first B stone overlapped A's ribs by 1.69 mm).
+# ARES works from the OUTSIDE of the L on both legs.
+# Status: ASSUMPTION (corner design of the lead 2026-10-05, not yet confirmed by Samuel).
+# Lengths: candidates n_A 9..12 x n_B 5..8 evaluated 2026-10-05 (results/l_wall_plan.md trade-off table).
+[[wall.legs]]
+name = "A"
+n0 = 12                     # ASSUMPTION: chosen from the trade-off table (3 stops, 18 stones in course 0)
+xyz_in_wall = [0.0, 0.0, 0.0]          # ASSUMPTION: leg A frame = wall frame (definition)
+rpy_in_wall_deg = [0.0, 0.0, 0.0]
+[[wall.legs]]
+name = "B"
+n0 = 6                      # ASSUMPTION: chosen from the trade-off table (one stop for the whole leg)
+xyz_in_wall = [2340.0, -62.69, 0.0]    # ASSUMPTION: butt corner at A's far end (200 * 12 - 60, -(60 + 1.69 + 1.0))
+rpy_in_wall_deg = [0.0, 0.0, -90.0]
 
 [deck]
-holder_z = 20.0             # PLACEHOLDER: stones on the deck stand in a 20 mm holder with sockets
+holder_z = 20.0             # PLACEHOLDER: stones on the deck stand in a 20 mm holder with sockets. ASSUMPTION: every
+                            # holder also takes a half stone centred on the slot (needs a socket pair at the slot centre;
+                            # in the full-stone sockets it would sit 50.25 mm off-centre)
 layers = 2                  # PLACEHOLDER: stacked layers in the magazine (reach_study.py deck grid)
 magazine_rows_dx = [-653.6, -433.6]  # ASSUMPTION: magazine rows, x relative to the UR base [mm] (robodk/simulate.py:36)
 magazine_y = [-205.0, 0.0, 205.0]    # ASSUMPTION: stone centres along ARES y [mm] (robodk/simulate.py:37)
@@ -162,61 +216,76 @@ marker_mm = 12.0            # PLACEHOLDER: nominal
 dictionary = "DICT_APRILTAG_36h11"
 
 # Reference board placements: board origin and orientation in the parent frame. parent = "wall" (wall frame,
-# robodk/rdk_common.py), "station" ([pickup_station] frame) or "deck" (ARES frame).
-# Wall boards (Samuel 2026-10-05): printed board glued on a 4 mm MDF plate lying face up on the floor in the gap
-# between ARES front and wall; the plate's wall-side edge rests against the side faces of the female-pin base blocks of
-# course 0 and two V-notches line up with the joints of one block ([plates], tools/make_plates.py) -> the board centre
-# sits on a block centre: u = 100 + k * 800 mm (look study 2026-10-05: 800 mm pitch gives >= 2 robust boards per stop),
-# y = block face 60 + 55 = 115 mm. Origin = top-left board corner -> (u - 40, 115 + 32), z = MDF 4 + paper 0.1 mm.
-# The positions follow from the PLACEHOLDER block size in [plates]. W6 (u 4900) and W7 (u 5700) lie beyond the wall
-# end (u 4800): put one spare block under each (u 4800-5000, 5600-5800) - the last stop (u 5120) needs both.
+# robodk/rdk_common.py), "station" ([pickup_station] frame) or "deck" (ARES frame). A wall board with `leg = "A"/"B"`
+# gives xyz / rpy_deg in that LEG's frame ([[wall.legs]]; mauer/reference.py placements composes T_wall_leg @ pose).
+# Wall boards (Samuel 2026-10-05): printed board glued on a 4 mm MDF plate lying face up on the floor on the ARES side
+# of a leg; the plate's notched edge rests against the side faces of that leg's female-pin base blocks of course 0 and
+# two V-notches line up with the joints of one block ([plates], tools/make_plates.py) -> the board centre sits on a block
+# centre: u = 100 + 200 k (k = block index from the leg start, k < 0 / k >= n0 = spare block beyond a free leg end),
+# v = block face 60 + 55 = 115 mm. Origin = top-left board corner -> (u - 40, 115 + 32, MDF 4 + paper 0.1) in the leg
+# frame. The positions follow from the PLACEHOLDER block size in [plates].
+# L layout 2026-10-05 (tools/plan_layout.py --evaluate, results/l_wall_plan.md): the 8 existing boards (Samuel: no new
+# markers; the engraved "u = ..." on the plates is now wrong, the names/ids are what count), no spare block needed,
+# plates clear of each other, the other leg, ARES at its stops and the routes. A stop only looks at boards of its OWN
+# leg, with looks clear of the wall built by the end of the stop (tools/make_job.py, mauer.armcheck; review
+# 2026-10-05): stop 0 sees W0-W3, stop 1 W2-W4, stop 2 W5-W7 (at least 3 everywhere, +-50 mm ARES margin and the
+# arrival standoff); the job uses W0 + W3, W2 + W4, W5 + W7 (worst baseline 1000 mm, leg B). Leg B's boards are in the
+# B frame, so they follow its corner offset (rib + corner gap).
 [[targets]]
 name = "W0"
 parent = "wall"
+leg = "A"                   # block k = 0 of leg A (u 100)
 first_id = 30
 xyz = [60.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W1"
 parent = "wall"
+leg = "A"                   # block k = 2 (u 500)
 first_id = 40
-xyz = [860.0, 147.0, 4.1]
+xyz = [460.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W2"
 parent = "wall"
+leg = "A"                   # block k = 4 (u 900)
 first_id = 50
-xyz = [1660.0, 147.0, 4.1]
+xyz = [860.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W3"
 parent = "wall"
+leg = "A"                   # block k = 7 (u 1500)
 first_id = 60
-xyz = [2460.0, 147.0, 4.1]
+xyz = [1460.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W4"
 parent = "wall"
+leg = "A"                   # block k = 10 (u 2100)
 first_id = 70
-xyz = [3260.0, 147.0, 4.1]
+xyz = [2060.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W5"
 parent = "wall"
+leg = "B"                   # block k = 0 of leg B (u 100, in the outer corner, flush with A's end face)
 first_id = 80
-xyz = [4060.0, 147.0, 4.1]
+xyz = [60.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W6"
 parent = "wall"
+leg = "B"                   # block k = 2 (u 500)
 first_id = 90
-xyz = [4860.0, 147.0, 4.1]
+xyz = [460.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W7"
 parent = "wall"
+leg = "B"                   # block k = 5 (u 1100)
 first_id = 100
-xyz = [5660.0, 147.0, 4.1]
+xyz = [1060.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "S0"
@@ -264,6 +333,27 @@ slot_pitch_x = 260.0        # PLACEHOLDER: along x (stone length 200 + jaw clear
 slot_pitch_y = 200.0        # PLACEHOLDER: along y (stone width 120 + jaw clearance)
 slot_origin = [150.0, 250.0]  # PLACEHOLDER: centre of slot (0, 0) in the station frame [mm]
 holder_z = 0.0              # PLACEHOLDER: stones stand directly on the table top
+half_slot_rows = 1          # PLACEHOLDER: half-stone holders on the table, a row in front of the full-stone slots
+half_slot_cols = 2          # between the station boards S0 (x 100-180) and S1 (x 700-780), within kinematic reach of
+half_slot_pitch_x = 260.0   # the nominal dock (the full-stone slots beyond x 670 / y 250 are not)
+half_slot_pitch_y = 200.0   # PLACEHOLDER
+half_slot_origin = [280.0, 70.0]  # PLACEHOLDER: centre of half slot (0, 0) in the station frame [mm]
+
+[routes]
+# ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in
+# the wall frame, one translation OR one rotation per PLC command. Checked against the full legs, floor plates, spare
+# blocks and the station table with the chassis footprint [ares] length x width; a rotation sweeps the circle of the
+# half diagonal (635 mm). Floor plates count as obstacles although they are only 4 mm high (wheels must not run over
+# them).
+clearance_mm = 50.0         # ASSUMPTION: minimum clearance of routes and rotation circles to every obstacle
+backoff_mm = 100.0          # ASSUMPTION: back-off step from a stop (ARES front 10 mm from the plates at a stop). Every
+                            # move between stops is a route (same leg too: back off, along, approach) - driving along
+                            # the stop line 10 mm from the plates left no room for slip (review 2026-10-05)
+after_rotation_weight = 5.0 # ASSUMPTION: cost weight of translations after the rotation (a rotation error of 0.14 deg,
+                            # 1.2 deg after a reversal (E003), turns into a lateral error along them; the route is
+                            # only corrected at its end) -> rotate close to the goal
+grid_mm = 100.0             # ASSUMPTION: search grid for rotation points
+search_mm = 2500.0          # ASSUMPTION: search area around start and goal
 
 [ur]
 # UR5 CB3 link from the laptop (research 2026-10-05, tested against URSim CB3 3.15.8): RTDE (official UR client,
@@ -334,6 +424,16 @@ max_jump_mm = 50.0          # measured vs predicted ARES pose at the wall beyond
 max_jump_deg = 3.0
 station_max_jump_mm = 100.0 # at the station and right after a station trip (station location is a PLACEHOLDER)
 station_max_jump_deg = 5.0
+route_max_jump_mm = 100.0   # after an ARES route (leg change: several dead-reckoned moves and a 90 deg rotation)
+route_max_jump_deg = 5.0
 max_fit_rms_mm = 1.0        # corner residual RMS of the frame fit beyond this -> pause
 dock_tol_mm = 30.0          # dock position error that triggers a correction move
 require_all_boards = true   # every expected board of a look must be measured
+arrival_standoff_mm = 40.0  # ASSUMPTION: a route (stop move, leg change, station return) ends this far BEFORE its stop
+                            # (ARES front 50 mm = [routes] clearance_mm from the plates instead of 10 mm), the wall is
+                            # measured there and the last 40 mm + the route error are closed loop from the measurement.
+                            # The dead-reckoned route error (slip up to ~30 mm, mauer/simworld.py) no longer reaches the
+                            # plates; only the short measured approach comes within 10 mm (tools/make_job.py checks the
+                            # looks for ARES at this standoff too)
+search_step_mm = 50.0       # board search when none of the expected boards is usable (after long routes ARES can be
+search_rings = 2            # > 45 mm off the prediction): looks for ARES displaced by +-50 / +-100 mm, 8 directions

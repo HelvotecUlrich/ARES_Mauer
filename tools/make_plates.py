@@ -11,7 +11,9 @@ wall-side edge (top edge in the DXF) rests against the side faces of the female-
 V-notches in that edge line up with the joints of one block ([plates] block_length, PLACEHOLDER) -> the board position
 in the wall frame is fixed by the blocks, no survey needed. DXF view = from above with the wall at the top
 (X = -(u - u_centre), Y = -(y - y_centre) in wall coordinates), so the print lies rotated by 180 deg relative to
-reading direction: align its crosshair and arrows with the engraved ones.
+reading direction: align its crosshair and arrows with the engraved ones. A board on a leg of the L ([[targets]]
+`leg = "A"/"B"`, xyz/rpy in that leg's frame) gets the same plate in its LEG's coordinates (u along the leg, wall at
+the top), labelled with the leg; its rotation on the floor comes from the leg frame only ([[wall.legs]]).
 Station and calib plates: plain plates (station layout unknown), print glued on the engraved marks.
 """
 from __future__ import annotations
@@ -106,7 +108,9 @@ def board_marks(plate: Plate, spec, to_plate, q: float) -> None:
         plate.texts.append((tuple(tip + 5.0 * d - np.array([1.0, 1.5])), 3.0, lab))
 
 
-def wall_plate(cfg: dict, spec, T_wall_board: np.ndarray) -> Plate:
+def wall_plate(cfg: dict, spec, T_wall_board: np.ndarray, leg: str | None = None) -> Plate:
+    """Plate of a wall board; T_wall_board = board pose in the wall frame, or in the LEG frame for a leg board (then
+    `leg` names it for the label)."""
     pc = cfg["plates"]
     face_y = pc["block_width"] / 2.0
     L, D = pc["plate_length"], pc["plate_depth"]
@@ -147,7 +151,7 @@ def wall_plate(cfg: dict, spec, T_wall_board: np.ndarray) -> Plate:
     pl.texts.append(((side, D / 2 - 18.0), 3.5, "WALL ^"))
     pl.texts.append(((side, -D / 2 + 26.0), 3.5, f"{spec.name}"))
     pl.texts.append(((side, -D / 2 + 20.0), 3.0, f"ids {spec.first_id}-{spec.last_id}"))
-    pl.texts.append(((side, -D / 2 + 14.0), 3.0, f"u = {u_c:.0f} mm"))
+    pl.texts.append(((side, -D / 2 + 14.0), 3.0, f"{leg + ': ' if leg else ''}u = {u_c:.0f} mm"))
     pl.texts.append(((side, -D / 2 + 5.0), 3.5, "ARES v"))
     return pl
 
@@ -242,7 +246,8 @@ def main(argv: list | None = None) -> int:
     plates = []
     for t in cfg["targets"]:
         spec = specs[t["name"]]
-        plates.append(wall_plate(cfg, spec, config.pose(t)) if t["parent"] == "wall" else plain_plate(cfg, spec))
+        plates.append(wall_plate(cfg, spec, config.pose(t), t.get("leg")) if t["parent"] == "wall"
+                      else plain_plate(cfg, spec))
     plates.append(plain_plate(cfg, specs["calib"]))
 
     for pl in plates:

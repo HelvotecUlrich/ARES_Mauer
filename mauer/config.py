@@ -29,6 +29,16 @@ def pose(table: dict) -> np.ndarray:
     return pose_xyz_rpy(table["xyz"], table.get("rpy_deg", (0.0, 0.0, 0.0)))
 
 
+def leg_frames(cfg: dict) -> dict[str, np.ndarray]:
+    """T_wall_leg of every [[wall.legs]] entry (xyz_in_wall [mm], rpy_in_wall_deg [deg]); {} for a straight wall.
+    Same numbers as robodk/wallplan.py legs() (planar, pure Python)."""
+    out = {}
+    for d in (cfg.get("wall", {}) or {}).get("legs", []) or []:
+        out[str(d["name"])] = pose_xyz_rpy(d.get("xyz_in_wall", (0.0, 0.0, 0.0)),
+                                           d.get("rpy_in_wall_deg", (0.0, 0.0, 0.0)))
+    return out
+
+
 def T_flange_cam_nominal(cfg: dict) -> np.ndarray:
     """Camera frame (OpenCV: z optical axis, x right, y down in the image) in the flange frame, from the mount
     PLACEHOLDER in [camera.mount]. The calibrated value comes from calib/handeye.json (mauer.vision.handeye)."""
