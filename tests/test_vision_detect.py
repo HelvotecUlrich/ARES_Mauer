@@ -149,15 +149,40 @@ def test_non_finite_ippe_falls_back(specs, intr, monkeypatch):
     det = detect.BoardDetection("calib", np.arange(sp.n_corners, dtype=np.int32), synth.project(obj, intr, T), obj)
     p = detect.estimate_pose(det, intr, 8, 1.0)                     # no fallback needed here
     assert p.ok and g.pose_delta(T, p.T_cam_board)[0] < 1e-6
-    real = detect.cv2.solvePnP
-    nan = (True, np.full((3, 1), np.nan), np.full((3, 1), np.nan))
-    monkeypatch.setattr(detect.cv2, "solvePnP",
+    real = detect.cv2.solvePnPGeneric
+    nan = (1, (np.full((3, 1), np.nan),), (np.full((3, 1), np.nan),), None)
+    monkeypatch.setattr(detect.cv2, "solvePnPGeneric",
                         lambda *a, flags, **k: nan if flags == detect.cv2.SOLVEPNP_IPPE else real(*a, flags=flags, **k))
     p = detect.estimate_pose(det, intr, 8, 1.0)
     assert p.ok and g.pose_delta(T, p.T_cam_board)[0] < 1e-6          # SQPNP result, refined
-    monkeypatch.setattr(detect.cv2, "solvePnP", lambda *a, **k: nan)
+    monkeypatch.setattr(detect.cv2, "solvePnPGeneric", lambda *a, **k: nan)
     p = detect.estimate_pose(det, intr, 8, 1.0)
     assert not p.ok and "non-finite" in p.reason
+
+
+def test_ippe_rotation_vector_is_normalised_before_the_refinement(specs, intr, monkeypatch):
+    """RoboDK 2026-10-05: IPPE gave |rvec| = 6.5e7 rad (an equivalent of the right rotation) for a board at ~180 deg
+    roll and the LM refinement started there settled 0.78 mm off. The start vector is normalised (|rvec| <= pi) and
+    both IPPE solutions are refined - an inflated start gives the same pose as the normal one."""
+    sp = specs["W5"]
+    R = (g.rotz(np.radians(179.0)) @ g.rotx(np.radians(4.0)))[:3, :3]
+    T = g.make_T(R, np.array([3.0, 2.0, 320.0]) - R @ np.array([*sp.centre_mm, 0.0]))
+    img = synth.render_board(sp, intr, T, supersample=2)              # rendered corners: LM depends on its start
+    det = detect.detect_boards(img, [sp], 10)["W5"]
+    good = detect.estimate_pose(det, intr, 8, 1.0)
+    assert good.ok and g.pose_delta(T, good.T_cam_board)[0] < 0.2
+    rv = detect.cv2.Rodrigues(good.T_cam_board[:3, :3])[0]
+    th = float(np.linalg.norm(rv))
+    big = rv / th * (th + 2.0 * np.pi * 1e7)                            # the same rotation, |rvec| ~ 6.3e7 rad
+    assert np.allclose(detect.normalised_rvec(big), rv, atol=1e-6)
+    real = detect.cv2.solvePnPGeneric
+    monkeypatch.setattr(detect.cv2, "solvePnPGeneric",
+                        lambda *a, **k: (lambda r: (r[0], tuple(rv_ / np.linalg.norm(rv_) * (np.linalg.norm(rv_) + 2.0
+                                                                 * np.pi * 1e7) for rv_ in r[1]), r[2], r[3]))(
+                            real(*a, **k)))
+    p = detect.estimate_pose(det, intr, 8, 1.0)
+    d_mm, d_deg = g.pose_delta(good.T_cam_board, p.T_cam_board)
+    assert p.ok and d_mm < 1e-6 and d_deg < 1e-6                     # same start rotation -> same result
 
 
 def test_nothing_in_view(specs, intr):
@@ -165,3 +190,24 @@ def test_nothing_in_view(specs, intr):
     assert detect.detect_boards(blank, specs) == {}
     wrong = synth.render_board(specs["W0"], intr, synth.view(specs["W0"], 320.0), seed=1, **NOMINAL)
     assert detect.detect_boards(wrong, [specs["W1"]]) == {}               # W1 ids 40..49 are not on W0
+
+
+def test_coarse_pose_of_a_partly_visible_board(specs, intr, cfg):
+    """A board shifted so that most of it is outside the image: too few ChArUco corners for a pose (measure), but
+    the markers in view give a rough pose (detect.coarse_poses) whose POSITION re-aims the camera (a few mm; its
+    orientation from one or two markers can be off by degrees and is not used)."""
+    sp = specs["W0"]
+    cx, cy = sp.centre_mm
+    w_img = intr.width * cfg["camera"]["pixel_um"] / 1000.0 * 320.0 / cfg["camera"]["focal"]   # field width at 320 mm
+    for shift in (w_img / 2.0 - 20.0, w_img / 2.0 + 10.0):    # 6 ChArUco corners in view / only 2 markers
+        T = g.transl(-cx + shift, -cy, 320.0)                  # board centre near / beyond the right image edge
+        img = synth.render_board(sp, intr, T, supersample=2)
+        pose = detect.measure(img, [sp], intr, cfg["vision"])["W0"]
+        rough = detect.coarse_poses(img, [sp], intr, cfg["vision"])
+        assert not pose.ok
+        assert "W0" in rough
+        c = [[cx, cy, 0.0]]                                   # the board centre: only its position is used
+        d_mm = float(np.linalg.norm(g.apply(rough["W0"].T_cam_board, c)[0] - g.apply(T, c)[0]))
+        assert d_mm < 5.0
+    full = synth.render_board(sp, intr, g.transl(-cx, -cy, 320.0), supersample=2)
+    assert detect.coarse_poses(full, [sp], intr, cfg["vision"]) == {}         # fully visible: not a coarse case

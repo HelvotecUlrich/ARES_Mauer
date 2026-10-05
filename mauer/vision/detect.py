@@ -165,10 +165,29 @@ def reprojection_errors(obj_pts: np.ndarray, img_pts: np.ndarray, T_cam_board: n
     return np.linalg.norm(proj - np.asarray(img_pts, float).reshape(-1, 2), axis=1)
 
 
+def normalised_rvec(rvec: np.ndarray) -> np.ndarray:
+    """The same rotation as a rotation vector of magnitude <= pi (Rodrigues round trip). IPPE can return a vector
+    whose magnitude is a huge multiple of 2 pi for a board seen at ~180 deg roll (RoboDK render 2026-10-05: |rvec|
+    6.5e7 rad); solvePnPRefineLM started there settled 0.78 mm / 1.2 deg off at 0.31 px RMS."""
+    return cv2.Rodrigues(cv2.Rodrigues(np.asarray(rvec, float).reshape(3, 1))[0])[0]
+
+
+def _refine(obj: np.ndarray, imgp: np.ndarray, intr: Intrinsics, rvec: np.ndarray,
+            tvec: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+    """solvePnPRefineLM from the normalised start rotation; None if the result is not finite."""
+    rv, tv = cv2.solvePnPRefineLM(obj, imgp, intr.K, intr.D, normalised_rvec(rvec),
+                                  np.asarray(tvec, float).reshape(3, 1),
+                                  criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 100, 1e-12))
+    if not (np.isfinite(rv).all() and np.isfinite(tv).all()):
+        return None
+    return normalised_rvec(rv), tv
+
+
 def estimate_pose(det: BoardDetection, intr: Intrinsics, min_corners: int = 8,
                   max_reproj_px: float = 1.0) -> BoardPose:
-    """T_cam_board from the detected corners: SOLVEPNP_IPPE (planar) + solvePnPRefineLM, with plausibility checks.
-    ok=False with a reason for: too few corners, collinear corners, non-finite result, board behind the camera,
+    """T_cam_board from the detected corners: both SOLVEPNP_IPPE solutions (solvePnPGeneric; SQPNP as fallback), each
+    refined with solvePnPRefineLM from its NORMALISED rotation vector, the one with the lowest RMS kept; plausibility
+    checks. ok=False with a reason for: too few corners, collinear corners, non-finite result, board behind the camera,
     RMS reprojection error > max_reproj_px."""
     n = det.n
     need = max(int(min_corners), 4)                     # IPPE needs >= 4 points
@@ -178,27 +197,34 @@ def estimate_pose(det: BoardDetection, intr: Intrinsics, min_corners: int = 8,
     imgp = np.asarray(det.img_pts, float).reshape(-1, 1, 2)
     if _collinear(obj.reshape(-1, 3)):
         return BoardPose(det.board, None, n, float("nan"), False, "degenerate: corners collinear")
-    rvec = tvec = None
+    starts: list[tuple[np.ndarray, np.ndarray]] = []
     for flag in (cv2.SOLVEPNP_IPPE, cv2.SOLVEPNP_SQPNP):
         try:
-            ok, rv, tv = cv2.solvePnP(obj, imgp, intr.K, intr.D, flags=flag)
+            k, rvs, tvs, _ = cv2.solvePnPGeneric(obj, imgp, intr.K, intr.D, flags=flag)
         except cv2.error:
             continue
-        if ok and np.isfinite(rv).all() and np.isfinite(tv).all():
-            rvec, tvec = rv, tv
+        starts = [(np.asarray(rv, float), np.asarray(tv, float)) for rv, tv in zip(rvs[:k], tvs[:k])
+                  if np.isfinite(rv).all() and np.isfinite(tv).all()]
+        if starts:
             break
-    if rvec is None:
+    if not starts:
         return BoardPose(det.board, None, n, float("nan"), False, "non-finite pose (solvePnP failed)")
-    rvec, tvec = cv2.solvePnPRefineLM(obj, imgp, intr.K, intr.D, rvec, tvec,
-                                      criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 100, 1e-12))
-    if not (np.isfinite(rvec).all() and np.isfinite(tvec).all()):
-        return BoardPose(det.board, None, n, float("nan"), False, "non-finite pose after refinement")
-    T = g.make_T(cv2.Rodrigues(rvec)[0], tvec.ravel())
-    z = g.apply(T, obj.reshape(-1, 3))[:, 2]
-    if (z <= 0).any():
-        return BoardPose(det.board, T, n, float("nan"), False, "implausible: board behind the camera")
-    err = reprojection_errors(obj, imgp, T, intr)
-    rms = float(np.sqrt(np.mean(err ** 2)))
+    best = None
+    for rv0, tv0 in starts:
+        r = _refine(obj, imgp, intr, rv0, tv0)
+        if r is None:
+            continue
+        T = g.make_T(cv2.Rodrigues(r[0])[0], r[1].ravel())
+        z = g.apply(T, obj.reshape(-1, 3))[:, 2]
+        if (z <= 0).any():
+            continue
+        rms = float(np.sqrt(np.mean(reprojection_errors(obj, imgp, T, intr) ** 2)))
+        if best is None or rms < best[1]:
+            best = (T, rms)
+    if best is None:
+        return BoardPose(det.board, None, n, float("nan"), False,
+                         "non-finite pose after refinement or board behind the camera")
+    T, rms = best
     if not rms <= max_reproj_px:
         return BoardPose(det.board, T, n, rms, False, f"reprojection RMS {rms:.3f} px > {max_reproj_px} px")
     return BoardPose(det.board, T, n, rms, True, "")
@@ -218,6 +244,45 @@ def measure(img: np.ndarray, specs: Mapping[str, BoardSpec] | Iterable[BoardSpec
         else:
             out[spec.name] = estimate_pose(d, intr, int(vcfg.get("min_corners", 8)),
                                            float(vcfg.get("max_reproj_px", 1.0)))
+    return out
+
+
+def coarse_poses(img: np.ndarray, specs: Mapping[str, BoardSpec] | Iterable[BoardSpec], intr: Intrinsics,
+                 vcfg: Mapping, min_corners: int = 4, max_reproj_px: float = 3.0) -> dict[str, BoardPose]:
+    """Rough poses of boards that are only PARTLY in the image (fewer than [vision] min_corners ChArUco corners): from
+    the ChArUco corners when there are >= min_corners of them, else from the corners of the board's ArUco markers in
+    view (one whole marker = 4 points). Only to re-aim the camera, never for a frame fit; boards with a good pose or
+    nothing usable are left out."""
+    from .targets import make_board
+    border = float(vcfg.get("border_px", 10))
+    need = int(vcfg.get("min_corners", 8))
+    specs_l = _spec_list(specs)
+    dets = detect_boards(img, specs_l, border)
+    markers = {d: detect_markers(img, d, border) for d in {sp.dictionary for sp in specs_l}}
+    out = {}
+    for spec in specs_l:
+        d = dets.get(spec.name)
+        if d is not None and d.n >= need:
+            continue
+        if d is not None and d.n >= min_corners:
+            bp = estimate_pose(d, intr, min_corners, max_reproj_px)
+            if bp.ok:
+                out[spec.name] = bp
+                continue
+        corners, ids = markers[spec.dictionary]
+        board = make_board(spec)
+        index = {int(m): i for i, m in enumerate(board.getIds().ravel())}
+        obj, imgp = [], []
+        for c, mid in zip(corners, ids):
+            if int(mid) in index:
+                obj.append(np.asarray(board.getObjPoints()[index[int(mid)]], float).reshape(4, 3))
+                imgp.append(np.asarray(c, float).reshape(4, 2))
+        if obj:
+            md = BoardDetection(spec.name, np.arange(4 * len(obj), dtype=np.int32), np.vstack(imgp), np.vstack(obj),
+                                np.asarray(ids, np.int32))
+            bp = estimate_pose(md, intr, 4, max_reproj_px)
+            if bp.ok:
+                out[spec.name] = bp
     return out
 
 
