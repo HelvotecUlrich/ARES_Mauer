@@ -37,6 +37,7 @@ from robodk.robomath import Mat, invH
 GREY = [0.75, 0.75, 0.75, 1.0]
 STONE = [0.72, 0.30, 0.20, 1.0]
 CAMERA = [0.15, 0.15, 0.18, 1.0]
+ADAPTER = [0.85, 0.55, 0.10, 1.0]
 TABLE = [0.55, 0.45, 0.30, 1.0]
 BOARD_PX_PER_MM = 16.0             # texture resolution: 0.0625 mm/px, finer than the camera (0.073 mm/px at 320 mm)
 TABLE_TOP_MM = 30.0                # ASSUMPTION: thickness of the modelled pick-up table top (no legs modelled)
@@ -187,6 +188,26 @@ def add_camera(RDK, cfg: dict, robot, tool, T_fc: Mat | None = None):
     return cam_tool, body
 
 
+def add_camera_adapter(RDK, cfg: dict, tool):
+    """Camera adapter plate ([camera.adapter] STEP, in the UR flange frame) attached to the gripper tool; objects under
+    a tool are posed relative to its TCP, so the plate gets invH(TCP). The STEP mesh is cached as STL next to it."""
+    step = REPO / cfg["camera"]["adapter"]["step_file"]
+    mesh = step.with_suffix(".stl")
+    if mesh.exists() and mesh.stat().st_mtime > step.stat().st_mtime:
+        adapter = RDK.AddFile(str(mesh))
+    else:
+        adapter = RDK.AddFile(str(step))
+        if adapter.Valid():
+            adapter.Save(str(mesh))
+    if not adapter.Valid():
+        raise RuntimeError(f"camera adapter import failed: {step}")
+    adapter.setParent(tool)
+    adapter.setName("Camera_adapter_018660")
+    adapter.setPose(invH(tcp_pose(cfg)))
+    adapter.setColor(ADAPTER)
+    return adapter
+
+
 def set_camera_mount(cfg: dict, cam_tool, body, T_fc: Mat) -> None:
     """Move the camera (tool TCP and body) to another flange mount T_fc."""
     cam_tool.setPoseTool(T_fc)
@@ -243,6 +264,8 @@ def build(RDK, cfg: dict, camera: bool = True, boards: bool = True, pickup: bool
     if not tool.Valid():
         raise RuntimeError("gripper tool import failed")
     tool.setName("Gripper_EHPS20")
+    # the camera adapter plate sits between flange and gripper: Gino's gripper geometry moves out by adapter_z
+    tool.setGeometryPose(transl(0, 0, t.get("adapter_z", 0.0)) * tool.GeometryPose())
     tool.setPoseTool(tcp_pose(cfg))   # TCP x along the stone length, y = jaw closing direction
     robot.setPoseTool(tool)
 
@@ -279,12 +302,16 @@ def build(RDK, cfg: dict, camera: bool = True, boards: bool = True, pickup: bool
         print(f"boards: {', '.join(it['boards'])}", flush=True)
     if camera:
         it["cam_tool"], it["cam_body"] = add_camera(RDK, cfg, robot, tool)
+        if "adapter" in cfg["camera"]:
+            it["cam_adapter"] = add_camera_adapter(RDK, cfg, tool)
 
     RDK.setCollisionActive(COLLISION_ON)
     RDK.setCollisionActivePair(COLLISION_OFF, robot, ares, 0, 0)   # UR5 base is bolted to the deck
     exclude_from_collisions(RDK, robot, tool, wall)
     if camera:
         set_tool_object_collisions(RDK, it["cam_body"], robot, tool, obstacles)
+        if "cam_adapter" in it:
+            set_tool_object_collisions(RDK, it["cam_adapter"], robot, tool, obstacles)
 
     robot.setJoints([0, -90, 0, -90, 0, 0])
     RDK.Render(True)

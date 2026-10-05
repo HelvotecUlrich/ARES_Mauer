@@ -186,7 +186,7 @@ def test_config_status_parser():
     st = mjob.config_status()
     assert st["[ares] steer_axis_x"]["status"] == "CONFIRMED"
     assert st["[ur] host"]["status"] == "PLACEHOLDER"
-    assert st["[camera.mount] xyz"]["status"] == "PLACEHOLDER"              # from the section comment
+    assert st["[camera.mount] xyz"]["status"] == "ASSUMPTION"               # inline tag (design value 2026-10-05)
     assert st["[[targets]] W3.xyz"]["status"] == "PLACEHOLDER"              # from the [[targets]] block comment
     assert st["[[targets]] S0.xyz"]["status"] == "PLACEHOLDER"              # own inline tag
     assert st["[brick] mass_kg"]["status"] == "UNKNOWN"

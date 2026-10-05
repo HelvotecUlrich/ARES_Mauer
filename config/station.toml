@@ -25,8 +25,10 @@ mount_rz = 0.0              # PLACEHOLDER: rotation of the UR base about z [deg]
 # Gripper "Backengreifer" (Festo EHPS-20-A + ribbed jaws) taken from Gino's RoboDK station UR5_sim_v3.rdk (2026-10-02).
 # Tool frame: z along the flange axis, y = closing direction of the jaws, TCP = top centre of the held stone.
 tool_file = "cad/gripper_backengreifer_gino.tool"
-tcp_z = 135.0               # Gino UR5_sim_v3.rdk (older UR5_sim.rdk / test.urp: 155). ASSUMPTION: TCP = stone top
-                            # centre; without Bota SensONE (+35 mm if it is mounted between flange and gripper)
+tcp_z = 147.0               # = 135 (Gino UR5_sim_v3.rdk, flange -> stone top centre; older test.urp: 155) + adapter_z.
+                            # ASSUMPTION: TCP = stone top centre; without Bota SensONE (+35 mm if it is mounted)
+adapter_z = 12.0            # CONFIRMED: camera adapter plate 018660_A_1 between flange and gripper, z 0..12 (STEP
+                            # 2026-10-05) -> gripper geometry and TCP move +12 mm along the flange z axis
 
 [brick]
 # Full stone "Kompletter_Stein" (CAD 2026-10-01, cad/stone_full_2026-10-01.step): CONFIRMED from CAD.
@@ -98,11 +100,19 @@ settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the i
 
 [camera.mount]
 # T_flange_cam: camera frame (OpenCV: z = optical axis, x = image right, y = image down, origin = projection centre) in
-# the UR5 flange frame. PLACEHOLDER until the bracket exists – used only for planning and simulation; the real value
-# is measured by the hand-eye calibration (calib/handeye.json). RoboDK occlusion survey 2026-10-05: put the camera
-# >= ~150 mm off the flange axis on the flange -x side (jaw closing direction), never on ±y (held stone fills the view).
-xyz = [-150.0, 0.0, 60.0]
-rpy_deg = [0.0, 0.0, 0.0]
+# the UR5 flange frame. Design value of the adapter 018660_A_1 (input/kamerahalter_handoff.md): optical axis at
+# x = -150, y = 0 along +z, lens front z = 60 (C-mount ring 5.0 mm ASSUMPTION), C-mount flange z = 12.39 -> projection
+# centre 17.526 - 12 = 5.5 mm behind it (thin lens, ASSUMPTION). Camera bottom face (4 x M3) screwed to the wall on +y
+# -> image down = flange +y (ASSUMPTION: sensor upright in the housing). The real value comes from the hand-eye
+# calibration (calib/handeye.json).
+xyz = [-150.0, 0.0, 6.86]   # ASSUMPTION (design)
+rpy_deg = [0.0, 0.0, 0.0]   # ASSUMPTION (design)
+
+[camera.adapter]
+step_file = "cad/camera_adapter_018660_A_1.stp"  # CONFIRMED: NX2512 export 2026-10-05 (Samuel), in the UR flange frame:
+                            # bbox x -168..31.5, y -31.3..31.3, z -24..12 (RoboDK import 2026-10-05); printed part,
+                            # no-sleeve test variant (handoff: retighten M6 after 1 h and 24 h, calibrate after 24-48 h)
+mass_kg = 0.16              # ASSUMPTION: handoff estimate for PETG at 100 % infill (125.8 cm³)
 
 [vision]
 # Free OpenCV pipeline (no HALCON): ChArUco boards, solvePnP (IPPE + LM refine), cv2.calibrateHandEye (PARK).

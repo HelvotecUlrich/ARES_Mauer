@@ -55,7 +55,7 @@ def test_set_tcp_and_payload_units():
     cfg = config.load()
     T_ft = config.T_flange_tcp(cfg)
     txt = s.set_tcp(T_ft)
-    assert txt.startswith("set_tcp(p[") and "0.135000000" in txt and "1.570796327" in txt
+    assert txt.startswith("set_tcp(p[") and f"{cfg['tool']['tcp_z'] / 1000:.9f}" in txt and "1.570796327" in txt
     assert np.allclose(poses_in(txt)[0], T_ft, atol=1e-6)
     assert s.set_payload(1.25, [10.0, 0.0, 60.0]) == "set_payload(1.25, [0.01, 0.0, 0.06])"
     with pytest.raises(ValueError):

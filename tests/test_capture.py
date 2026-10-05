@@ -42,6 +42,7 @@ def cfg():
     # pin it so that a config change does not silently change the test scenario.
     c["boards"]["calib"]["xyz"] = [-82.5, 60.0, 336.6]
     c["boards"]["calib"]["rpy_deg"] = [180.0, 0.0, 0.0]
+    c["camera"]["mount"] = {"xyz": [-150.0, 0.0, 60.0], "rpy_deg": [0.0, 0.0, 0.0]}   # mount of that scenario
     return c
 
 

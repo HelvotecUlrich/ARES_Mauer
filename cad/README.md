@@ -8,6 +8,7 @@
 | `gripper_jaw_2026-09-25.step` | Ribbed gripper jaw "Greifer-Body" (26.7 × 60 × 68 mm), from `reference/.../CAD/Greifer/` | `41654f103ef2ecf7d032e618233646988d9b5b3710ab6f9da82597a3f9fe8736` |
 | `sensone_bota.step` | Bota SensONE F/T sensor (manufacturer STEP 2025-02-03), from `reference/.../UR5/RoboDK/` | `77831946a8343160ca3fb8d8768f9629c617d4d2f610d9c080ad16107dd74042` |
 | `gripper_backengreifer_gino.tool` | RoboDK tool "Backengreifer" (Festo EHPS-20-A + ribbed jaws, geometry + TCP 135 mm) exported from `reference/2026-10-02_Gino/UR5/RoboDK/UR5_sim_v3.rdk` (2026-10-02); jaws close along the flange x axis | `cb7b727431ce9a4ae7f14a57697ea3753ba3992e5c73b0aff51902c628209f28` |
+| `camera_adapter_018660_A_1.stp` | Camera adapter plate 018660_A_1 (NX2512 export by Samuel, 2026-10-05, from `input/`), between UR flange and gripper adapter (ISO 9409-1-50-4-M6), camera arm to x = -150 mm; coordinates = UR tool-flange frame; design notes `input/kamerahalter_handoff.md` | `a09a158fb455f602822d86882943458ad1caf3a40390e6e68f68991049eeef43` |
 | `../robodk/library/UR5.robot` | RoboDK library, https://cdn.robodk.com/downloads-library/library-robots/UR5.robot (downloaded 2026-10-02) | `30e0b6347535a8f6242b96652b3c13e27478d48639af52f7380f039056eb7f46` |
 
 The STEP coordinate system equals `base_link` (floor, centre between steering axes, x forward, y left, z up).

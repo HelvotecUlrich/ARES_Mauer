@@ -318,7 +318,8 @@ def test_ur_robot_programs(cfg, job10):
     look, pick, place, park = (b for _, b in link.blocks)
     assert look.startswith("set_tcp(") and "get_inverse_kin(look" in look
     kg, cog = stone_payload(1.5, c["ur"]["payload_cog_mm"], 3.0, job10.T_flange_tcp, 120.0)
-    assert kg == 4.5 and cog == pytest.approx([0.0, 0.0, (1.5 * 60.0 + 3.0 * (135.0 + 60.0)) / 4.5])
+    tcp_z = c["tool"]["tcp_z"]
+    assert kg == 4.5 and cog == pytest.approx([0.0, 0.0, (1.5 * 60.0 + 3.0 * (tcp_z + 60.0)) / 4.5])
     assert "set_payload(1.5," in pick.splitlines()[1] and "set_payload(4.5," in pick      # stone after closing
     assert "set_payload(4.5," in place.splitlines()[1] and "set_payload(1.5," in place    # empty after opening
     assert f"set_standard_digital_out({c['ur']['do_grip_close']}, True)" in pick
