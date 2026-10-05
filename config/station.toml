@@ -51,7 +51,11 @@ u_to = 1800.0
 
 [deck]
 holder_z = 20.0             # PLACEHOLDER: stones on the deck stand in a 20 mm holder with sockets
-layers = 2                  # PLACEHOLDER: stacked layers in the magazine
+layers = 2                  # PLACEHOLDER: stacked layers in the magazine (reach_study.py deck grid)
+magazine_rows_dx = [-653.6, -433.6]  # ASSUMPTION: magazine rows, x relative to the UR base [mm] (robodk/simulate.py:36)
+magazine_y = [-205.0, 0.0, 205.0]    # ASSUMPTION: stone centres along ARES y [mm] (robodk/simulate.py:37)
+magazine_layers = 3         # ASSUMPTION: layers per magazine stack as simulated (robodk/simulate.py:36; differs
+                            # from layers = 2 above, which only drives the reach-study grid)
 
 [camera]
 # Eye-in-hand camera on the tool flange beside the gripper, looking along the tool z axis (Samuel 2026-10-02). It
@@ -119,6 +123,7 @@ n_poses = 25                # ASSUMPTION
 dist_mm = [290.0, 355.0]    # ASSUMPTION: inside the depth of field around the 320 mm focus distance
 tilt_deg = [15.0, 30.0]     # ASSUMPTION
 roll_deg = [-90.0, 90.0]    # ASSUMPTION
+min_clearance_mm = 50.0     # ASSUMPTION: plan warns when arm/camera points come closer to the deck plane (rough DH check)
 
 # ChArUco boards. Board frame = OpenCV 4.14 CharucoBoard frame: origin at the top-left outer corner of the printed
 # board, x to the right, y down, z into the board (checked 2026-10-05: corner 0 at (square, square, 0)).
@@ -132,8 +137,10 @@ square_mm = 15.0            # PLACEHOLDER: nominal, replace with the measured pr
 marker_mm = 11.0            # PLACEHOLDER: nominal
 dictionary = "DICT_5X5_100"
 first_id = 0
-xyz = [-82.5, 60.0, 336.6]  # PLACEHOLDER: board origin in the ARES frame during the hand-eye calibration (face up,
-rpy_deg = [180.0, 0.0, 0.0] # centred at ARES x = y = 0 on a 3 mm plate on the deck) – used to generate look poses
+xyz = [-232.5, 60.0, 336.6] # PLACEHOLDER: board origin in the ARES frame during the hand-eye calibration (face up,
+rpy_deg = [180.0, 0.0, 0.0] # centre at ARES x = -150, y = 0, on a 3 mm plate on the deck, 504 mm behind the UR axis:
+                            # 100 % of 250 planned look poses have a UR5 IK solution vs 94 % at x = 0 (calib_handeye
+                            # scan 2026-10-05). Lies on magazine row 1 -> calibrate with an empty magazine
 
 [boards.ref]
 # Reference boards at the wall and the pick-up station: 10 AprilTag markers each, own id range per board
@@ -224,6 +231,7 @@ slot_cols = 6
 slot_pitch_x = 260.0        # PLACEHOLDER: along x (stone length 200 + jaw clearance)
 slot_pitch_y = 200.0        # PLACEHOLDER: along y (stone width 120 + jaw clearance)
 slot_origin = [150.0, 250.0]  # PLACEHOLDER: centre of slot (0, 0) in the station frame [mm]
+holder_z = 0.0              # PLACEHOLDER: stones stand directly on the table top
 
 [ur]
 # UR5 CB3 link from the laptop (research 2026-10-05, tested against URSim CB3 3.15.8): RTDE (official UR client,
@@ -251,6 +259,9 @@ a_joint = 0.5               # ASSUMPTION: rad/s²
 v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
 a_lin = 0.30                # ASSUMPTION: m/s²
 v_contact = 0.02            # ASSUMPTION: m/s, last approach to / retract from the stone
+park_q_deg = [21.34, -127.66, 20.7, 16.96, -90.0, 21.34]  # ASSUMPTION: IK of the robodk/simulate.py:280 compact start
+                            # pose (TCP 300 mm ahead of the UR base, z 917.1 mm ARES, tool down); not collision-checked
+sim_payload_kg = 1.0        # ASSUMPTION: URSim/simulation ONLY while payload_tool_kg is unknown; never on the real robot
 
 [ares_ads]
 # ARES relative move over ADS (PLC v2.9, HMI interface v2; MA 10_robot/hmi/SPEC_2026-09-25_Relativfahrt_HMI_SPS_v2.md).
@@ -278,3 +289,19 @@ u_max = 1000.0
 u_step = 10.0
 approach = 150.0            # vertical approach / retract height above the place pose [mm] (> pin length 23.5)
 check_collisions = true     # RoboDK collision check for reachable poses (slower)
+
+[sequencer]
+# Closed-loop stop sequencing (mauer/sequencer.py). All ASSUMPTION first-run values, to be tuned on the robot.
+rotate_threshold_deg = 0.5  # heading error that triggers a rotation: 2.5x the PLC minimum 0.2°, ~3.5 sigma of the
+                            # E003 rotation scatter 0.14°
+rotate_keep_dir_deg = 150.0 # larger rotations keep the previous direction (E003: ~1.2° loss after reversing)
+stop_tol_mm = 20.0          # ARES position error at a stop that triggers a correction move
+max_corrections = 2         # correction moves per arrival (stop or dock)
+max_correction_mm = 100.0   # cap of (closed-loop move - nominal move)
+max_jump_mm = 50.0          # measured vs predicted ARES pose at the wall beyond this -> stop
+max_jump_deg = 3.0
+station_max_jump_mm = 100.0 # at the station and right after a station trip (station location is a PLACEHOLDER)
+station_max_jump_deg = 5.0
+max_fit_rms_mm = 1.0        # corner residual RMS of the frame fit beyond this -> pause
+dock_tol_mm = 30.0          # dock position error that triggers a correction move
+require_all_boards = true   # every expected board of a look must be measured
