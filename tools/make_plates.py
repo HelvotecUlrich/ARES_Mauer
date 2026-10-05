@@ -31,16 +31,18 @@ from mauer.vision.printables import trim_margin_mm  # noqa: E402
 from mauer.vision.targets import board_specs  # noqa: E402
 
 CUT, ENGRAVE = "CUT", "ENGRAVE"
+ACI = {CUT: 1, ENGRAVE: 5}        # AutoCAD colour index 1 = pure red (255, 0, 0), 5 = pure blue (0, 0, 255)
 
 
 class Dxf:
-    """Minimal DXF R12 writer: LINE, CIRCLE, TEXT on two layers (units mm)."""
+    """Minimal DXF R12 writer: LINE, CIRCLE, TEXT on two layers (units mm). Every entity carries its colour
+    explicitly (code 62), not only by layer, because laser software often maps colours per entity."""
 
     def __init__(self) -> None:
         self.ents: list[str] = []
 
     def line(self, layer: str, a, b) -> None:
-        self.ents.append(f"0\nLINE\n8\n{layer}\n10\n{a[0]:.4f}\n20\n{a[1]:.4f}\n30\n0.0\n"
+        self.ents.append(f"0\nLINE\n8\n{layer}\n62\n{ACI[layer]}\n10\n{a[0]:.4f}\n20\n{a[1]:.4f}\n30\n0.0\n"
                          f"11\n{b[0]:.4f}\n21\n{b[1]:.4f}\n31\n0.0\n")
 
     def poly(self, layer: str, pts, closed: bool = True) -> None:
@@ -49,13 +51,13 @@ class Dxf:
             self.line(layer, a, b)
 
     def circle(self, layer: str, c, r: float) -> None:
-        self.ents.append(f"0\nCIRCLE\n8\n{layer}\n10\n{c[0]:.4f}\n20\n{c[1]:.4f}\n30\n0.0\n40\n{r:.4f}\n")
+        self.ents.append(f"0\nCIRCLE\n8\n{layer}\n62\n{ACI[layer]}\n10\n{c[0]:.4f}\n20\n{c[1]:.4f}\n30\n0.0\n40\n{r:.4f}\n")
 
     def text(self, layer: str, p, h: float, s: str) -> None:
-        self.ents.append(f"0\nTEXT\n8\n{layer}\n10\n{p[0]:.4f}\n20\n{p[1]:.4f}\n30\n0.0\n40\n{h:.4f}\n1\n{s}\n")
+        self.ents.append(f"0\nTEXT\n8\n{layer}\n62\n{ACI[layer]}\n10\n{p[0]:.4f}\n20\n{p[1]:.4f}\n30\n0.0\n40\n{h:.4f}\n1\n{s}\n")
 
     def write(self, path: Path) -> None:
-        layers = "".join(f"0\nLAYER\n2\n{n}\n70\n0\n62\n{c}\n6\nCONTINUOUS\n" for n, c in ((CUT, 1), (ENGRAVE, 5)))
+        layers = "".join(f"0\nLAYER\n2\n{n}\n70\n0\n62\n{c}\n6\nCONTINUOUS\n" for n, c in ACI.items())
         path.write_text("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n"
                         f"0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n2\n{layers}0\nENDTAB\n0\nENDSEC\n"
                         "0\nSECTION\n2\nENTITIES\n" + "".join(self.ents) + "0\nENDSEC\n0\nEOF\n", encoding="ascii")
