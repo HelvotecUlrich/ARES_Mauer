@@ -123,6 +123,28 @@ front scanner at (452, 192) mm, deck top z = 333.6 mm by ray test in RoboDK).
   in the middle does not see it); place poses relative to a frame measured at run time (laptop → UR, instead of
   fixed `stop_k.urp`); tipping during reload starts with an empty deck → station within short reach.
 
+## Camera + robot software (2026-10-05)
+
+Runtime package `mauer/` (no RoboDK), tools in `tools/`, runbook **`docs/CAMERA_SETUP.md`**, contracts and frames
+`docs/ARCHITECTURE.md`. Free software only (IDS peak, OpenCV 4.14.0.94, UR RTDE client, pyads) – no HALCON.
+
+- Camera: IDS peak acquisition (`tools/cam_check.py`); the camera (serial 4110073444) is found but answers at
+  192.168.0.1, outside the laptop NIC subnets → set its persistent IP first (runbook step 2).
+- Vision: ChArUco boards (`tools/print_targets.py`), intrinsics (`tools/calib_intrinsics.py`), eye-in-hand hand-eye
+  calibration on the robot (`tools/calib_handeye.py`), repeatability/settle time (`tools/measure_target.py`).
+- UR5: RTDE state + one URScript block per step with done markers (`tools/ur_check.py`); tested on URSim CB3 3.15.8.
+- ARES: relative move over ADS, pattern A (amr_hmi open, owns heartbeat/MANUAL) (`tools/ares_check.py`).
+- Sequencer (`tools/make_job.py`, `tools/run_job.py`): per stop measure the wall boards, place relative to the
+  measured wall frame, closed-loop ARES moves, reload at the pick-up station. World simulation, full wall, E003-like
+  drive errors + slip up to 30 mm: **69/69 stones seated, max 0.66 mm with the camera loop vs up to 672 mm dead
+  reckoning**; with an additional 1 mm UR-mount error (outside the loop, magazine picks) max 4 mm.
+- Reference boards: PLACEHOLDER layout = face up on the floor in the 120 mm gap ARES front – wall face.
+  `robodk/look_study.py` (quick grid, `results/look_study_quick.md`; the full study was stopped): this placement gives
+  ≥ 2 visible boards in every stop and wall state; recommended pitch 800 mm. Their positions along the wall must be
+  known exactly – a board misplaced by x mm moves the wall by x mm.
+- Not done yet: real hardware tests, adversarial code review (started, stopped for time), RoboDK export of
+  collision-checked jobs, deck/magazine referencing with the camera.
+
 ## Results front wall (2026-10-02, `results/reach_summary.md`, coarse grid; placeholders: mount height, TCP 190 mm, base plate 20 mm, 3 courses)
 
 - Wall distance (ARES centre → wall centreline) 690–740 mm: **8 stones per course per stop, ARES moves 1.6 m
