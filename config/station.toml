@@ -73,7 +73,174 @@ working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm fie
                             # locked (F5.6–8), changing them = new hand-eye calibration
 power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max 600 mA (UR5 manual 1.9.4), camera
                             # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
-# mount: PLACEHOLDER – position on the flange still open (Samuel); the held stone and the jaws must stay out of view
+ip = "192.168.50.10"        # PLACEHOLDER: persistent camera IP (set once with ids_ipconfig) in its own subnet on a
+                            # dedicated laptop NIC; must not collide with the ARES subnets 192.168.1/24, 192.168.200/24,
+                            # 169.254/16 (MA 10_robot/ipc_c6030/IP_CONFIG_erwan.md)
+serial = ""                 # PLACEHOLDER: camera serial number (label / IDS peak Cockpit); "" = first IDS camera found
+pixel_format = "Mono8"      # ASSUMPTION: 5.1 MB per frame, ~45 ms on GigE, enough for the marker work
+exposure_us = 5000.0        # PLACEHOLDER: set at the first test with the real light (the arm stands still)
+gain = 1.0                  # PLACEHOLDER
+settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the image – Heini thesis needed 2 s for a
+                            # vibrating mount; ARES sway on the sprung casters not measured yet
+
+[camera.mount]
+# T_flange_cam: camera frame (OpenCV: z = optical axis, x = image right, y = image down, origin = projection centre) in
+# the UR5 flange frame. PLACEHOLDER until the bracket exists – used only for planning and simulation; the real value
+# is measured by the hand-eye calibration (calib/handeye.json). RoboDK occlusion survey 2026-10-05: put the camera
+# >= ~150 mm off the flange axis on the flange -x side (jaw closing direction), never on ±y (held stone fills the view).
+xyz = [-150.0, 0.0, 60.0]
+rpy_deg = [0.0, 0.0, 0.0]
+
+[vision]
+# Free OpenCV pipeline (no HALCON): ChArUco boards, solvePnP (IPPE + LM refine), cv2.calibrateHandEye (PARK).
+opencv = "4.14.0.94"        # CONFIRMED pin (research 2026-10-05): 5.0.0.93 has no calibrateHandEye in Python,
+                            # <= 4.13 shifts ChArUco corners by 0.5 px
+intrinsics_file = "calib/camera_intrinsics.json"
+handeye_file = "calib/handeye.json"
+min_corners = 8             # ASSUMPTION: minimum ChArUco corners for a board pose
+max_reproj_px = 1.0         # ASSUMPTION: reject a board pose with a larger RMS reprojection error
+border_px = 10              # ASSUMPTION: ignore corners closer to the image border (partial-tag outliers)
+
+# ChArUco boards. Board frame = OpenCV 4.14 CharucoBoard frame: origin at the top-left outer corner of the printed
+# board, x to the right, y down, z into the board (checked 2026-10-05: corner 0 at (square, square, 0)).
+# tools/print_targets.py prints origin and axes on every sheet. Print as vector PDF at 100 % on a rigid flat plate,
+# then measure the square size over the whole board and enter it (0.1 % scale error = 0.32 mm depth at 320 mm).
+[boards.calib]
+# Intrinsics and hand-eye board; fixed on the ARES deck for the hand-eye calibration so ARES sway cancels out.
+squares_x = 11
+squares_y = 8
+square_mm = 15.0            # PLACEHOLDER: nominal, replace with the measured print size
+marker_mm = 11.0            # PLACEHOLDER: nominal
+dictionary = "DICT_5X5_100"
+first_id = 0
+xyz = [-82.5, 60.0, 336.6]  # PLACEHOLDER: board origin in the ARES frame during the hand-eye calibration (face up,
+rpy_deg = [180.0, 0.0, 0.0] # centred at ARES x = y = 0 on a 3 mm plate on the deck) – used to generate look poses
+
+[boards.ref]
+# Reference boards at the wall and the pick-up station: 10 AprilTag markers each, own id range per board
+# (targets.first_id). Research 2026-10-05 (synthetic): lateral ~0.03 mm, tilt <= 0.06°, yaw <= 0.003°.
+squares_x = 5
+squares_y = 4
+square_mm = 16.0            # PLACEHOLDER: nominal, replace with the measured print size
+marker_mm = 12.0            # PLACEHOLDER: nominal
+dictionary = "DICT_APRILTAG_36h11"
+
+# Reference board placements: board origin and orientation in the parent frame. parent = "wall" (wall frame,
+# robodk/rdk_common.py), "station" ([pickup_station] frame) or "deck" (ARES frame).
+# PLACEHOLDER layout: wall boards face up on the floor in the 120 mm gap between the ARES front edge and the wall
+# face, centred at wall y = 120 mm, every 700 mm along the wall, so every stop sees at least two (heading from the
+# baseline). Whether they are reachable and stay visible as the wall grows: robodk/look_study.py.
+[[targets]]
+name = "W0"
+parent = "wall"
+first_id = 30
+xyz = [-40.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W1"
+parent = "wall"
+first_id = 40
+xyz = [660.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W2"
+parent = "wall"
+first_id = 50
+xyz = [1360.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W3"
+parent = "wall"
+first_id = 60
+xyz = [2060.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W4"
+parent = "wall"
+first_id = 70
+xyz = [2760.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W5"
+parent = "wall"
+first_id = 80
+xyz = [3460.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W6"
+parent = "wall"
+first_id = 90
+xyz = [4160.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W7"
+parent = "wall"
+first_id = 100
+xyz = [4860.0, 152.0, 3.0]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "S0"
+parent = "station"
+first_id = 200
+xyz = [100.0, 100.0, 3.0]   # PLACEHOLDER: face up on the station table
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "S1"
+parent = "station"
+first_id = 210
+xyz = [700.0, 100.0, 3.0]   # PLACEHOLDER
+rpy_deg = [180.0, 0.0, 0.0]
+
+[pickup_station]
+# Fixed pick-up station where ARES reloads its deck magazine when it is empty (Samuel 2026-10-02). Layout unknown –
+# everything here is a PLACEHOLDER so planning and simulation can run.
+# Station frame: origin at the front-left corner of the table top, x along the front edge, y away from ARES, z up.
+xyz_in_wall = [-1500.0, 1500.0, 0.0]   # PLACEHOLDER: station frame in the wall frame (z = floor level)
+rpy_in_wall_deg = [0.0, 0.0, 0.0]      # PLACEHOLDER
+table_z = 400.0             # PLACEHOLDER: table top above the floor [mm]
+ares_xyz = [400.0, -800.0, 0.0]        # PLACEHOLDER: ARES base_link in the station frame when docked
+ares_rpy_deg = [0.0, 0.0, 90.0]        # PLACEHOLDER: ARES x (forward) towards the table (+y station)
+slot_rows = 2               # PLACEHOLDER: stones standing upright in a holder grid on the table
+slot_cols = 6
+slot_pitch_x = 260.0        # PLACEHOLDER: along x (stone length 200 + jaw clearance)
+slot_pitch_y = 200.0        # PLACEHOLDER: along y (stone width 120 + jaw clearance)
+slot_origin = [150.0, 250.0]  # PLACEHOLDER: centre of slot (0, 0) in the station frame [mm]
+
+[ur]
+# UR5 CB3 link from the laptop (research 2026-10-05, tested against URSim CB3 3.15.8): RTDE (official UR client,
+# BSD-3, vendored in mauer/ur/rtde) streams the state at 125 Hz; one URScript `def` program per step over port 30002
+# with start/done markers in RTDE output registers; Dashboard Server for power, brakes and protective stops.
+host = ""                   # PLACEHOLDER: UR5 IP (PolyScope > Setup Robot > Network) – not known yet
+dashboard_port = 29999      # CONFIRMED: UR Dashboard Server
+script_port = 30002         # CONFIRMED: secondary client interface (URScript)
+rtde_port = 30004           # CONFIRMED: RTDE
+rtde_hz = 125.0             # CONFIRMED: CB3 RTDE maximum frequency
+reg_started = 24            # CONFIRMED range: output_int_register 24..47 belongs to RTDE (0..23 fieldbus)
+reg_done = 25
+block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
+do_grip_close = 1           # PLACEHOLDER: Gino's code pulses standard DO1 to close, DO0 to open; real wiring open
+do_grip_open = 0            # PLACEHOLDER
+grip_pulse_s = 0.5          # PLACEHOLDER
+grip_wait_s = 1.0           # PLACEHOLDER: EHPS-20-A stroke time not looked up
+payload_tool_kg = 0.0       # PLACEHOLDER: gripper + adapter + camera + bracket; 0 = unknown -> real runs refuse to start
+payload_cog_mm = [0.0, 0.0, 60.0]  # PLACEHOLDER: centre of gravity in the flange frame
+v_joint = 0.5               # ASSUMPTION: rad/s, conservative first-run value
+a_joint = 0.5               # ASSUMPTION: rad/s²
+v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
+a_lin = 0.30                # ASSUMPTION: m/s²
+v_contact = 0.02            # ASSUMPTION: m/s, last approach to / retract from the stone
+
+[ares_ads]
+# ARES relative move over ADS (PLC v2.9, HMI interface v2; MA 10_robot/hmi/SPEC_2026-09-25_Relativfahrt_HMI_SPS_v2.md).
+# Operating pattern A (proven in E003, MA 10_robot/tools/imu_cal_run.py): amr_hmi v2 stays open and owns heartbeat,
+# MANUAL and HALT; the sequencer writes only the fMove* fields, nMoveCmdId, bCmdMoveStart and bCmdMoveAbort.
+ams_net_id = "192.168.1.10.1.1"   # CONFIRMED: MA 10_robot/hmi/amr_hmi/config.yaml
+host_ip = "192.168.1.10"          # CONFIRMED: same file
+port = 851                        # CONFIRMED: TwinCAT PLC runtime 1
+timeout_ms = 1000                 # CONFIRMED: amr_hmi value
+speed_mms = 150.0                 # CONFIRMED: value used in E003 (01.10.2026); PLC clamps to 5..500 mm/s
+accel_mms2 = 200.0                # CONFIRMED: value used in E003; PLC clamps to 20..1000 mm/s²
+min_if_version = 2                # CONFIRMED: stFromPlc.nIfVersion of PLC v2.x
 
 [study]
 # Reach study grid. Wall frame: x along the wall (ARES travel direction), y towards ARES, origin on the wall centreline.

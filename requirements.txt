@@ -1,0 +1,10 @@
+# Windows Python 3.14 (py.exe). Install: py.exe -m pip install -r requirements.txt
+# RoboDK API: from the RoboDK installation (C:\RoboDK\Python), not from pip.
+# IDS camera: install the IDS peak runtime (GigE Vision transport) from IDS first, see docs/CAMERA_SETUP.md.
+numpy>=2.0
+opencv-contrib-python==4.14.0.94   # pinned: 5.0.0.93 has no calibrateHandEye in Python, <=4.13 ChArUco 0.5 px offset
+reportlab>=4.0                     # exact-scale PDF targets
+pyads>=3.5                         # ARES ADS (Windows: TwinCAT ADS router / TcAdsDll)
+ids_peak>=1.17                     # IDS peak Python API (needs the IDS peak runtime)
+ids_peak_ipl>=1.18
+pytest>=8

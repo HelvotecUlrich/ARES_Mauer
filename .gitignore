@@ -10,3 +10,6 @@ reference/*/**
 !reference/*/INDEX.md
 cad/*.stl
 cad/*.tool
+# camera datasets (images, robot poses) – large, not versioned
+data/
+.pytest_cache/
