@@ -77,14 +77,15 @@ def _heading_err_deg(T_fit, T_true):
 
 def test_two_boards_far_apart_give_the_heading(pl, specs, T_base_wall):
     """Each board measured with a 0.1 deg yaw error and 0.05 mm lateral error (opposite signs): one board gives the
-    full 0.1 deg heading error, two boards 1400 mm apart (W0, W2) only ~(0.1 mm / 1400 mm) rad."""
+    full 0.1 deg heading error, two boards far apart (W0, W2: 1600 mm with the 800 mm layout) only ~(0.1 mm / 1400 mm) rad."""
     errs = {"W0": g.pose_xyz_rpy([0.0, 0.05, 0.0], [0, 0, 0.1]), "W2": g.pose_xyz_rpy([0.0, -0.05, 0.0], [0, 0, -0.1])}
     obs = {n: T_base_wall @ _pl(pl, n).T_parent_board @ e for n, e in errs.items()}
     one = fit_frame({"W0": obs["W0"]}, pl, specs, "wall")
     two = fit_frame(obs, pl, specs, "wall")
     assert _heading_err_deg(one.T_base_parent, T_base_wall) == pytest.approx(0.1, abs=1e-6)
     assert _heading_err_deg(two.T_base_parent, T_base_wall) < 0.01
-    assert two.baseline_mm == pytest.approx(1400.0, abs=1e-6)
+    u = {t["name"]: t["xyz"][0] for t in config.load()["targets"]}
+    assert two.baseline_mm == pytest.approx(abs(u["W2"] - u["W0"]), abs=1e-6)       # layout from the config
     assert two.n_boards == 2 and two.rms_mm > 0.0
 
 

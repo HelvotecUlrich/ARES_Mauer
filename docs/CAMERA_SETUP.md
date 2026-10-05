@@ -100,8 +100,10 @@ py.exe tools/print_targets.py --out targets     # calib.pdf + one PDF/PNG per [[
   `marker_mm` scaled by the same factor) in `[boards.calib]` / `[boards.ref]` – a 0.1 % scale error is 0.32 mm depth at
   320 mm.
 - Every reference board has its own id range (`[[targets]] first_id`); do not print a board twice.
-- Placement at the wall and at the pick-up station: `[[targets]]` is a PLACEHOLDER layout – see `results/look_study.md`
-  for the positions that stay reachable and visible while the wall grows.
+- Wall boards: glued on laser-cut 4 mm MDF plates (`py.exe tools/make_plates.py` -> `targets/*_plate.dxf`) that lie on
+  the floor in the gap ARES front – wall, pressed against the female-pin base blocks with V-notches on the block
+  joints, one every 800 mm (W0–W7, u = 100 … 5700) -> positions fixed by the blocks. Step by step: `targets/README.md`.
+  The block size 120 × 200 mm is a PLACEHOLDER (`[plates]`) – enter the real one and regenerate before cutting.
 
 ## 6. Intrinsic calibration
 

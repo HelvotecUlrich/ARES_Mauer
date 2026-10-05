@@ -163,56 +163,60 @@ dictionary = "DICT_APRILTAG_36h11"
 
 # Reference board placements: board origin and orientation in the parent frame. parent = "wall" (wall frame,
 # robodk/rdk_common.py), "station" ([pickup_station] frame) or "deck" (ARES frame).
-# PLACEHOLDER layout: wall boards face up on the floor in the 120 mm gap between the ARES front edge and the wall
-# face, centred at wall y = 120 mm, every 700 mm along the wall, so every stop sees at least two (heading from the
-# baseline). Whether they are reachable and stay visible as the wall grows: robodk/look_study.py.
+# Wall boards (Samuel 2026-10-05): printed board glued on a 4 mm MDF plate lying face up on the floor in the gap
+# between ARES front and wall; the plate's wall-side edge rests against the side faces of the female-pin base blocks of
+# course 0 and two V-notches line up with the joints of one block ([plates], tools/make_plates.py) -> the board centre
+# sits on a block centre: u = 100 + k * 800 mm (look study 2026-10-05: 800 mm pitch gives >= 2 robust boards per stop),
+# y = block face 60 + 55 = 115 mm. Origin = top-left board corner -> (u - 40, 115 + 32), z = MDF 4 + paper 0.1 mm.
+# The positions follow from the PLACEHOLDER block size in [plates]. W6 (u 4900) and W7 (u 5700) lie beyond the wall
+# end (u 4800): put one spare block under each (u 4800-5000, 5600-5800) - the last stop (u 5120) needs both.
 [[targets]]
 name = "W0"
 parent = "wall"
 first_id = 30
-xyz = [-40.0, 152.0, 3.0]
+xyz = [60.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W1"
 parent = "wall"
 first_id = 40
-xyz = [660.0, 152.0, 3.0]
+xyz = [860.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W2"
 parent = "wall"
 first_id = 50
-xyz = [1360.0, 152.0, 3.0]
+xyz = [1660.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W3"
 parent = "wall"
 first_id = 60
-xyz = [2060.0, 152.0, 3.0]
+xyz = [2460.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W4"
 parent = "wall"
 first_id = 70
-xyz = [2760.0, 152.0, 3.0]
+xyz = [3260.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W5"
 parent = "wall"
 first_id = 80
-xyz = [3460.0, 152.0, 3.0]
+xyz = [4060.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W6"
 parent = "wall"
 first_id = 90
-xyz = [4160.0, 152.0, 3.0]
+xyz = [4860.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W7"
 parent = "wall"
 first_id = 100
-xyz = [4860.0, 152.0, 3.0]
+xyz = [5660.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "S0"
@@ -226,6 +230,22 @@ parent = "station"
 first_id = 210
 xyz = [700.0, 100.0, 3.0]   # PLACEHOLDER
 rpy_deg = [180.0, 0.0, 0.0]
+
+[plates]
+# Laser-cut MDF carrier plates for the printed boards (tools/make_plates.py -> targets/*_plate.dxf).
+mdf_t = 4.0                 # CONFIRMED: Samuel 2026-10-05
+paper_t = 0.1               # ASSUMPTION: printed sheet + glue
+block_width = 120.0         # PLACEHOLDER: female-pin base block across the wall (assumed = stone width, centred on the
+                            # wall centreline -> side face at wall y = 60)
+block_length = 200.0        # PLACEHOLDER: block along the wall (assumed = stone length; blocks butt, joints at
+                            # u = k * 200 from the wall start u = 0)
+plate_length = 220.0        # ASSUMPTION: along the wall, one block + 10 mm over each joint
+plate_depth = 110.0         # ASSUMPTION: from the block face towards ARES (ends 10 mm before the ARES front edge at
+                            # y = 180 for the nominal wall distance 740)
+notch_width = 6.0           # ASSUMPTION: V-notch opening at the block joints
+notch_depth = 4.0
+finger_hole_d = 20.0        # ASSUMPTION: lifting holes beside the board
+margin = 14.0               # ASSUMPTION: plain plates (station, calib): MDF margin around the paper quiet zone
 
 [pickup_station]
 # Fixed pick-up station where ARES reloads its deck magazine when it is empty (Samuel 2026-10-02). Layout unknown –
