@@ -8,7 +8,8 @@ at the first look pose, and writes:
     results/setup_top.png           top view of the stop: ARES front edge, boards in the gap, wall
     results/setup_flange.png        flange close-up: adapter plate, camera, gripper
     results/setup_camera_view.png   the flange camera's image (RoboDK pinhole) with the detected ChArUco corners
-and saves the station to robodk/ARES_UR5_Mauer.rdk.
+and saves the station to robodk/ARES_UR5_Mauer.rdk (with [[wall.legs]]: robodk/ARES_UR5_Mauer_L.rdk - the L never
+overwrites the straight-wall station).
 
     py.exe robodk/show_setup.py [--stop 0] [--look 0] [--keep-open]
 """
@@ -97,7 +98,7 @@ def main(argv: list | None = None) -> int:
         print(f"camera image {img.shape[1]}x{img.shape[0]}: ChArUco corners per board {seen}", flush=True)
         cv2.imwrite(str(res / "setup_camera_view.png"), detect.draw_detections(img, dets, scale=0.5))
 
-        out = REPO / "robodk" / f"{STATION_NAME}.rdk"
+        out = REPO / "robodk" / f"{STATION_NAME}{'_L' if cfg['wall'].get('legs') else ''}.rdk"
         RDK.Save(str(out), it["station"])
         print("Saved", out, flush=True)
     finally:
@@ -107,10 +108,11 @@ def main(argv: list | None = None) -> int:
 
 
 def stop_board_T(cfg: dict, name: str) -> np.ndarray:
-    """T_wall_board of a [[targets]] wall board."""
-    for t in cfg["targets"]:
-        if t["name"] == name:
-            return g.pose_xyz_rpy(t["xyz"], t["rpy_deg"])
+    """T_wall_board of a [[targets]] wall board (leg boards of the L composed with their leg frame)."""
+    from mauer.reference import placements
+    for p in placements(cfg):
+        if p.name == name:
+            return p.T_parent_board
     raise KeyError(name)
 
 

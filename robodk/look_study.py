@@ -153,7 +153,8 @@ def T_ares_wall(cfg: dict, dist: float, a: float) -> np.ndarray:
 def reach_table_cached(cfg: dict, dist: float) -> dict | None:
     """simulate.py's reach table from results/reach_table.json if its cache key matches the config (same key
     construction as simulate.reach_table), else None."""
-    key_src = json.dumps(["family-v2", cfg["ur5"], cfg["tool"], cfg["brick"], cfg["wall"]["base_z"],
+    brick = {k: v for k, v in cfg["brick"].items() if k != "rib_mm"}     # rib_mm: L corner only, not the reach
+    key_src = json.dumps(["family-v2", cfg["ur5"], cfg["tool"], brick, cfg["wall"]["base_z"],
                           cfg["wall"]["courses"], cfg["study"]["approach"], dist], sort_keys=True)
     key = hashlib.sha1(key_src.encode()).hexdigest()[:12]
     path = RESULTS / "reach_table.json"
@@ -843,7 +844,9 @@ def main() -> None:
     step = args.step
     grid = [round(float(u), 1) for u in np.arange(-args.range, args.range + 1e-6, step)]
     # configured target x positions relative to the stops (same offset for every stop if the pitches match)
-    targets = [t for t in cfg.get("targets", []) if t["parent"] == "wall"]
+    # straight-wall study: boards along the wall frame x = leg A of an L (leg B boards are not in this study)
+    first_leg = (cfg["wall"].get("legs") or [{"name": None}])[0]["name"]
+    targets = [t for t in cfg.get("targets", []) if t["parent"] == "wall" and t.get("leg") in (None, first_leg)]
     ref = next(s for s in bs.board_layout(cfg) if s["parent"] == "wall")
     bw, bh = board_size(ref)
     conf_u = sorted({round(t["xyz"][0] + bw / 2 - a, 1) for t in targets for a in stops

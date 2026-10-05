@@ -320,5 +320,15 @@ def set_held(RDK, stone, others: list, ares, robot, tool) -> None:
     RDK.setCollisionActivePair(COLLISION_OFF, stone, tool, 0, 0)
 
 
+def set_released(RDK, stone, robot, tool) -> None:
+    """A released stone after the retreat (jaws clear of it): the gripper (tool) and robot links 0-6 are checked
+    against it again. set_held switches the gripper / wrist 3 off for the held stone and nothing switched them back
+    on, so a placed stone was never checked against the gripper (RoboDK run 2026-10-05; robodk/simulate.py
+    Sim.arm_pairs did this as a workaround)."""
+    RDK.setCollisionActivePair(COLLISION_ON, stone, tool, 0, 0)
+    for link in range(0, 7):
+        RDK.setCollisionActivePair(COLLISION_ON, stone, robot, 0, link)
+
+
 def stones_in_station(RDK) -> list:
     return [o for o in RDK.ItemList(ITEM_TYPE_OBJECT) if o.Name().startswith("Stone_")]

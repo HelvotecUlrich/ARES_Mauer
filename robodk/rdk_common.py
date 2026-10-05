@@ -8,6 +8,9 @@ Frames
   ARES   base_link: floor, centre between the steering axes, x forward, y left, z up.
   wall   origin on the wall centreline (floor level), x along the wall = direction ARES travels between stops,
          y towards ARES, z up. A stone at wall position u has its top centre at (u, 0, z_top), long axis along x.
+  leg    L wall ([[wall.legs]], robodk/wallplan.py): every leg has its own frame in the wall frame (leg A = wall frame),
+         same convention as the wall frame; a stone of leg L at leg position u has its top centre at
+         T_wall_leg * (u, 0, z_top). ARES at stop a of leg L: wall_frame_at(cfg, dist, a, L).
   tool   z along the flange axis (pointing down when placing), x along the stone length, y = jaw closing direction,
          TCP = top centre of the held stone.
   cam    OpenCV camera frame (z = optical axis, x = image right, y = image down, origin = projection centre); the
@@ -32,7 +35,7 @@ if str(ROBODK_PY) not in sys.path:
 
 from robodk.robolink import (COLLISION_OFF, COLLISION_ON, ITEM_TYPE_STATION, WINDOWSTATE_MINIMIZED,  # noqa: E402
                              Robolink)
-from robodk.robomath import Mat, rotx, rotz, transl  # noqa: E402
+from robodk.robomath import Mat, invH, rotx, rotz, transl  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:                      # mauer/ (pure numpy helpers) next to robodk/
@@ -132,6 +135,51 @@ def wall_frame(cfg: dict, dist: float) -> Mat:
     if side == "rear":
         return transl(-dist, 0, 0) * rotz(-PI / 2)
     raise ValueError(f"wall.side must be right/left/front/rear, not {side!r}")
+
+
+def leg_frame(cfg: dict, leg: str | None = None) -> Mat:
+    """T_wall_leg of leg `leg` ([[wall.legs]] xyz_in_wall / rpy_in_wall_deg, floor level, rotated about z only);
+    identity for None (straight wall). Pure helper, no RoboDK call - same numbers as mauer.config.leg_frames and
+    robodk/wallplan.py legs()."""
+    if leg is None:
+        return transl(0, 0, 0)
+    for d in cfg["wall"].get("legs", []) or []:
+        if str(d["name"]) == str(leg):
+            x, y, z = d.get("xyz_in_wall", (0.0, 0.0, 0.0))
+            rx, ry, rz = d.get("rpy_in_wall_deg", (0.0, 0.0, 0.0))
+            if abs(z) > 1e-9 or abs(rx) > 1e-9 or abs(ry) > 1e-9:
+                raise ValueError(f"leg {leg}: only floor-level legs rotated about z are supported")
+            return transl(x, y, 0) * rotz(rz * DEG)
+    raise KeyError(f"no leg {leg!r} in [[wall.legs]]")
+
+
+def wall_frame_at(cfg: dict, dist: float, a: float = 0.0, leg: str | None = None) -> Mat:
+    """Wall frame in the ARES frame when ARES stands at stop position `a` of leg `leg` (wall distance `dist` to the
+    leg centreline): wall_frame(dist) * transl(-a, 0, 0) * inv(T_wall_leg). leg None, a = 0: wall_frame(cfg, dist)."""
+    return wall_frame(cfg, dist) * transl(-a, 0, 0) * invH(leg_frame(cfg, leg))
+
+
+def place_pose_leg(cfg: dict, u: float, dist: float, z_top: float, leg: str | None = None, a: float = 0.0,
+                   flip: bool = False) -> Mat:
+    """TCP pose (ARES frame) for a stone of leg `leg` with its top centre at leg position u, height z_top, ARES at
+    stop position a of that leg (same TCP convention for full and half stones: top centre of the held stone)."""
+    pose = wall_frame_at(cfg, dist, a, leg) * leg_frame(cfg, leg) * transl(u, 0, z_top) * rotx(PI)
+    if flip:
+        pose = pose * rotz(PI)
+    return pose
+
+
+def half_stone_points(cfg: dict, frame: str, u: float = 0.0, z_top: float = 0.0, tcp_z: float = 0.0) -> list:
+    """Half stone as a box ([half_brick] length x width x height, PLACEHOLDER - no CAD of the current half stone), same
+    placement conventions as stone_points: frame "wall" (top centre at (u, 0, z_top) of the wall/leg frame) or "tool"
+    (top centre at the TCP (0, 0, tcp_z) of the flange frame, z into the stone). Pins not modelled."""
+    hb = cfg.get("half_brick", {})
+    L = float(hb.get("length", cfg["brick"]["length"] / 2.0))
+    W = float(hb.get("width", cfg["brick"]["width"]))
+    H = float(hb.get("height", cfg["brick"]["height"]))
+    if frame == "wall":
+        return box_points(L, W, H, u, 0.0, z_top - H / 2.0)
+    return box_points(L, W, H, 0.0, 0.0, tcp_z + H / 2.0)
 
 
 def course_top_z(cfg: dict, k: int) -> float:
@@ -307,3 +355,121 @@ def snapshot(RDK: Robolink, path: Path, eye: list, target: list, size: str = "14
     RDK.Cam2D_Close(cam)
     cam.Delete()                           # Cam2D_Close keeps the item; without Delete they pile up in the tree
     return bool(ok)
+
+
+# ── L wall: stone types, meshes, pinhole snapshots (additive helpers, 2026-10-05) ─────────────────────────────────
+HALF_MESH = "cad/stone_half_placeholder.stl"       # robodk/make_half_stone.py: full stone clipped to [half_brick] length
+_MESH_CACHE: dict = {}
+
+
+def stone_dims(cfg: dict, kind: str = "full") -> tuple[float, float, float]:
+    """(length, width, height) [mm] of a full stone ([brick], CAD) or a half stone ([half_brick], PLACEHOLDER)."""
+    b = cfg["brick"]
+    if kind == "half":
+        hb = cfg.get("half_brick", {})
+        return (float(hb.get("length", b["length"] / 2.0)), float(hb.get("width", b["width"])),
+                float(hb.get("height", b["height"])))
+    return float(b["length"]), float(b["width"]), float(b["height"])
+
+
+def stone_mesh_path(cfg: dict, kind: str = "full") -> Path | None:
+    """STL of a stone type in the CAD convention (x 0..width, y -length..0, z 0..height): the full stone mesh, or the
+    half stone PLACEHOLDER mesh (None if robodk/make_half_stone.py has not been run)."""
+    if kind == "half":
+        p = REPO / HALF_MESH
+        return p if p.exists() else None
+    return REPO / cfg["brick"]["mesh"]
+
+
+def T_tc_cad(cfg: dict, kind: str = "full") -> Mat:
+    """Stone CAD frame in the "top centre" frame (origin top centre, x along the length, y across, z up); full stone
+    = T_TC_CAD."""
+    L, W, H = stone_dims(cfg, kind)
+    return Mat([[0, 1, 0, L / 2], [-1, 0, 0, W / 2], [0, 0, 1, -H], [0, 0, 0, 1]])
+
+
+def held_stone_pose_kind(cfg: dict, kind: str = "full") -> Mat:
+    """held_stone_pose() for either stone type: CAD frame of a held stone relative to the TCP."""
+    return rotx(PI) * T_tc_cad(cfg, kind)
+
+
+def _mesh(path: Path) -> list:
+    key = str(path)
+    if key not in _MESH_CACHE:
+        _MESH_CACHE[key] = load_stl(path)
+    return _MESH_CACHE[key]
+
+
+def stone_points_kind(cfg: dict, frame: str, u: float = 0.0, z_top: float = 0.0, tcp_z: float = 0.0,
+                      kind: str = "full") -> list:
+    """stone_points() for either stone type (same placement conventions; the mesh is read once). A half stone uses
+    cad/stone_half_placeholder.stl, or the [half_brick] box (half_stone_points) if that file does not exist."""
+    path = stone_mesh_path(cfg, kind)
+    if path is None:
+        return half_stone_points(cfg, frame, u, z_top, tcp_z)
+    L, W, H = stone_dims(cfg, kind)
+    pts = []
+    for tri in _mesh(path):
+        for sx, sy, sz in tri:
+            if frame == "wall":
+                pts.append([u + sy + L / 2, W / 2 - sx, z_top - H + sz])
+            else:
+                pts.append([sy + L / 2, sx - W / 2, tcp_z + H - sz])
+    return pts
+
+
+def transform_points(T: Mat, points: list) -> list:
+    """Points [[x, y, z], ...] transformed by the pose T (pure Python)."""
+    r = T.rows
+    return [[r[0][0] * x + r[0][1] * y + r[0][2] * z + r[0][3], r[1][0] * x + r[1][1] * y + r[1][2] * z + r[1][3],
+             r[2][0] * x + r[2][1] * y + r[2][2] * z + r[2][3]] for x, y, z in points]
+
+
+def look_at_up(eye: list, target: list, up: list) -> Mat:
+    """Camera pose (z forward, x right, y down) at eye looking at target; image "up" as close as possible to `up`
+    (works for a view straight down, unlike look_at)."""
+    def norm(v):
+        n = sum(c * c for c in v) ** 0.5
+        return [c / n for c in v]
+
+    def cross(a, b):
+        return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+    z = norm([t - e for t, e in zip(target, eye)])
+    x = norm(cross(z, up))                         # as look_at: x = z x up, then y = z x x (image down ~ -up)
+    y = cross(z, x)
+    return Mat([[x[0], y[0], z[0], eye[0]], [x[1], y[1], z[1], eye[1]], [x[2], y[2], z[2], eye[2]], [0, 0, 0, 1]])
+
+
+def snapshot_pinhole(RDK: Robolink, path: Path, T_world_cam: Mat, size: tuple = (1600, 1000), hfov_deg: float = 45.0,
+                     far_mm: float = 30000.0) -> tuple[bool, list]:
+    """Render the station from a virtual pinhole camera at T_world_cam (z forward, x right, y down) into a PNG and
+    return (ok, K) with K the 3x3 intrinsics [px] of the render (fx = fy from the horizontal field of view, principal
+    point in the image centre, FOCAL_LENGTH + PIXELSIZE as in camera_params) - for annotating the image with
+    projected world points."""
+    import math
+    w, h = int(size[0]), int(size[1])
+    fx = (w / 2.0) / math.tan(math.radians(hfov_deg) / 2.0)
+    f_mm = 6.0
+    pixel_um = f_mm * 1000.0 / fx
+    frame = RDK.Item("_view", 3)
+    if not frame.Valid():
+        frame = RDK.AddFrame("_view")
+        frame.setVisible(False)
+    frame.setPose(T_world_cam)
+    RDK.Cam2D_Close(0)
+    cam = RDK.Cam2D_Add(frame, f"FOCAL_LENGTH={f_mm} PIXELSIZE={pixel_um:.6f} SIZE={w}x{h} SNAPSHOT={w}x{h} "
+                               f"FAR_LENGTH={far_mm:.0f} BG_COLOR=white")
+    RDK.Render(True)
+    time.sleep(1.0)
+    ok = RDK.Cam2D_Snapshot(str(path), cam)
+    RDK.Cam2D_Close(cam)
+    cam.Delete()
+    K = [[fx, 0.0, (w - 1) / 2.0], [0.0, fx, (h - 1) / 2.0], [0.0, 0.0, 1.0]]
+    return bool(ok), K
+
+
+def project(K: list, T_world_cam: Mat, p_world: list) -> tuple[float, float, float]:
+    """(u, v, depth) of a world point in a snapshot_pinhole image."""
+    pc = transform_points(invH(T_world_cam), [p_world])[0]
+    return K[0][0] * pc[0] / pc[2] + K[0][2], K[1][1] * pc[1] / pc[2] + K[1][2], pc[2]

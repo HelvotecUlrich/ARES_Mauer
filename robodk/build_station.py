@@ -6,7 +6,7 @@ Usage (Windows Python):
     py.exe robodk/build_station.py --new-instance --out C:/temp/station.rdk   # own RoboDK on its own port
 
 Rebuilds the station from scratch each run (an open station with the same name is closed first) and saves it to
-robodk/ARES_UR5_Mauer.rdk (not versioned: contains the STEP mesh).
+robodk/ARES_UR5_Mauer.rdk, with [[wall.legs]] to robodk/ARES_UR5_Mauer_L.rdk (not versioned: contains the STEP mesh).
 
 Camera ([camera], [camera.mount] = PLACEHOLDER): robot tool "Camera" with TCP = T_flange_cam (the simulated camera of
 sim_camera.py attaches to it) and the object "Camera_body" (housing + lens, rdk_common.camera_body_points) attached
@@ -19,6 +19,13 @@ at the top-left outer corner of the chessboard, x right, y down, z into the boar
 frame, station boards in the "Pickup station" frame, the calibration board in the ARES frame (hidden: it is only on
 the deck during the hand-eye calibration). A white quiet zone of one square around each board is an ASSUMPTION of
 this model (print layout: tools/print_targets.py).
+
+Wall: with [[wall.legs]] (config [wall] shape "L") the nominal L is drawn: every leg in its own frame ("Leg A",
+"Leg B" under "Wall", T_wall_leg from xyz_in_wall / rpy_in_wall_deg), stones from robodk/wallplan.py layout_legs (leg
+rectangles in running bond, half stones at both ends of the odd courses), full stones with the CAD mesh, half stones
+with cad/stone_half_placeholder.stl (robodk/make_half_stone.py, PLACEHOLDER; the [half_brick] box if the file is
+missing) in a lighter colour - one object "Wall_nominal" with two shapes. Leg boards (W5..W7 on leg B) come from
+mauer.reference.placements. Without legs the straight wall [wall] u_from .. u_to as before.
 """
 from __future__ import annotations
 
@@ -28,14 +35,15 @@ import tempfile
 from pathlib import Path
 
 from rdk_common import (REPO, STATION_NAME, as_mat, box_points, camera_body_points, close_instance, connect,
-                        course_shift, course_top_z, load_config, set_tool_object_collisions, snapshot, stone_points,
-                        tcp_pose, transl, ur5_base_pose, wall_frame)
+                        course_shift, course_top_z, leg_frame, load_config, set_tool_object_collisions, snapshot,
+                        stone_points, stone_points_kind, tcp_pose, transform_points, transl, ur5_base_pose, wall_frame)
 from rdk_common import T_flange_cam as T_flange_cam_mat
 from robodk.robolink import COLLISION_OFF, COLLISION_ON, ITEM_TYPE_STATION, PROJECTION_ALONG_NORMAL
 from robodk.robomath import Mat, invH
 
 GREY = [0.75, 0.75, 0.75, 1.0]
 STONE = [0.72, 0.30, 0.20, 1.0]
+HALF_STONE = [0.93, 0.62, 0.30, 1.0]   # half stones (PLACEHOLDER mesh) in a lighter colour
 CAMERA = [0.15, 0.15, 0.18, 1.0]
 ADAPTER = [0.85, 0.55, 0.10, 1.0]
 TABLE = [0.55, 0.45, 0.30, 1.0]
@@ -59,6 +67,49 @@ def wall_stones(cfg: dict, u_from: float, u_to: float) -> list:
     return out
 
 
+def l_wall_stones(cfg: dict) -> list:
+    """Stones of the nominal L (robodk/wallplan.py legs + layout_legs, [wall] half_stones), [] without legs."""
+    import wallplan
+    legs_ = wallplan.legs(cfg)
+    if not legs_:
+        return []
+    return wallplan.layout_legs(cfg, legs_, bool(cfg["wall"].get("half_stones", True)))
+
+
+def l_wall_points(cfg: dict, stones: list) -> tuple[list, list]:
+    """(full, half) mesh vertices of the given wallplan stones in the WALL frame (leg frame -> T_wall_leg)."""
+    full, half = [], []
+    by_leg: dict = {}
+    for s in stones:
+        by_leg.setdefault(s.leg, []).append(s)
+    for leg, ss in by_leg.items():
+        T = leg_frame(cfg, leg or None)
+        for s in ss:
+            pts = stone_points_kind(cfg, "wall", u=s.u, z_top=s.z_top, kind=s.kind)
+            (half if s.kind == "half" else full).extend(transform_points(T, pts))
+    return full, half
+
+
+def add_l_wall(RDK, cfg: dict, f_wall) -> tuple:
+    """Nominal L: frames "Leg <name>" under the wall frame and one object "Wall_nominal" (shape 0 = full stones,
+    shape 1 = half stones, if any). Returns (wall object, {leg name: frame}, stones)."""
+    import wallplan
+    frames = {}
+    for lg in wallplan.legs(cfg):
+        f = RDK.AddFrame(f"Leg {lg.name}", f_wall)
+        f.setPose(leg_frame(cfg, lg.name))
+        frames[lg.name] = f
+    stones = l_wall_stones(cfg)
+    full, half = l_wall_points(cfg, stones)
+    shapes = [as_mat(full), STONE] + ([as_mat(half), HALF_STONE] if half else [])
+    wall = RDK.AddShape(shapes)
+    wall.setParent(f_wall)
+    wall.setName("Wall_nominal")
+    n_half = sum(s.kind == "half" for s in stones)
+    print(f"nominal L: legs {', '.join(frames)}; {len(stones)} stones ({n_half} half)", flush=True)
+    return wall, frames, stones
+
+
 def exclude_from_collisions(RDK, robot, tool, obj) -> None:
     for link in range(0, 8):
         RDK.setCollisionActivePair(COLLISION_OFF, robot, obj, link, 0)
@@ -69,15 +120,22 @@ def exclude_from_collisions(RDK, robot, tool, obj) -> None:
 def board_layout(cfg: dict) -> list:
     """All boards of the config as dicts: name, parent ("deck" = ARES frame, "wall", "station"), geometry
     (squares_x, squares_y, square_mm, marker_mm, dictionary, first_id) and the board pose xyz [mm] / rpy_deg in the
-    parent frame. The calibration board is named "calib"; targets inherit the geometry of [boards.ref]."""
+    parent frame (a leg board of the L is converted from its leg frame to the wall frame, mauer.reference.placements).
+    The calibration board is named "calib"; targets inherit the geometry of [boards.ref]."""
     keys = ("squares_x", "squares_y", "square_mm", "marker_mm", "dictionary")
     c = cfg["boards"]["calib"]
     out = [{"name": "calib", "parent": "deck", **{k: c[k] for k in keys}, "first_id": c["first_id"],
             "xyz": c["xyz"], "rpy_deg": c.get("rpy_deg", [0.0, 0.0, 0.0])}]
     ref = cfg["boards"]["ref"]
+    from mauer.geometry import xyz_rpy
+    from mauer.reference import placements
+    T = {p.name: p.T_parent_board for p in placements(cfg)}         # leg boards: T_wall_leg @ pose (L wall)
     for t in cfg.get("targets", []):
+        xyz, rpy = t["xyz"], t.get("rpy_deg", [0.0, 0.0, 0.0])
+        if "leg" in t:                                             # [[targets]] leg = "B": xyz/rpy in the leg frame
+            xyz, rpy = (v.tolist() for v in xyz_rpy(T[t["name"]]))
         out.append({"name": t["name"], "parent": t["parent"], **{k: t.get(k, ref[k]) for k in keys},
-                    "first_id": t["first_id"], "xyz": t["xyz"], "rpy_deg": t.get("rpy_deg", [0.0, 0.0, 0.0])})
+                    "first_id": t["first_id"], "xyz": xyz, "rpy_deg": rpy})
     return out
 
 
@@ -217,8 +275,8 @@ def set_camera_mount(cfg: dict, cam_tool, body, T_fc: Mat) -> None:
 # ── station ───────────────────────────────────────────────────────────────────
 def build(RDK, cfg: dict, camera: bool = True, boards: bool = True, pickup: bool = True) -> dict:
     """Build the station in RDK (replacing an open station of the same name) and return its items by role:
-    station, f_ares, ares, f_mount, robot, tool, f_wall, wall, [cam_tool, cam_body], [boards {name: item}],
-    [f_station, table]."""
+    station, f_ares, ares, f_mount, robot, tool, f_wall, wall, [legs {name: frame}, l_stones (L wall)],
+    [cam_tool, cam_body, cam_adapter], [boards {name: item}], [f_station, table]."""
     RDK.Render(False)
     for st in RDK.ItemList(ITEM_TYPE_STATION):
         if st.Name() == STATION_NAME:
@@ -273,13 +331,16 @@ def build(RDK, cfg: dict, camera: bool = True, boards: bool = True, pickup: bool
     w = cfg["wall"]
     f_wall = RDK.AddFrame("Wall", station)   # fixed in the world; ARES (base_link) moves between stops
     f_wall.setPose(wall_frame(cfg, w["dist_nominal"]))
-    pts = []
-    for uc, z_top, _ in wall_stones(cfg, w["u_from"], w["u_to"]):
-        pts += stone_points(cfg, "wall", u=uc, z_top=z_top)
-    wall = RDK.AddShape(as_mat(pts))      # AddShape cannot attach to a frame -> create, then re-parent
-    wall.setParent(f_wall)
-    wall.setName("Wall_nominal")
-    wall.setColor(STONE)
+    if w.get("legs"):                       # L wall ([[wall.legs]]): legs in their own frames, full + half stones
+        wall, it["legs"], it["l_stones"] = add_l_wall(RDK, cfg, f_wall)
+    else:
+        pts = []
+        for uc, z_top, _ in wall_stones(cfg, w["u_from"], w["u_to"]):
+            pts += stone_points(cfg, "wall", u=uc, z_top=z_top)
+        wall = RDK.AddShape(as_mat(pts))      # AddShape cannot attach to a frame -> create, then re-parent
+        wall.setParent(f_wall)
+        wall.setName("Wall_nominal")
+        wall.setColor(STONE)
     it.update(f_ares=f_ares, ares=ares, f_mount=f_mount, robot=robot, tool=tool, f_wall=f_wall, wall=wall)
 
     obstacles = [ares]
@@ -325,7 +386,8 @@ def main(argv: list | None = None) -> None:
                     help="start an own RoboDK on --port (the running one is not touched); closed at the end")
     ap.add_argument("--port", type=int, default=None, help="API port for --new-instance (default 20599)")
     ap.add_argument("--out", type=Path, default=None,
-                    help=f".rdk to save (default robodk/{STATION_NAME}.rdk; with --new-instance only if given)")
+                    help=f".rdk to save (default robodk/{STATION_NAME}.rdk, the L: robodk/{STATION_NAME}_L.rdk; with "
+                         "--new-instance only if given)")
     ap.add_argument("--no-camera", action="store_true", help="without flange camera")
     ap.add_argument("--no-boards", action="store_true", help="without reference boards and pick-up station")
     args, _ = ap.parse_known_args(argv)    # tolerant: simulate.py calls main() with its own sys.argv
@@ -334,7 +396,8 @@ def main(argv: list | None = None) -> None:
     RDK = connect(new_instance=args.new_instance, port=args.port)
     try:
         it = build(RDK, cfg, camera=not args.no_camera, boards=not args.no_boards, pickup=not args.no_boards)
-        out = args.out or (None if args.new_instance else REPO / "robodk" / f"{STATION_NAME}.rdk")
+        suffix = "_L" if cfg["wall"].get("legs") else ""        # the L never overwrites the straight-wall station
+        out = args.out or (None if args.new_instance else REPO / "robodk" / f"{STATION_NAME}{suffix}.rdk")
         if out is not None:
             RDK.Save(str(out), it["station"])
             print("Saved", out, flush=True)
