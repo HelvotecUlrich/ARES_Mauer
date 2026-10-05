@@ -1,21 +1,45 @@
-"""Build the RoboDK station ARES + UR5 + gripper + nominal wall from config/station.toml.
+"""Build the RoboDK station ARES + UR5 + gripper + flange camera + reference boards + nominal wall from
+config/station.toml.
 
-Usage (Windows Python, RoboDK is started if needed):
-    py.exe robodk/build_station.py [--snapshot]
+Usage (Windows Python):
+    py.exe robodk/build_station.py [--snapshot]           # running RoboDK (started if needed), saves the .rdk below
+    py.exe robodk/build_station.py --new-instance --out C:/temp/station.rdk   # own RoboDK on its own port
 
 Rebuilds the station from scratch each run (an open station with the same name is closed first) and saves it to
 robodk/ARES_UR5_Mauer.rdk (not versioned: contains the STEP mesh).
+
+Camera ([camera], [camera.mount] = PLACEHOLDER): robot tool "Camera" with TCP = T_flange_cam (the simulated camera of
+sim_camera.py attaches to it) and the object "Camera_body" (housing + lens, rdk_common.camera_body_points) attached
+to the gripper. RoboDK does not check objects attached to a tool against static objects by default, so its collision
+pairs are switched on explicitly (ARES, boards, pick-up table, arm links 0-5).
+
+Boards ([boards.calib], [boards.ref], [[targets]]): ChArUco boards as flat textured objects from PNGs generated here
+with OpenCV (cv2.aruco.CharucoBoard, marker ids first_id ..). Board frame = OpenCV 4.14 CharucoBoard frame: origin
+at the top-left outer corner of the chessboard, x right, y down, z into the board. Wall boards hang in the "Wall"
+frame, station boards in the "Pickup station" frame, the calibration board in the ARES frame (hidden: it is only on
+the deck during the hand-eye calibration). A white quiet zone of one square around each board is an ASSUMPTION of
+this model (print layout: tools/print_targets.py).
 """
 from __future__ import annotations
 
-import sys
+import argparse
+import ast
+import tempfile
+from pathlib import Path
 
-from rdk_common import (REPO, STATION_NAME, as_mat, connect, course_shift, course_top_z, load_config,
-                        snapshot, stone_points, tcp_pose, transl, ur5_base_pose, wall_frame)
+from rdk_common import (REPO, STATION_NAME, as_mat, box_points, camera_body_points, close_instance, connect,
+                        course_shift, course_top_z, load_config, set_tool_object_collisions, snapshot, stone_points,
+                        tcp_pose, transl, ur5_base_pose, wall_frame)
+from rdk_common import T_flange_cam as T_flange_cam_mat
 from robodk.robolink import COLLISION_OFF, COLLISION_ON, ITEM_TYPE_STATION, PROJECTION_ALONG_NORMAL
+from robodk.robomath import Mat, invH
 
 GREY = [0.75, 0.75, 0.75, 1.0]
 STONE = [0.72, 0.30, 0.20, 1.0]
+CAMERA = [0.15, 0.15, 0.18, 1.0]
+TABLE = [0.55, 0.45, 0.30, 1.0]
+BOARD_PX_PER_MM = 16.0             # texture resolution: 0.0625 mm/px, finer than the camera (0.073 mm/px at 320 mm)
+TABLE_TOP_MM = 30.0                # ASSUMPTION: thickness of the modelled pick-up table top (no legs modelled)
 
 
 def wall_stones(cfg: dict, u_from: float, u_to: float) -> list:
@@ -40,16 +64,146 @@ def exclude_from_collisions(RDK, robot, tool, obj) -> None:
     RDK.setCollisionActivePair(COLLISION_OFF, tool, obj, 0, 0)
 
 
-def main() -> None:
-    cfg = load_config()
-    want_snapshot = "--snapshot" in sys.argv
-    RDK = connect()
-    RDK.Render(False)
+# ── boards ────────────────────────────────────────────────────────────────────
+def board_layout(cfg: dict) -> list:
+    """All boards of the config as dicts: name, parent ("deck" = ARES frame, "wall", "station"), geometry
+    (squares_x, squares_y, square_mm, marker_mm, dictionary, first_id) and the board pose xyz [mm] / rpy_deg in the
+    parent frame. The calibration board is named "calib"; targets inherit the geometry of [boards.ref]."""
+    keys = ("squares_x", "squares_y", "square_mm", "marker_mm", "dictionary")
+    c = cfg["boards"]["calib"]
+    out = [{"name": "calib", "parent": "deck", **{k: c[k] for k in keys}, "first_id": c["first_id"],
+            "xyz": c["xyz"], "rpy_deg": c.get("rpy_deg", [0.0, 0.0, 0.0])}]
+    ref = cfg["boards"]["ref"]
+    for t in cfg.get("targets", []):
+        out.append({"name": t["name"], "parent": t["parent"], **{k: t.get(k, ref[k]) for k in keys},
+                    "first_id": t["first_id"], "xyz": t["xyz"], "rpy_deg": t.get("rpy_deg", [0.0, 0.0, 0.0])})
+    return out
 
+
+def charuco_board(spec: dict):
+    """cv2.aruco.CharucoBoard of a board spec with the explicit marker ids first_id .. first_id + n - 1."""
+    import cv2
+    import numpy as np
+    d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, spec["dictionary"]))
+    size = (int(spec["squares_x"]), int(spec["squares_y"]))
+    n = len(cv2.aruco.CharucoBoard(size, spec["square_mm"], spec["marker_mm"], d).getIds())
+    ids = np.arange(spec["first_id"], spec["first_id"] + n, dtype=np.int32)
+    return cv2.aruco.CharucoBoard(size, float(spec["square_mm"]), float(spec["marker_mm"]), d, ids)
+
+
+def board_png(spec: dict, path: Path, px_per_mm: float = BOARD_PX_PER_MM, margin_squares: int = 1) -> dict:
+    """Write the board as a PNG (whole pixels per square, white quiet zone of `margin_squares` squares) and return
+    its geometry: path, mm_per_px, margin_mm, image size [px]."""
+    import cv2
+    sq_px = int(round(spec["square_mm"] * px_per_mm))
+    m = margin_squares * sq_px
+    w, h = int(spec["squares_x"]) * sq_px + 2 * m, int(spec["squares_y"]) * sq_px + 2 * m
+    img = charuco_board(spec).generateImage((w, h), marginSize=m, borderBits=1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not cv2.imwrite(str(path), img):
+        raise RuntimeError(f"could not write {path}")
+    mm_per_px = spec["square_mm"] / sq_px
+    return {"path": path, "mm_per_px": mm_per_px, "margin_mm": m * mm_per_px, "size_px": (w, h)}
+
+
+def add_board(RDK, spec: dict, parent, T_parent_board: Mat, png_dir: Path | None = None):
+    """Board as a flat textured object, child of `parent`, with its board frame at T_parent_board.
+
+    RoboDK loads a PNG at 96 dpi as a flat object with its origin at the image corner, pixel (col, row) -> (+x, +y)
+    and the readable side facing -z (research 2026-10-05) - exactly the OpenCV board frame shifted by the quiet zone,
+    so only a scale and transl(-margin, -margin, 0) are needed."""
+    png_dir = png_dir or Path(tempfile.gettempdir()) / "ares_mauer_boards"
+    geo = board_png(spec, png_dir / f"board_{spec['name']}_{spec['dictionary']}_{spec['first_id']}.png")
+    item = RDK.AddFile(str(geo["path"]))
+    if not item.Valid():
+        raise RuntimeError(f"board import failed: {geo['path']}")
+    bb = item.setParam("BoundingBox")
+    bb = ast.literal_eval(bb) if isinstance(bb, str) else bb
+    size_mm = geo["size_px"][0] * geo["mm_per_px"]
+    item.Scale(size_mm / float(bb["size"][0]))
+    item.setParent(parent)
+    item.setName(f"Board_{spec['name']}")
+    item.setPose(T_parent_board * transl(-geo["margin_mm"], -geo["margin_mm"], 0))
+    return item
+
+
+def board_pose(spec: dict) -> Mat:
+    """T_parent_board of a board spec (xyz [mm], rpy_deg as in mauer.geometry.pose_xyz_rpy)."""
+    from mauer.geometry import pose_xyz_rpy, to_robodk
+    return to_robodk(pose_xyz_rpy(spec["xyz"], spec["rpy_deg"]))
+
+
+# ── pick-up station ───────────────────────────────────────────────────────────
+def T_wall_station(cfg: dict) -> Mat:
+    """Pick-up station frame in the wall frame, literally from [pickup_station] xyz_in_wall / rpy_in_wall_deg
+    (z = 0: the frame lies at floor level; the table top is at z = table_z in it)."""
+    from mauer.geometry import pose_xyz_rpy, to_robodk
+    p = cfg["pickup_station"]
+    return to_robodk(pose_xyz_rpy(p["xyz_in_wall"], p["rpy_in_wall_deg"]))
+
+
+def T_station_ares(cfg: dict) -> Mat:
+    """ARES base_link in the station frame when docked ([pickup_station] ares_xyz / ares_rpy_deg, PLACEHOLDER)."""
+    from mauer.geometry import pose_xyz_rpy, to_robodk
+    p = cfg["pickup_station"]
+    return to_robodk(pose_xyz_rpy(p["ares_xyz"], p["ares_rpy_deg"]))
+
+
+def table_extent(cfg: dict) -> tuple:
+    """(x_max, y_max) of the modelled table top in the station frame: from the origin (front-left corner) to half a
+    slot pitch beyond the last slot (derived from the PLACEHOLDER slot grid, ASSUMPTION)."""
+    p = cfg["pickup_station"]
+    x_max = p["slot_origin"][0] + (p["slot_cols"] - 0.5) * p["slot_pitch_x"]
+    y_max = p["slot_origin"][1] + (p["slot_rows"] - 0.5) * p["slot_pitch_y"]
+    return x_max, y_max
+
+
+def add_pickup_station(RDK, cfg: dict, f_wall):
+    """Frame "Pickup station" (child of the wall frame) and its table top as a slab (PLACEHOLDER layout)."""
+    f_station = RDK.AddFrame("Pickup station", f_wall)
+    f_station.setPose(T_wall_station(cfg))
+    x_max, y_max = table_extent(cfg)
+    z = cfg["pickup_station"]["table_z"]
+    table = RDK.AddShape(as_mat(box_points(x_max, y_max, TABLE_TOP_MM, x_max / 2, y_max / 2, z - TABLE_TOP_MM / 2)))
+    table.setParent(f_station)
+    table.setName("Pickup_table")
+    table.setColor(TABLE)
+    return f_station, table
+
+
+# ── camera ────────────────────────────────────────────────────────────────────
+def add_camera(RDK, cfg: dict, robot, tool, T_fc: Mat | None = None):
+    """Flange camera: robot tool "Camera" (TCP = T_flange_cam) and the body object "Camera_body" attached to the
+    gripper tool (objects under a tool are posed relative to its TCP). The gripper stays the active tool.
+    Returns (camera tool, body)."""
+    T_fc = T_fc if T_fc is not None else T_flange_cam_mat(cfg)
+    cam_tool = robot.AddTool(T_fc, "Camera")
+    robot.setPoseTool(tool)
+    body = RDK.AddShape(as_mat(camera_body_points(cfg)))
+    body.setParent(tool)
+    body.setName("Camera_body")
+    body.setPose(invH(tcp_pose(cfg)) * T_fc)
+    body.setColor(CAMERA)
+    return cam_tool, body
+
+
+def set_camera_mount(cfg: dict, cam_tool, body, T_fc: Mat) -> None:
+    """Move the camera (tool TCP and body) to another flange mount T_fc."""
+    cam_tool.setPoseTool(T_fc)
+    body.setPose(invH(tcp_pose(cfg)) * T_fc)
+
+
+# ── station ───────────────────────────────────────────────────────────────────
+def build(RDK, cfg: dict, camera: bool = True, boards: bool = True, pickup: bool = True) -> dict:
+    """Build the station in RDK (replacing an open station of the same name) and return its items by role:
+    station, f_ares, ares, f_mount, robot, tool, f_wall, wall, [cam_tool, cam_body], [boards {name: item}],
+    [f_station, table]."""
+    RDK.Render(False)
     for st in RDK.ItemList(ITEM_TYPE_STATION):
         if st.Name() == STATION_NAME:
             st.Delete()
     station = RDK.AddStation(STATION_NAME)
+    it = {"station": station}
 
     # ARES (STEP in base_link coordinates)
     f_ares = RDK.AddFrame("ARES base_link", station)
@@ -72,7 +226,7 @@ def main() -> None:
     rays = [[u["mount_x"] + dx, u["mount_y"] + dy, 2000.0, 0.0, 0.0, 1.0]   # RoboDK projects against the normal
             for dx, dy in ((0, 0), (-60, 0), (60, 0), (0, -60), (0, 60))]
     hits = RDK.ProjectPoints(rays, ares, PROJECTION_ALONG_NORMAL)
-    print("Deck height at the UR5 mount (5 rays):", ", ".join(f"{h[2]:.1f}" for h in hits))
+    print("Deck height at the UR5 mount (5 rays):", ", ".join(f"{h[2]:.1f}" for h in hits), flush=True)
 
     # UR5 on its mount frame
     f_mount = RDK.AddFrame("UR5 mount", f_ares)
@@ -103,21 +257,67 @@ def main() -> None:
     wall.setParent(f_wall)
     wall.setName("Wall_nominal")
     wall.setColor(STONE)
+    it.update(f_ares=f_ares, ares=ares, f_mount=f_mount, robot=robot, tool=tool, f_wall=f_wall, wall=wall)
+
+    obstacles = [ares]
+    if pickup:
+        it["f_station"], it["table"] = add_pickup_station(RDK, cfg, f_wall)
+        obstacles.append(it["table"])
+    if boards:
+        it["boards"] = {}
+        parents = {"deck": f_ares, "wall": f_wall, "station": it.get("f_station")}
+        for spec in board_layout(cfg):
+            parent = parents.get(spec["parent"])
+            if parent is None:
+                print(f"board {spec['name']}: parent {spec['parent']!r} not built - skipped", flush=True)
+                continue
+            b = add_board(RDK, spec, parent, board_pose(spec))
+            if spec["name"] == "calib":
+                b.setVisible(False)       # only on the deck during the hand-eye calibration (hidden = no collisions)
+            it["boards"][spec["name"]] = b
+            obstacles.append(b)
+        print(f"boards: {', '.join(it['boards'])}", flush=True)
+    if camera:
+        it["cam_tool"], it["cam_body"] = add_camera(RDK, cfg, robot, tool)
 
     RDK.setCollisionActive(COLLISION_ON)
     RDK.setCollisionActivePair(COLLISION_OFF, robot, ares, 0, 0)   # UR5 base is bolted to the deck
     exclude_from_collisions(RDK, robot, tool, wall)
+    if camera:
+        set_tool_object_collisions(RDK, it["cam_body"], robot, tool, obstacles)
 
     robot.setJoints([0, -90, 0, -90, 0, 0])
     RDK.Render(True)
-    out = REPO / "robodk" / f"{STATION_NAME}.rdk"
-    RDK.Save(str(out), station)
-    print("Saved", out)
+    return it
 
-    if want_snapshot:
-        img = REPO / "results" / "station_view.png"
-        ok = snapshot(RDK, img, eye=[2600, -2400, 1900], target=[400, 0, 300])
-        print("Snapshot", img, "ok" if ok else "FAILED")
+
+def main(argv: list | None = None) -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
+    ap.add_argument("--snapshot", action="store_true", help="render results/station_view.png")
+    ap.add_argument("--new-instance", action="store_true",
+                    help="start an own RoboDK on --port (the running one is not touched); closed at the end")
+    ap.add_argument("--port", type=int, default=None, help="API port for --new-instance (default 20599)")
+    ap.add_argument("--out", type=Path, default=None,
+                    help=f".rdk to save (default robodk/{STATION_NAME}.rdk; with --new-instance only if given)")
+    ap.add_argument("--no-camera", action="store_true", help="without flange camera")
+    ap.add_argument("--no-boards", action="store_true", help="without reference boards and pick-up station")
+    args, _ = ap.parse_known_args(argv)    # tolerant: simulate.py calls main() with its own sys.argv
+
+    cfg = load_config()
+    RDK = connect(new_instance=args.new_instance, port=args.port)
+    try:
+        it = build(RDK, cfg, camera=not args.no_camera, boards=not args.no_boards, pickup=not args.no_boards)
+        out = args.out or (None if args.new_instance else REPO / "robodk" / f"{STATION_NAME}.rdk")
+        if out is not None:
+            RDK.Save(str(out), it["station"])
+            print("Saved", out, flush=True)
+        if args.snapshot:
+            img = REPO / "results" / "station_view.png"
+            ok = snapshot(RDK, img, eye=[2600, -2400, 1900], target=[400, 0, 300])
+            print("Snapshot", img, "ok" if ok else "FAILED", flush=True)
+    finally:
+        if args.new_instance:
+            close_instance(RDK)
 
 
 if __name__ == "__main__":
