@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="230.000mm" height="120.000mm" viewBox="0 0 230.000 120.000">
+<polygon points="225.000,5.000 218.000,5.000 215.000,9.000 212.000,5.000 18.000,5.000 15.000,9.000 12.000,5.000 5.000,5.000 5.000,115.000 225.000,115.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="32.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="198.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="155.150,92.150 74.850,92.150 74.850,91.850 155.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,92.150 74.850,27.850 75.150,27.850 75.150,92.150" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,27.850 155.150,27.850 155.150,28.150 74.850,28.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,27.850 155.150,92.150 154.850,92.150 154.850,27.850" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,108.150 58.850,108.150 58.850,107.850 171.150,107.850" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,108.150 58.850,11.850 59.150,11.850 59.150,108.150" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,11.850 171.150,11.850 171.150,12.150 58.850,12.150" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,11.850 171.150,108.150 170.850,108.150 170.850,11.850" fill="#0000FF" stroke="none"/>
+<polygon points="167.150,92.150 156.350,92.150 156.350,91.850 167.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,104.150 154.850,93.350 155.150,93.350 155.150,104.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,92.150 126.850,92.150 126.850,91.850 155.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="126.933,91.799 130.201,93.433 130.067,93.701 126.799,92.067" fill="#0000FF" stroke="none"/>
+<polygon points="126.799,91.933 130.067,90.299 130.201,90.567 126.933,92.201" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,92.150 154.850,63.850 155.150,63.850 155.150,92.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.201,63.933 153.567,67.201 153.299,67.067 154.933,63.799" fill="#0000FF" stroke="none"/>
+<polygon points="155.067,63.799 156.701,67.067 156.433,67.201 154.799,63.933" fill="#0000FF" stroke="none"/>
+<text x="121.000" y="93.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="154.000" y="60.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="10.500" y="14.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="204.500" y="14.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="9.000" y="23.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="9.000" y="89.000" font-family="Arial" font-size="4.900" fill="#0000FF">W0</text>
+<text x="9.000" y="95.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 30-39</text>
+<text x="9.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 100 mm</text>
+<text x="9.000" y="110.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+</svg>

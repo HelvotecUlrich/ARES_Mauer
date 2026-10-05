@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220.400mm" height="183.400mm" viewBox="0 0 220.400 183.400">
+<polygon points="5.000,178.400 215.400,178.400 215.400,5.000 5.000,5.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="27.550,27.550 192.850,27.550 192.850,27.850 27.550,27.850" fill="#0000FF" stroke="none"/>
+<polygon points="192.850,27.550 192.850,147.850 192.550,147.850 192.550,27.550" fill="#0000FF" stroke="none"/>
+<polygon points="192.850,147.850 27.550,147.850 27.550,147.550 192.850,147.550" fill="#0000FF" stroke="none"/>
+<polygon points="27.550,147.850 27.550,27.550 27.850,27.550 27.850,147.850" fill="#0000FF" stroke="none"/>
+<polygon points="18.850,18.850 201.550,18.850 201.550,19.150 18.850,19.150" fill="#0000FF" stroke="none"/>
+<polygon points="201.550,18.850 201.550,156.550 201.250,156.550 201.250,18.850" fill="#0000FF" stroke="none"/>
+<polygon points="201.550,156.550 18.850,156.550 18.850,156.250 201.550,156.250" fill="#0000FF" stroke="none"/>
+<polygon points="18.850,156.550 18.850,18.850 19.150,18.850 19.150,156.550" fill="#0000FF" stroke="none"/>
+<polygon points="19.850,27.550 26.350,27.550 26.350,27.850 19.850,27.850" fill="#0000FF" stroke="none"/>
+<polygon points="27.850,19.850 27.850,26.350 27.550,26.350 27.550,19.850" fill="#0000FF" stroke="none"/>
+<polygon points="27.550,27.550 55.850,27.550 55.850,27.850 27.550,27.850" fill="#0000FF" stroke="none"/>
+<polygon points="55.767,27.901 52.499,26.267 52.633,25.999 55.901,27.633" fill="#0000FF" stroke="none"/>
+<polygon points="55.901,27.767 52.633,29.401 52.499,29.133 55.767,27.499" fill="#0000FF" stroke="none"/>
+<polygon points="27.850,27.550 27.850,55.850 27.550,55.850 27.550,27.550" fill="#0000FF" stroke="none"/>
+<polygon points="27.499,55.767 29.133,52.499 29.401,52.633 27.767,55.901" fill="#0000FF" stroke="none"/>
+<polygon points="27.633,55.901 25.999,52.633 26.267,52.499 27.901,55.767" fill="#0000FF" stroke="none"/>
+<text x="59.700" y="29.200" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="26.700" y="62.200" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="9.000" y="174.400" font-family="Arial" font-size="5.600" fill="#0000FF">calib ids 0-43</text>
+</svg>

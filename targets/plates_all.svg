@@ -1,0 +1,286 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="610.000mm" height="685.400mm" viewBox="0 0 610.000 685.400">
+<polygon points="225.000,5.000 218.000,5.000 215.000,9.000 212.000,5.000 18.000,5.000 15.000,9.000 12.000,5.000 5.000,5.000 5.000,115.000 225.000,115.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="32.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="198.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="155.150,92.150 74.850,92.150 74.850,91.850 155.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,92.150 74.850,27.850 75.150,27.850 75.150,92.150" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,27.850 155.150,27.850 155.150,28.150 74.850,28.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,27.850 155.150,92.150 154.850,92.150 154.850,27.850" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,108.150 58.850,108.150 58.850,107.850 171.150,107.850" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,108.150 58.850,11.850 59.150,11.850 59.150,108.150" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,11.850 171.150,11.850 171.150,12.150 58.850,12.150" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,11.850 171.150,108.150 170.850,108.150 170.850,11.850" fill="#0000FF" stroke="none"/>
+<polygon points="167.150,92.150 156.350,92.150 156.350,91.850 167.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,104.150 154.850,93.350 155.150,93.350 155.150,104.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,92.150 126.850,92.150 126.850,91.850 155.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="126.933,91.799 130.201,93.433 130.067,93.701 126.799,92.067" fill="#0000FF" stroke="none"/>
+<polygon points="126.799,91.933 130.067,90.299 130.201,90.567 126.933,92.201" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,92.150 154.850,63.850 155.150,63.850 155.150,92.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.201,63.933 153.567,67.201 153.299,67.067 154.933,63.799" fill="#0000FF" stroke="none"/>
+<polygon points="155.067,63.799 156.701,67.067 156.433,67.201 154.799,63.933" fill="#0000FF" stroke="none"/>
+<text x="121.000" y="93.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="154.000" y="60.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="10.500" y="14.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="204.500" y="14.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="9.000" y="23.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="9.000" y="89.000" font-family="Arial" font-size="4.900" fill="#0000FF">W0</text>
+<text x="9.000" y="95.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 30-39</text>
+<text x="9.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 100 mm</text>
+<text x="9.000" y="110.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="455.000,5.000 448.000,5.000 445.000,9.000 442.000,5.000 248.000,5.000 245.000,9.000 242.000,5.000 235.000,5.000 235.000,115.000 455.000,115.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="262.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="428.000" cy="68.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="385.150,92.150 304.850,92.150 304.850,91.850 385.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,92.150 304.850,27.850 305.150,27.850 305.150,92.150" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,27.850 385.150,27.850 385.150,28.150 304.850,28.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,27.850 385.150,92.150 384.850,92.150 384.850,27.850" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,108.150 288.850,108.150 288.850,107.850 401.150,107.850" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,108.150 288.850,11.850 289.150,11.850 289.150,108.150" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,11.850 401.150,11.850 401.150,12.150 288.850,12.150" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,11.850 401.150,108.150 400.850,108.150 400.850,11.850" fill="#0000FF" stroke="none"/>
+<polygon points="397.150,92.150 386.350,92.150 386.350,91.850 397.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,104.150 384.850,93.350 385.150,93.350 385.150,104.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,92.150 356.850,92.150 356.850,91.850 385.150,91.850" fill="#0000FF" stroke="none"/>
+<polygon points="356.933,91.799 360.201,93.433 360.067,93.701 356.799,92.067" fill="#0000FF" stroke="none"/>
+<polygon points="356.799,91.933 360.067,90.299 360.201,90.567 356.933,92.201" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,92.150 384.850,63.850 385.150,63.850 385.150,92.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.201,63.933 383.567,67.201 383.299,67.067 384.933,63.799" fill="#0000FF" stroke="none"/>
+<polygon points="385.067,63.799 386.701,67.067 386.433,67.201 384.799,63.933" fill="#0000FF" stroke="none"/>
+<text x="351.000" y="93.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="384.000" y="60.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="240.500" y="14.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="434.500" y="14.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="239.000" y="23.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="239.000" y="89.000" font-family="Arial" font-size="4.900" fill="#0000FF">W1</text>
+<text x="239.000" y="95.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 40-49</text>
+<text x="239.000" y="101.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 900 mm</text>
+<text x="239.000" y="110.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="225.000,125.000 218.000,125.000 215.000,129.000 212.000,125.000 18.000,125.000 15.000,129.000 12.000,125.000 5.000,125.000 5.000,235.000 225.000,235.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="32.000" cy="188.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="198.000" cy="188.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="155.150,212.150 74.850,212.150 74.850,211.850 155.150,211.850" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,212.150 74.850,147.850 75.150,147.850 75.150,212.150" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,147.850 155.150,147.850 155.150,148.150 74.850,148.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,147.850 155.150,212.150 154.850,212.150 154.850,147.850" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,228.150 58.850,228.150 58.850,227.850 171.150,227.850" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,228.150 58.850,131.850 59.150,131.850 59.150,228.150" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,131.850 171.150,131.850 171.150,132.150 58.850,132.150" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,131.850 171.150,228.150 170.850,228.150 170.850,131.850" fill="#0000FF" stroke="none"/>
+<polygon points="167.150,212.150 156.350,212.150 156.350,211.850 167.150,211.850" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,224.150 154.850,213.350 155.150,213.350 155.150,224.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,212.150 126.850,212.150 126.850,211.850 155.150,211.850" fill="#0000FF" stroke="none"/>
+<polygon points="126.933,211.799 130.201,213.433 130.067,213.701 126.799,212.067" fill="#0000FF" stroke="none"/>
+<polygon points="126.799,211.933 130.067,210.299 130.201,210.567 126.933,212.201" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,212.150 154.850,183.850 155.150,183.850 155.150,212.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.201,183.933 153.567,187.201 153.299,187.067 154.933,183.799" fill="#0000FF" stroke="none"/>
+<polygon points="155.067,183.799 156.701,187.067 156.433,187.201 154.799,183.933" fill="#0000FF" stroke="none"/>
+<text x="121.000" y="213.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="154.000" y="180.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="10.500" y="134.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="204.500" y="134.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="9.000" y="143.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="9.000" y="209.000" font-family="Arial" font-size="4.900" fill="#0000FF">W2</text>
+<text x="9.000" y="215.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 50-59</text>
+<text x="9.000" y="221.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 1700 mm</text>
+<text x="9.000" y="230.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="455.000,125.000 448.000,125.000 445.000,129.000 442.000,125.000 248.000,125.000 245.000,129.000 242.000,125.000 235.000,125.000 235.000,235.000 455.000,235.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="262.000" cy="188.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="428.000" cy="188.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="385.150,212.150 304.850,212.150 304.850,211.850 385.150,211.850" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,212.150 304.850,147.850 305.150,147.850 305.150,212.150" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,147.850 385.150,147.850 385.150,148.150 304.850,148.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,147.850 385.150,212.150 384.850,212.150 384.850,147.850" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,228.150 288.850,228.150 288.850,227.850 401.150,227.850" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,228.150 288.850,131.850 289.150,131.850 289.150,228.150" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,131.850 401.150,131.850 401.150,132.150 288.850,132.150" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,131.850 401.150,228.150 400.850,228.150 400.850,131.850" fill="#0000FF" stroke="none"/>
+<polygon points="397.150,212.150 386.350,212.150 386.350,211.850 397.150,211.850" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,224.150 384.850,213.350 385.150,213.350 385.150,224.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,212.150 356.850,212.150 356.850,211.850 385.150,211.850" fill="#0000FF" stroke="none"/>
+<polygon points="356.933,211.799 360.201,213.433 360.067,213.701 356.799,212.067" fill="#0000FF" stroke="none"/>
+<polygon points="356.799,211.933 360.067,210.299 360.201,210.567 356.933,212.201" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,212.150 384.850,183.850 385.150,183.850 385.150,212.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.201,183.933 383.567,187.201 383.299,187.067 384.933,183.799" fill="#0000FF" stroke="none"/>
+<polygon points="385.067,183.799 386.701,187.067 386.433,187.201 384.799,183.933" fill="#0000FF" stroke="none"/>
+<text x="351.000" y="213.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="384.000" y="180.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="240.500" y="134.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="434.500" y="134.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="239.000" y="143.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="239.000" y="209.000" font-family="Arial" font-size="4.900" fill="#0000FF">W3</text>
+<text x="239.000" y="215.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 60-69</text>
+<text x="239.000" y="221.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 2500 mm</text>
+<text x="239.000" y="230.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="225.000,245.000 218.000,245.000 215.000,249.000 212.000,245.000 18.000,245.000 15.000,249.000 12.000,245.000 5.000,245.000 5.000,355.000 225.000,355.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="32.000" cy="308.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="198.000" cy="308.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="155.150,332.150 74.850,332.150 74.850,331.850 155.150,331.850" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,332.150 74.850,267.850 75.150,267.850 75.150,332.150" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,267.850 155.150,267.850 155.150,268.150 74.850,268.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,267.850 155.150,332.150 154.850,332.150 154.850,267.850" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,348.150 58.850,348.150 58.850,347.850 171.150,347.850" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,348.150 58.850,251.850 59.150,251.850 59.150,348.150" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,251.850 171.150,251.850 171.150,252.150 58.850,252.150" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,251.850 171.150,348.150 170.850,348.150 170.850,251.850" fill="#0000FF" stroke="none"/>
+<polygon points="167.150,332.150 156.350,332.150 156.350,331.850 167.150,331.850" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,344.150 154.850,333.350 155.150,333.350 155.150,344.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,332.150 126.850,332.150 126.850,331.850 155.150,331.850" fill="#0000FF" stroke="none"/>
+<polygon points="126.933,331.799 130.201,333.433 130.067,333.701 126.799,332.067" fill="#0000FF" stroke="none"/>
+<polygon points="126.799,331.933 130.067,330.299 130.201,330.567 126.933,332.201" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,332.150 154.850,303.850 155.150,303.850 155.150,332.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.201,303.933 153.567,307.201 153.299,307.067 154.933,303.799" fill="#0000FF" stroke="none"/>
+<polygon points="155.067,303.799 156.701,307.067 156.433,307.201 154.799,303.933" fill="#0000FF" stroke="none"/>
+<text x="121.000" y="333.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="154.000" y="300.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="10.500" y="254.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="204.500" y="254.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="9.000" y="263.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="9.000" y="329.000" font-family="Arial" font-size="4.900" fill="#0000FF">W4</text>
+<text x="9.000" y="335.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 70-79</text>
+<text x="9.000" y="341.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 3300 mm</text>
+<text x="9.000" y="350.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="455.000,245.000 448.000,245.000 445.000,249.000 442.000,245.000 248.000,245.000 245.000,249.000 242.000,245.000 235.000,245.000 235.000,355.000 455.000,355.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="262.000" cy="308.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="428.000" cy="308.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="385.150,332.150 304.850,332.150 304.850,331.850 385.150,331.850" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,332.150 304.850,267.850 305.150,267.850 305.150,332.150" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,267.850 385.150,267.850 385.150,268.150 304.850,268.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,267.850 385.150,332.150 384.850,332.150 384.850,267.850" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,348.150 288.850,348.150 288.850,347.850 401.150,347.850" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,348.150 288.850,251.850 289.150,251.850 289.150,348.150" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,251.850 401.150,251.850 401.150,252.150 288.850,252.150" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,251.850 401.150,348.150 400.850,348.150 400.850,251.850" fill="#0000FF" stroke="none"/>
+<polygon points="397.150,332.150 386.350,332.150 386.350,331.850 397.150,331.850" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,344.150 384.850,333.350 385.150,333.350 385.150,344.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,332.150 356.850,332.150 356.850,331.850 385.150,331.850" fill="#0000FF" stroke="none"/>
+<polygon points="356.933,331.799 360.201,333.433 360.067,333.701 356.799,332.067" fill="#0000FF" stroke="none"/>
+<polygon points="356.799,331.933 360.067,330.299 360.201,330.567 356.933,332.201" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,332.150 384.850,303.850 385.150,303.850 385.150,332.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.201,303.933 383.567,307.201 383.299,307.067 384.933,303.799" fill="#0000FF" stroke="none"/>
+<polygon points="385.067,303.799 386.701,307.067 386.433,307.201 384.799,303.933" fill="#0000FF" stroke="none"/>
+<text x="351.000" y="333.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="384.000" y="300.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="240.500" y="254.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="434.500" y="254.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="239.000" y="263.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="239.000" y="329.000" font-family="Arial" font-size="4.900" fill="#0000FF">W5</text>
+<text x="239.000" y="335.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 80-89</text>
+<text x="239.000" y="341.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 4100 mm</text>
+<text x="239.000" y="350.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="225.000,365.000 218.000,365.000 215.000,369.000 212.000,365.000 18.000,365.000 15.000,369.000 12.000,365.000 5.000,365.000 5.000,475.000 225.000,475.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="32.000" cy="428.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="198.000" cy="428.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="155.150,452.150 74.850,452.150 74.850,451.850 155.150,451.850" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,452.150 74.850,387.850 75.150,387.850 75.150,452.150" fill="#0000FF" stroke="none"/>
+<polygon points="74.850,387.850 155.150,387.850 155.150,388.150 74.850,388.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,387.850 155.150,452.150 154.850,452.150 154.850,387.850" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,468.150 58.850,468.150 58.850,467.850 171.150,467.850" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,468.150 58.850,371.850 59.150,371.850 59.150,468.150" fill="#0000FF" stroke="none"/>
+<polygon points="58.850,371.850 171.150,371.850 171.150,372.150 58.850,372.150" fill="#0000FF" stroke="none"/>
+<polygon points="171.150,371.850 171.150,468.150 170.850,468.150 170.850,371.850" fill="#0000FF" stroke="none"/>
+<polygon points="167.150,452.150 156.350,452.150 156.350,451.850 167.150,451.850" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,464.150 154.850,453.350 155.150,453.350 155.150,464.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.150,452.150 126.850,452.150 126.850,451.850 155.150,451.850" fill="#0000FF" stroke="none"/>
+<polygon points="126.933,451.799 130.201,453.433 130.067,453.701 126.799,452.067" fill="#0000FF" stroke="none"/>
+<polygon points="126.799,451.933 130.067,450.299 130.201,450.567 126.933,452.201" fill="#0000FF" stroke="none"/>
+<polygon points="154.850,452.150 154.850,423.850 155.150,423.850 155.150,452.150" fill="#0000FF" stroke="none"/>
+<polygon points="155.201,423.933 153.567,427.201 153.299,427.067 154.933,423.799" fill="#0000FF" stroke="none"/>
+<polygon points="155.067,423.799 156.701,427.067 156.433,427.201 154.799,423.933" fill="#0000FF" stroke="none"/>
+<text x="121.000" y="453.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="154.000" y="420.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="10.500" y="374.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="204.500" y="374.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="9.000" y="383.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="9.000" y="449.000" font-family="Arial" font-size="4.900" fill="#0000FF">W6</text>
+<text x="9.000" y="455.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 90-99</text>
+<text x="9.000" y="461.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 4900 mm</text>
+<text x="9.000" y="470.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="455.000,365.000 448.000,365.000 445.000,369.000 442.000,365.000 248.000,365.000 245.000,369.000 242.000,365.000 235.000,365.000 235.000,475.000 455.000,475.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="262.000" cy="428.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<circle cx="428.000" cy="428.000" r="10.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="385.150,452.150 304.850,452.150 304.850,451.850 385.150,451.850" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,452.150 304.850,387.850 305.150,387.850 305.150,452.150" fill="#0000FF" stroke="none"/>
+<polygon points="304.850,387.850 385.150,387.850 385.150,388.150 304.850,388.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,387.850 385.150,452.150 384.850,452.150 384.850,387.850" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,468.150 288.850,468.150 288.850,467.850 401.150,467.850" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,468.150 288.850,371.850 289.150,371.850 289.150,468.150" fill="#0000FF" stroke="none"/>
+<polygon points="288.850,371.850 401.150,371.850 401.150,372.150 288.850,372.150" fill="#0000FF" stroke="none"/>
+<polygon points="401.150,371.850 401.150,468.150 400.850,468.150 400.850,371.850" fill="#0000FF" stroke="none"/>
+<polygon points="397.150,452.150 386.350,452.150 386.350,451.850 397.150,451.850" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,464.150 384.850,453.350 385.150,453.350 385.150,464.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.150,452.150 356.850,452.150 356.850,451.850 385.150,451.850" fill="#0000FF" stroke="none"/>
+<polygon points="356.933,451.799 360.201,453.433 360.067,453.701 356.799,452.067" fill="#0000FF" stroke="none"/>
+<polygon points="356.799,451.933 360.067,450.299 360.201,450.567 356.933,452.201" fill="#0000FF" stroke="none"/>
+<polygon points="384.850,452.150 384.850,423.850 385.150,423.850 385.150,452.150" fill="#0000FF" stroke="none"/>
+<polygon points="385.201,423.933 383.567,427.201 383.299,427.067 384.933,423.799" fill="#0000FF" stroke="none"/>
+<polygon points="385.067,423.799 386.701,427.067 386.433,427.201 384.799,423.933" fill="#0000FF" stroke="none"/>
+<text x="351.000" y="453.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="384.000" y="420.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="240.500" y="374.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="434.500" y="374.000" font-family="Arial" font-size="4.200" fill="#0000FF">joint</text>
+<text x="239.000" y="383.000" font-family="Arial" font-size="4.900" fill="#0000FF">WALL ^</text>
+<text x="239.000" y="449.000" font-family="Arial" font-size="4.900" fill="#0000FF">W7</text>
+<text x="239.000" y="455.000" font-family="Arial" font-size="4.200" fill="#0000FF">ids 100-109</text>
+<text x="239.000" y="461.000" font-family="Arial" font-size="4.200" fill="#0000FF">u = 5700 mm</text>
+<text x="239.000" y="470.000" font-family="Arial" font-size="4.900" fill="#0000FF">ARES v</text>
+<polygon points="465.000,497.000 605.000,497.000 605.000,365.000 465.000,365.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="494.850,394.850 575.150,394.850 575.150,395.150 494.850,395.150" fill="#0000FF" stroke="none"/>
+<polygon points="575.150,394.850 575.150,459.150 574.850,459.150 574.850,394.850" fill="#0000FF" stroke="none"/>
+<polygon points="575.150,459.150 494.850,459.150 494.850,458.850 575.150,458.850" fill="#0000FF" stroke="none"/>
+<polygon points="494.850,459.150 494.850,394.850 495.150,394.850 495.150,459.150" fill="#0000FF" stroke="none"/>
+<polygon points="478.850,378.850 591.150,378.850 591.150,379.150 478.850,379.150" fill="#0000FF" stroke="none"/>
+<polygon points="591.150,378.850 591.150,475.150 590.850,475.150 590.850,378.850" fill="#0000FF" stroke="none"/>
+<polygon points="591.150,475.150 478.850,475.150 478.850,474.850 591.150,474.850" fill="#0000FF" stroke="none"/>
+<polygon points="478.850,475.150 478.850,378.850 479.150,378.850 479.150,475.150" fill="#0000FF" stroke="none"/>
+<polygon points="482.850,394.850 493.650,394.850 493.650,395.150 482.850,395.150" fill="#0000FF" stroke="none"/>
+<polygon points="495.150,382.850 495.150,393.650 494.850,393.650 494.850,382.850" fill="#0000FF" stroke="none"/>
+<polygon points="494.850,394.850 523.150,394.850 523.150,395.150 494.850,395.150" fill="#0000FF" stroke="none"/>
+<polygon points="523.067,395.201 519.799,393.567 519.933,393.299 523.201,394.933" fill="#0000FF" stroke="none"/>
+<polygon points="523.201,395.067 519.933,396.701 519.799,396.433 523.067,394.799" fill="#0000FF" stroke="none"/>
+<polygon points="495.150,394.850 495.150,423.150 494.850,423.150 494.850,394.850" fill="#0000FF" stroke="none"/>
+<polygon points="494.799,423.067 496.433,419.799 496.701,419.933 495.067,423.201" fill="#0000FF" stroke="none"/>
+<polygon points="494.933,423.201 493.299,419.933 493.567,419.799 495.201,423.067" fill="#0000FF" stroke="none"/>
+<text x="527.000" y="396.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="494.000" y="429.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="469.000" y="493.000" font-family="Arial" font-size="5.600" fill="#0000FF">S0 ids 200-209</text>
+<polygon points="5.000,639.000 145.000,639.000 145.000,507.000 5.000,507.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="34.850,536.850 115.150,536.850 115.150,537.150 34.850,537.150" fill="#0000FF" stroke="none"/>
+<polygon points="115.150,536.850 115.150,601.150 114.850,601.150 114.850,536.850" fill="#0000FF" stroke="none"/>
+<polygon points="115.150,601.150 34.850,601.150 34.850,600.850 115.150,600.850" fill="#0000FF" stroke="none"/>
+<polygon points="34.850,601.150 34.850,536.850 35.150,536.850 35.150,601.150" fill="#0000FF" stroke="none"/>
+<polygon points="18.850,520.850 131.150,520.850 131.150,521.150 18.850,521.150" fill="#0000FF" stroke="none"/>
+<polygon points="131.150,520.850 131.150,617.150 130.850,617.150 130.850,520.850" fill="#0000FF" stroke="none"/>
+<polygon points="131.150,617.150 18.850,617.150 18.850,616.850 131.150,616.850" fill="#0000FF" stroke="none"/>
+<polygon points="18.850,617.150 18.850,520.850 19.150,520.850 19.150,617.150" fill="#0000FF" stroke="none"/>
+<polygon points="22.850,536.850 33.650,536.850 33.650,537.150 22.850,537.150" fill="#0000FF" stroke="none"/>
+<polygon points="35.150,524.850 35.150,535.650 34.850,535.650 34.850,524.850" fill="#0000FF" stroke="none"/>
+<polygon points="34.850,536.850 63.150,536.850 63.150,537.150 34.850,537.150" fill="#0000FF" stroke="none"/>
+<polygon points="63.067,537.201 59.799,535.567 59.933,535.299 63.201,536.933" fill="#0000FF" stroke="none"/>
+<polygon points="63.201,537.067 59.933,538.701 59.799,538.433 63.067,536.799" fill="#0000FF" stroke="none"/>
+<polygon points="35.150,536.850 35.150,565.150 34.850,565.150 34.850,536.850" fill="#0000FF" stroke="none"/>
+<polygon points="34.799,565.067 36.433,561.799 36.701,561.933 35.067,565.201" fill="#0000FF" stroke="none"/>
+<polygon points="34.933,565.201 33.299,561.933 33.567,561.799 35.201,565.067" fill="#0000FF" stroke="none"/>
+<text x="67.000" y="538.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="34.000" y="571.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="9.000" y="635.000" font-family="Arial" font-size="5.600" fill="#0000FF">S1 ids 210-219</text>
+<polygon points="155.000,680.400 365.400,680.400 365.400,507.000 155.000,507.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="177.550,529.550 342.850,529.550 342.850,529.850 177.550,529.850" fill="#0000FF" stroke="none"/>
+<polygon points="342.850,529.550 342.850,649.850 342.550,649.850 342.550,529.550" fill="#0000FF" stroke="none"/>
+<polygon points="342.850,649.850 177.550,649.850 177.550,649.550 342.850,649.550" fill="#0000FF" stroke="none"/>
+<polygon points="177.550,649.850 177.550,529.550 177.850,529.550 177.850,649.850" fill="#0000FF" stroke="none"/>
+<polygon points="168.850,520.850 351.550,520.850 351.550,521.150 168.850,521.150" fill="#0000FF" stroke="none"/>
+<polygon points="351.550,520.850 351.550,658.550 351.250,658.550 351.250,520.850" fill="#0000FF" stroke="none"/>
+<polygon points="351.550,658.550 168.850,658.550 168.850,658.250 351.550,658.250" fill="#0000FF" stroke="none"/>
+<polygon points="168.850,658.550 168.850,520.850 169.150,520.850 169.150,658.550" fill="#0000FF" stroke="none"/>
+<polygon points="169.850,529.550 176.350,529.550 176.350,529.850 169.850,529.850" fill="#0000FF" stroke="none"/>
+<polygon points="177.850,521.850 177.850,528.350 177.550,528.350 177.550,521.850" fill="#0000FF" stroke="none"/>
+<polygon points="177.550,529.550 205.850,529.550 205.850,529.850 177.550,529.850" fill="#0000FF" stroke="none"/>
+<polygon points="205.767,529.901 202.499,528.267 202.633,527.999 205.901,529.633" fill="#0000FF" stroke="none"/>
+<polygon points="205.901,529.767 202.633,531.401 202.499,531.133 205.767,529.499" fill="#0000FF" stroke="none"/>
+<polygon points="177.850,529.550 177.850,557.850 177.550,557.850 177.550,529.550" fill="#0000FF" stroke="none"/>
+<polygon points="177.499,557.767 179.133,554.499 179.401,554.633 177.767,557.901" fill="#0000FF" stroke="none"/>
+<polygon points="177.633,557.901 175.999,554.633 176.267,554.499 177.901,557.767" fill="#0000FF" stroke="none"/>
+<text x="209.700" y="531.200" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="176.700" y="564.200" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="159.000" y="676.400" font-family="Arial" font-size="5.600" fill="#0000FF">calib ids 0-43</text>
+</svg>

@@ -165,6 +165,45 @@ def plain_plate(cfg: dict, spec) -> Plate:
     return pl
 
 
+def write_svg(plates: list[tuple[Plate, tuple]], path: Path, line_w: float = 0.3) -> None:
+    """SVG (mm) for laser software that raster-engraves blue: cuts = red hairlines (#FF0000, 0.01 mm, no fill),
+    engrave marks = blue FILLED strips line_w wide (#0000FF) - a raster engrave pass only fills areas, a hairline has
+    none (Trotec Speedy 2026-10-05: DXF text engraved, blue lines not). Text as blue filled glyphs."""
+    xmin = min(o[0] - p.w / 2 for p, o in plates) - 5
+    xmax = max(o[0] + p.w / 2 for p, o in plates) + 5
+    ymin = min(o[1] - p.h / 2 for p, o in plates) - 5
+    ymax = max(o[1] + p.h / 2 for p, o in plates) + 5
+    W, H = xmax - xmin, ymax - ymin
+    S = lambda p: (p[0] - xmin, ymax - p[1])                                     # noqa: E731  DXF (y up) -> SVG
+    f = lambda v: f"{v:.3f}"                                                     # noqa: E731
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{f(W)}mm" height="{f(H)}mm" viewBox="0 0 {f(W)} {f(H)}">']
+    for pl, o in plates:
+        o = np.asarray(o, float)
+        for pts in pl.cut_polys:
+            q = " ".join(f"{f(x)},{f(y)}" for x, y in (S(np.asarray(p) + o) for p in pts))
+            out.append(f'<polygon points="{q}" fill="none" stroke="#FF0000" stroke-width="0.01"/>')
+        for c, r in pl.cut_circles:
+            x, y = S(np.asarray(c) + o)
+            out.append(f'<circle cx="{f(x)}" cy="{f(y)}" r="{f(r)}" fill="none" stroke="#FF0000" stroke-width="0.01"/>')
+        for a, b in pl.eng_lines:
+            a, b = np.asarray(a, float) + o, np.asarray(b, float) + o
+            d = b - a
+            n = np.linalg.norm(d)
+            if n < 1e-9:
+                continue
+            d /= n
+            nn = np.array([-d[1], d[0]]) * line_w / 2
+            a, b = a - d * line_w / 2, b + d * line_w / 2                       # square ends close the corners
+            q = " ".join(f"{f(x)},{f(y)}" for x, y in (S(p) for p in (a + nn, b + nn, b - nn, a - nn)))
+            out.append(f'<polygon points="{q}" fill="#0000FF" stroke="none"/>')
+        for p, h, txt in pl.texts:
+            x, y = S(np.asarray(p, float) + o)
+            out.append(f'<text x="{f(x)}" y="{f(y)}" font-family="Arial" font-size="{f(h * 1.4)}" '
+                       f'fill="#0000FF">{txt.replace("&", "&amp;").replace("<", "&lt;")}</text>')
+    out.append("</svg>\n")
+    path.write_text("\n".join(out), encoding="utf-8")
+
+
 def preview(plates: list[tuple[Plate, tuple]], path: Path, px_per_mm: float = 4.0) -> None:
     import cv2
     xmax = max(o[0] + p.w / 2 for p, o in plates) + 10
@@ -210,6 +249,7 @@ def main(argv: list | None = None) -> int:
         d = Dxf()
         pl.emit(d)
         d.write(out / f"{pl.name}_plate.dxf")
+        write_svg([(pl, (0.0, 0.0))], out / f"{pl.name}_plate.svg")
         print(f"{pl.name}_plate.dxf  {pl.w:.0f} x {pl.h:.0f} mm", flush=True)
 
     # one sheet: rows of plates, 10 mm apart, max 600 mm wide
@@ -223,8 +263,9 @@ def main(argv: list | None = None) -> int:
         x += pl.w + gap
         row_h = max(row_h, pl.h)
     sheet.write(out / "plates_all.dxf")
+    write_svg(placed, out / "plates_all.svg")
     preview(placed, out / "plates_preview.png")
-    print(f"plates_all.dxf ({len(plates)} plates), plates_preview.png -> {out}", flush=True)
+    print(f"plates_all.dxf + .svg ({len(plates)} plates), plates_preview.png -> {out}", flush=True)
     return 0
 
 

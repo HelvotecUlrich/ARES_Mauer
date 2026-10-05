@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150.000mm" height="142.000mm" viewBox="0 0 150.000 142.000">
+<polygon points="5.000,137.000 145.000,137.000 145.000,5.000 5.000,5.000" fill="none" stroke="#FF0000" stroke-width="0.01"/>
+<polygon points="34.850,34.850 115.150,34.850 115.150,35.150 34.850,35.150" fill="#0000FF" stroke="none"/>
+<polygon points="115.150,34.850 115.150,99.150 114.850,99.150 114.850,34.850" fill="#0000FF" stroke="none"/>
+<polygon points="115.150,99.150 34.850,99.150 34.850,98.850 115.150,98.850" fill="#0000FF" stroke="none"/>
+<polygon points="34.850,99.150 34.850,34.850 35.150,34.850 35.150,99.150" fill="#0000FF" stroke="none"/>
+<polygon points="18.850,18.850 131.150,18.850 131.150,19.150 18.850,19.150" fill="#0000FF" stroke="none"/>
+<polygon points="131.150,18.850 131.150,115.150 130.850,115.150 130.850,18.850" fill="#0000FF" stroke="none"/>
+<polygon points="131.150,115.150 18.850,115.150 18.850,114.850 131.150,114.850" fill="#0000FF" stroke="none"/>
+<polygon points="18.850,115.150 18.850,18.850 19.150,18.850 19.150,115.150" fill="#0000FF" stroke="none"/>
+<polygon points="22.850,34.850 33.650,34.850 33.650,35.150 22.850,35.150" fill="#0000FF" stroke="none"/>
+<polygon points="35.150,22.850 35.150,33.650 34.850,33.650 34.850,22.850" fill="#0000FF" stroke="none"/>
+<polygon points="34.850,34.850 63.150,34.850 63.150,35.150 34.850,35.150" fill="#0000FF" stroke="none"/>
+<polygon points="63.067,35.201 59.799,33.567 59.933,33.299 63.201,34.933" fill="#0000FF" stroke="none"/>
+<polygon points="63.201,35.067 59.933,36.701 59.799,36.433 63.067,34.799" fill="#0000FF" stroke="none"/>
+<polygon points="35.150,34.850 35.150,63.150 34.850,63.150 34.850,34.850" fill="#0000FF" stroke="none"/>
+<polygon points="34.799,63.067 36.433,59.799 36.701,59.933 35.067,63.201" fill="#0000FF" stroke="none"/>
+<polygon points="34.933,63.201 33.299,59.933 33.567,59.799 35.201,63.067" fill="#0000FF" stroke="none"/>
+<text x="67.000" y="36.500" font-family="Arial" font-size="4.200" fill="#0000FF">x</text>
+<text x="34.000" y="69.500" font-family="Arial" font-size="4.200" fill="#0000FF">y</text>
+<text x="9.000" y="133.000" font-family="Arial" font-size="5.600" fill="#0000FF">S1 ids 210-219</text>
+</svg>

@@ -16,8 +16,12 @@ and `tools/make_plates.py` (DXF). Regenerate after any config change; do not edi
 - Trim the paper along the white margin (one square = 16 mm / 15 mm around the board); keep the origin crosshair.
 
 ## 2. Laser-cut the MDF (4 mm)
-- `plates_all.dxf` (all plates on one sheet) or `<name>_plate.dxf`, units mm, DXF R12.
-- Layer **CUT** (red) = cut through; layer **ENGRAVE** (blue) = light engrave/score on the top face.
+- **Trotec Speedy / raster-engraving software: use `plates_all.svg`** (or `<name>_plate.svg`): cuts are red
+  hairlines (#FF0000, 0.01 mm), engrave marks are blue **filled** 0.3 mm strips (#0000FF) and blue text. A raster
+  engrave pass only fills areas, so the zero-width blue lines of the DXF were skipped (2026-10-05).
+- `plates_all.dxf` / `<name>_plate.dxf` (DXF R12, mm): layer and entity colour CUT = ACI 1 red, ENGRAVE = ACI 5 blue,
+  all hairlines - only if blue is set to a vector process (low-power cut = scoring).
+- Plates already cut: put them back into the holes of the sheet (unmoved in the machine) and run only blue.
 
 ## 3. Glue
 - Glue the print onto the engraved rectangle: the board's outer squares on the inner engraved rectangle, the printed
