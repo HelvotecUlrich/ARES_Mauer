@@ -703,3 +703,53 @@ def test_full_l(lcfg, ljob, tmp_path, capsys):
             print(f"\n  full L realistic {'camera' if loop else 'dead reckoning'}: {p['seated']}/{p['n']} seated, "
                   f"horizontal max {p['horiz_mm']['max']:.2f} mm", end="")
     assert res[True]["n"] == res[True]["seated"] == ljob.n_stones and res[True]["horiz_mm"]["max"] < 6.0
+
+
+# ── the C of the config (Samuel 2026-10-06; wall distance 840 mm) ─────────────────────────────────────────────────
+@pytest.fixture(scope="module")
+def ccfg():
+    from mauer import config
+    return config.load()
+
+
+@pytest.fixture(scope="module")
+def cjob(ccfg):
+    return make_job.build_nominal(ccfg)
+
+
+def test_c_leg_change_b_to_c_and_station_trip_from_c(ccfg, cjob, tmp_path):
+    """The second corner of the C: the last stop of leg B, the leg change B -> C (ARES turns around the B-C corner to
+    the outside of C) and a station trip from leg C, with realistic errors - every stone seated, the true ARES path
+    clear of legs, plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
+    j = copy.deepcopy(cjob)
+    b, c = j.stops[3], j.stops[4]
+    assert (b.leg, c.leg) == ("B", "C")
+    b.stones, c.stones = b.stones[:2], c.stones[:4]
+    b.index, c.index = 0, 1
+    b.route = []
+    j.stops = [b, c]
+    j.magazine.initial_fill = list(j.magazine.fill_order[:3])
+    make_job.plan_slots(j.stops, j.magazine, j.station, [])
+    assert not __import__("mauer.job", fromlist=["validate"]).validate(j)
+    w, seq = sim(ccfg, j, scenario("realistic"), tmp_path, seed=1)
+    res = seq.run()
+    p = w.placement_stats()
+    assert res.state == "done" and p["n"] == p["seated"] == 6 and res.reloads >= 1
+    assert w.violations == [] and _floor_hits(w, seq) == []
+    whys = [e["why"] for e in _events(seq) if e["event"] == "route"]
+    assert "stop 0 -> stop 1" in whys and "stop 1 -> station" in whys and "station -> stop 1" in whys
+
+
+@pytest.mark.slow
+@SLOW
+def test_full_c(ccfg, cjob, tmp_path, capsys):
+    """The whole C with realistic errors and the camera loop: every stone seated, the true ARES path never touches a
+    leg, plate or the table (at 840 mm the plates are 110 mm from the ARES front at a stop)."""
+    w, seq = sim(ccfg, cjob, scenario("realistic"), tmp_path, seed=1)
+    seq.run()
+    p = w.placement_stats()
+    with capsys.disabled():
+        print(f"\n  full C realistic camera: {p['seated']}/{p['n']} seated, horizontal max {p['horiz_mm']['max']:.2f} mm",
+              end="")
+    assert p["n"] == p["seated"] == cjob.n_stones and p["horiz_mm"]["max"] < 6.0
+    assert w.violations == [] and _floor_hits(w, seq) == []

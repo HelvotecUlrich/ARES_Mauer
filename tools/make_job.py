@@ -1,6 +1,7 @@
 """Build a nominal job (mauer.job v2) without RoboDK: config + robodk/wallplan.py + results/reach_table.json.
 
-    py.exe tools/make_job.py                     # wall shape from the config: the L of [[wall.legs]] -> nominal_L.json
+    py.exe tools/make_job.py                     # wall shape from the config: the legs of [[wall.legs]] -> nominal_C.json
+                                                 # (nominal_<[wall] shape>.json; the L of 2026-10-05 was nominal_L.json)
     py.exe tools/make_job.py --length 24 [--dist 740] [--out data/jobs/nominal_L24.json] [--max-looks 2]
                                                  # straight wall of 24 stones (configs without legs)
 
@@ -9,7 +10,7 @@ joints and via points):
 - straight wall (--length N): wall plan exactly as robodk/simulate.py:238-256 (wallplan.layout / sequence /
   check_plan on the cached reach table, same cache key as simulate.reach_table, simulate.py:41-58) -> stops a_j and
   their stones;
-- L ([wall] shape "L", [[wall.legs]]): every leg a rectangle with half stones at the ends of the odd courses
+- legs ([wall] shape "C" / "L", [[wall.legs]]): every leg a rectangle with half stones at the ends of the odd courses
   (wallplan.plan_legs, reach margin [wall] reach_margin_mm), leg A completely, then leg B; stop poses per leg
   (heading differs per leg); board looks only for boards of the STOP'S OWN LEG (review 2026-10-05: a board of the
   other leg lies behind / across the built corner, and a fit across two legs pushes a leg-B pose error into the
@@ -680,7 +681,7 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
         raise ValueError("L floor/route check failed:\n  - " + "\n  - ".join(problems))
     legs_meta = [{"name": lg.name, "n0": lg.n0, "T_wall_leg": T_legs[lg.name]} for lg in legs_]
     n_half = sum(s.kind == "half" for s in stones)
-    extra = {"shape": "L", "legs": [{"name": lg.name, "n0": lg.n0, "plan_a_mm": [float(a) for a, _ in plans[lg.name]]}
+    extra = {"shape": str(cfg["wall"].get("shape") or "legs"), "legs": [{"name": lg.name, "n0": lg.n0, "plan_a_mm": [float(a) for a, _ in plans[lg.name]]}
                                     for lg in legs_],
              "n_stones": len(stones), "n_half_stones": n_half, "half_stones": bool(half_stones),
              "reach_margin_mm": margin, "plates": [{"board": s.board, "leg": s.leg, "k": s.k, "u_mm": s.u,
@@ -702,8 +703,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-looks", type=int, default=2, help="boards (look poses) per stop")
     ap.add_argument("--look-margin", type=float, default=LOOK_MARGIN_MM,
                     help="look poses must stay reachable for ARES errors up to this [mm] (kinematic check)")
-    ap.add_argument("--out", default=None, help="output JSON (default data/jobs/nominal_L<length>.json, the L: "
-                                                "data/jobs/nominal_L.json)")
+    ap.add_argument("--out", default=None, help="output JSON (default data/jobs/nominal_L<length>.json, a wall of "
+                                                "legs: data/jobs/nominal_<[wall] shape>.json)")
     ap.add_argument("--print", action="store_true", help="print the job summary only, write nothing")
     args = ap.parse_args(argv)
     cfg = mconfig.load(args.config)
@@ -718,7 +719,8 @@ def main(argv: list[str] | None = None) -> int:
     print(job.summary())
     if args.print:
         return 0
-    name = "nominal_L.json" if job.legs else f"nominal_L{job.meta.get('length_stones', args.length)}.json"
+    name = (f"nominal_{job.meta.get('shape', 'legs')}.json" if job.legs
+            else f"nominal_L{job.meta.get('length_stones', args.length)}.json")
     out = Path(args.out) if args.out else REPO / "data" / "jobs" / name
     mjob.save(job, out)
     print(f"written {out}")

@@ -1,6 +1,6 @@
 """Run a job (mauer.job v1/v2) - in the pure-Python simulated world, on the real hardware, or just print the plan.
 
-    py.exe tools/run_job.py data/jobs/nominal_L.json --dry-run
+    py.exe tools/run_job.py data/jobs/nominal_C.json --dry-run
     py.exe tools/run_job.py --nominal L --sim [--scenario realistic] [--seed 1] [--compare] [--stops 0:1]
     py.exe tools/run_job.py --nominal 24 --sim ...           # straight wall (config without legs)
     py.exe tools/run_job.py data/jobs/nominal_L24.json --real [--step] [--stops 0]
