@@ -11,8 +11,9 @@ Straight wall (`--length N`, or a config without [[wall.legs]]) - as before:
   3. execution: every pick and place is planned with motion.py (all segments tested against ARES, magazine,
      the wall built so far and the arm itself) and only then executed. Collision checking stays on.
 
-L wall (config [wall] shape "L", [[wall.legs]]; default when legs exist) - runs the planner's job:
-  - job = tools/make_job.py build_nominal(cfg) (robodk/wallplan.py plan_legs on the reach table, leg A then leg B,
+Wall of legs (config [[wall.legs]]: the C of 2026-10-06, the L of 2026-10-05; default when legs exist) - runs the
+planner's job:
+  - job = tools/make_job.py build_nominal(cfg) (robodk/wallplan.py plan_legs on the reach table, one leg after another,
     ARES pose (x, y, theta) per stop in the wall frame, leg-change and station routes from mauer.floor, typed stones
     full/half with their magazine slot, reloads by mauer.job.reload_plan);
   - world = wall frame; ARES (frame "ARES base_link") is set to the stop pose and moved along the route waypoints
@@ -40,12 +41,12 @@ L wall (config [wall] shape "L", [[wall.legs]]; default when legs exist) - runs 
     IK in motion.family(), collision-free (arm, gripper, camera, adapter), a collision-free transfer from the current
     (parked) pose, unoccluded (render with and without the occluders: < 0.2 % changed pixels on the board) and all
     ChArUco corners detected (mauer.vision.detect); the planned looks are executed on arrival and after each trip;
-  - images results/l_top.png, l_corner.png, l_legB_stop.png, l_camera_view.png, l_station.png (ARES at the dock on
+  - images results/l_top.png, l_corner.png, l_last_stop.png, l_camera_view.png, l_station.png (ARES at the dock on
     the first trip, station full); station saved as robodk/ARES_UR5_Mauer_L.rdk (never robodk/ARES_UR5_Mauer.rdk);
     report results/l_wall_sim.md.
 
 Usage (Windows Python):
-    py.exe robodk/simulate.py --animate             # the L of the config incl. station trips (~25 min)
+    py.exe robodk/simulate.py --animate             # the legs of the config incl. station trips (~25-35 min)
     py.exe robodk/simulate.py --length 16           # straight wall of 16 stones
     py.exe robodk/simulate.py --plan-only           # reach table + plan only
     py.exe robodk/simulate.py --from-stop 2         # L: stops before 2 built without motion, simulate from stop 2
@@ -390,7 +391,7 @@ def run_straight(args, cfg: dict, RDK) -> int:
     return 0
 
 
-# ── L wall ────────────────────────────────────────────────────────────────────
+# ── wall of legs (L, C) ───────────────────────────────────────────────────────
 def _np():
     import numpy as np
     return np
@@ -456,7 +457,7 @@ def pair_label(item, link: int) -> str:
 
 
 class LSim(Sim):
-    """The L wall from the job (see the module docstring)."""
+    """The wall of legs from the job (see the module docstring)."""
 
     def __init__(self, RDK, cfg: dict, it: dict, job, args):
         super().__init__(RDK, cfg, args.dist)
@@ -1168,7 +1169,8 @@ class LSim(Sim):
 
 def static_findings(cfg: dict) -> dict:
     """Facts computed from the meshes and the config (no RoboDK): rib height of the stone, the butt-corner gap of
-    leg B against leg A's ribbed face, the full-stone mesh volume (orientation-independent)."""
+    every next leg against the earlier leg's ribbed face (each corner), the full-stone mesh volume
+    (orientation-independent)."""
     import make_half_stone as mh
     np = _np()
     full = mh.read_stl(REPO / cfg["brick"]["mesh"])
@@ -1182,17 +1184,24 @@ def static_findings(cfg: dict) -> dict:
     W = float(cfg["brick"]["width"])
     rib = float(max(-pts[:, 0].min(), pts[:, 0].max() - W))
     legs = wallplan.legs(cfg)
-    gap = None
-    if len(legs) >= 2:
-        A, B = legs[0], legs[1]
-        # leg B's course-0 start face (u = 0) in leg A's frame: v of B's origin; A's ribbed face at -(W/2 + rib)
+    corners = []
+    for A, B in zip(legs, legs[1:]):
+        # the next leg's course-0 start face (u = 0) in the earlier leg's frame: v of its origin; the earlier leg's
+        # ribbed inside face at -(W/2 + rib)
         x, y = A.from_wall(B.x, B.y)
-        gap = abs(y) - (W / 2 + rib)
-    return {"rib_mm": rib, "corner_gap_mm": gap, "volume_cm3": vol, "volume_signed_raw_cm3": raw,
+        corners.append({"prev": A.name, "next": B.name, "origin_v_mm": y, "gap_mm": abs(y) - (W / 2 + rib)})
+    gap = min((c["gap_mm"] for c in corners), default=None)
+    return {"rib_mm": rib, "corner_gap_mm": gap, "corners": corners, "volume_cm3": vol, "volume_signed_raw_cm3": raw,
             "flipped_faces": flipped, "faces": len(F)}
 
 
 # ── images ────────────────────────────────────────────────────────────────────
+def shape_of(cfg: dict) -> str:
+    """ "C wall", "L wall", ... from [wall] shape (fallback: the number of legs)."""
+    shape = str(cfg.get("wall", {}).get("shape", ""))
+    return f"{shape} wall" if shape and shape != "straight" else f"wall of {len(wallplan.legs(cfg))} legs"
+
+
 def station_image(sim: LSim, path: Path, trip: int) -> str | None:
     """ARES at the dock next to the loaded pick-up station, seen from the front right of the table. The snapshot
     closes every camera window, so the flange camera is re-opened afterwards."""
@@ -1218,7 +1227,7 @@ def station_image(sim: LSim, path: Path, trip: int) -> str | None:
 
 
 def l_images(sim: LSim, look_shot: dict | None, res_dir: Path) -> list:
-    """results/l_top.png, l_corner.png, l_legB_stop.png, l_camera_view.png."""
+    """results/l_top.png, l_corner.png, l_last_stop.png (ARES at the stop of the last leg), l_camera_view.png."""
     import cv2
     np, g = sim.np, sim.g
     RDK, cfg, job = sim.RDK, sim.cfg, sim.job
@@ -1264,27 +1273,27 @@ def l_images(sim: LSim, look_shot: dict | None, res_dir: Path) -> list:
                 cv2.arrowedLine(img, (int(p[0]), int(p[1])), (int(q[0]), int(q[1])), (40, 140, 40), 2, cv2.LINE_AA,
                                 tipLength=0.03)
         cv2.rectangle(img, (0, 0), (img.shape[1], 44), (255, 255, 255), -1)
-        cv2.putText(img, "L wall (RoboDK, finished; half stones light): ARES footprints at the stops (blue), ARES model "
-                    "at the last stop; green: ARES moves between stops (leg change route)", (14, 29),
+        cv2.putText(img, f"{shape_of(cfg)} (RoboDK, finished; half stones light): ARES footprints at the stops (blue), "
+                    "ARES model at the last stop; green: ARES moves between stops (leg change routes)", (14, 29),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.58, (20, 20, 20), 2, cv2.LINE_AA)
         cv2.imwrite(str(path), img)
         out.append(path.name)
-    # corner with the half stones, seen from the outside of the L (leg A far end / leg B start)
+    # first corner with the half stones, seen from the outside (leg A far end / leg B start)
     legs = wallplan.legs(cfg)
     A = legs[0]
     xc, yc = A.to_wall(wallplan.leg_length(cfg, A.n0), 0.0)
-    eye = [xc + 900.0, yc + 1500.0, 1300.0]                # outside of the L, from leg A's ARES side
+    eye = [xc + 900.0, yc + 1500.0, 1300.0]                # outside the wall, from leg A's ARES side
     T_c = look_at(eye, [xc - 200.0, yc - 250.0, 220.0])
     if snapshot_pinhole(RDK, res_dir / "l_corner.png", T_c, (1600, 1000), 50.0)[0]:
         out.append("l_corner.png")
-    # ARES at the leg-B stop, arm at a look pose
+    # ARES at a stop of the last leg, arm at a look pose
     if look_shot is not None:
         sim.robot.setJoints(look_shot["j"])
         T_wa = sim.pose_T_np()
         p = lambda x, y, z: [float(c) for c in (T_wa @ np.array([x, y, z, 1.0]))[:3]]   # noqa: E731
         T_v = look_at(p(-1500.0, 1700.0, 1700.0), p(600.0, -100.0, 250.0))
-        if snapshot_pinhole(RDK, res_dir / "l_legB_stop.png", T_v, (1600, 1000), 50.0)[0]:
-            out.append("l_legB_stop.png")
+        if snapshot_pinhole(RDK, res_dir / "l_last_stop.png", T_v, (1600, 1000), 50.0)[0]:
+            out.append("l_last_stop.png")
         from mauer.vision import detect
         img = detect.draw_detections(look_shot["img"], look_shot["dets"], scale=0.5)
         cv2.rectangle(img, (0, 0), (img.shape[1], 40), (255, 255, 255), -1)
@@ -1314,7 +1323,7 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
             d["half_ok"] += r["kind"] == "half"
         else:
             d["failed"].append(r)
-    w("# L wall - RoboDK collision simulation")
+    w(f"# {shape_of(cfg)} - RoboDK collision simulation")
     w("")
     argv = " ".join(Path(a).name if ("\\" in a or "/" in a) else a for a in info["argv"])   # no local paths
     w(f"Generated by `py.exe robodk/simulate.py {argv}` ({time.strftime('%Y-%m-%d %H:%M')}, "
@@ -1478,17 +1487,18 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
         ok02 = sum(1 for x in pnp if x <= 0.2)
         w(f"PnP check of the rendered boards against the RoboDK truth (ideal render, nominal intrinsics, "
           f"`mauer.vision.detect`): {ok02} of {len(pnp)} views within 0.2 mm (median {sorted(pnp)[len(pnp) // 2]:.3f} "
-          f"mm) - the board poses in RoboDK (incl. leg B, `mauer.reference.placements`) and the camera chain agree; "
+          f"mm) - the board poses in RoboDK (incl. the legs after A, `mauer.reference.placements`) and the camera chain agree; "
           f"max {max(pnp):.2f} mm, see Problems.")
         w("")
     w("## Static findings (meshes and config)")
     w("")
     sf = info["static"]
     w(f"- Stone ribs on the long faces: {sf['rib_mm']:.2f} mm high (`cad/stone_full_2026-10-01.stl` bbox).")
-    if sf["corner_gap_mm"] is not None:
-        w(f"- Butt corner: leg B's course-0 end face lies {abs(sf['corner_gap_mm']):.2f} mm "
-          + ("INSIDE leg A's rib envelope" if sf["corner_gap_mm"] < 0 else "clear of leg A's ribs")
-          + f" (B origin {wallplan.legs(cfg)[1].y:.1f} mm, A's ribbed face at -{cfg['brick']['width'] / 2 + sf['rib_mm']:.2f} mm). "
+    for c in sf.get("corners", []):
+        w(f"- Butt corner {c['prev']}-{c['next']}: leg {c['next']}'s course-0 end face lies {abs(c['gap_mm']):.2f} mm "
+          + (f"INSIDE leg {c['prev']}'s rib envelope" if c["gap_mm"] < 0 else f"clear of leg {c['prev']}'s ribs")
+          + f" ({c['next']} origin at v = {c['origin_v_mm']:.1f} mm in leg {c['prev']}'s frame, the ribbed face at "
+          f"-{cfg['brick']['width'] / 2 + sf['rib_mm']:.2f} mm). "
           "The RoboDK collision models are shrunk (see Inputs) and do not see it.")
     w(f"- Full stone mesh volume: {sf['volume_cm3']:.0f} cm3 with consistent face orientation (ray casting gives the "
       f"same); the signed volume of the raw STL is {sf['volume_signed_raw_cm3']:.0f} cm3 because "
@@ -1708,10 +1718,11 @@ def problems_of(sim: LSim, info: dict) -> list:
                    + (f"; with the rvec normalised (Rodrigues twice) the same views give <= {max(fix):.3f} mm"
                       if fix else "") + ".")
     sf = info["static"]
-    if sf["corner_gap_mm"] is not None and sf["corner_gap_mm"] < 0:
-        out.append(f"butt corner: leg B's first stone of every course overlaps leg A's ribs by "
-                   f"{-sf['corner_gap_mm']:.2f} mm (B origin at A's body face, the ribs stick out "
-                   f"{sf['rib_mm']:.2f} mm) - the real stone cannot sit at its planned place.")
+    for c in sf.get("corners", []):
+        if c["gap_mm"] < 0:
+            out.append(f"butt corner {c['prev']}-{c['next']}: leg {c['next']}'s first stone of every course overlaps "
+                       f"leg {c['prev']}'s ribs by {-c['gap_mm']:.2f} mm (origin at the body face, the ribs stick out "
+                       f"{sf['rib_mm']:.2f} mm) - the real stone cannot sit at its planned place.")
     if abs(sf["volume_cm3"] - 2270.0) > 50.0:
         out.append(f"full stone volume: the mesh encloses {sf['volume_cm3']:.0f} cm3, not 2270 cm3 (the raw STL has "
                    "flipped faces) -> at ~2.3 g/cm3 about "

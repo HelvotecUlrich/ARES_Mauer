@@ -1,12 +1,16 @@
-"""L-wall floor layout: candidate evaluation (leg lengths, board plates, routes), top-view drawing and plan report.
+"""Floor layout of a wall of legs (L, C, ...): candidate evaluation (leg lengths, board plates, routes), top-view
+drawing and plan report.
 
-    py.exe tools/plan_layout.py --evaluate       # trade-off of n_A 9..12 x n_B 5..8 -> results/l_wall_candidates.json,
-                                                 # prints the table and the [[wall.legs]] / [[targets]] to enter
-    py.exe tools/plan_layout.py                  # from the CONFIG: results/l_wall_layout.png + results/l_wall_plan.md
+    py.exe tools/plan_layout.py --evaluate                   # the leg lengths of the config (one candidate)
+    py.exe tools/plan_layout.py --evaluate --legs 9-12,5-8   # trade-off grid (here the L of 2026-10-05)
+                                 # -> results/l_wall_candidates.json, prints the table and the [[wall.legs]] /
+                                 #    [[targets]] to enter
+    py.exe tools/plan_layout.py                              # from the CONFIG: results/l_wall_layout.png + l_wall_plan.md
 
-Evaluation per candidate (n_A, n_B), all pure Python (no RoboDK):
-- legs: A = wall frame with n_A stones, B = wallplan.butt_corner(A, n_B); plan = wallplan.plan_legs (rectangles with
-  half stones, [wall] reach_margin_mm) -> stops and nominal ARES poses (tools/make_job.py stop_pose);
+Evaluation per candidate (n0 of every leg A, B, C, ...), all pure Python (no RoboDK):
+- legs: A = wall frame, every further leg = wallplan.butt_corner of the one before (perpendicular at its far end, away
+  from its ARES side: two legs make an L, three a C); plan = wallplan.plan_legs (rectangles with half stones, [wall]
+  reach_margin_mm) -> stops and nominal ARES poses (tools/make_job.py stop_pose);
 - plate sites (mauer.floor.plate_site): a plate on every base-block centre on the ARES side of a leg (u = 100 + 200 k)
   and on spare blocks beyond FREE leg ends (k < 0, k >= n0); a site is valid when its plate / spare block overlaps no
   leg, no ARES footprint at a stop and not the station table;
@@ -18,8 +22,9 @@ Evaluation per candidate (n_A, n_B), all pure Python (no RoboDK):
   boards; exhaustive search with pruning;
 - routes (mauer.floor.plan_route, [routes]): every move between stops (same leg: back off / along / approach), the
   leg change and the station trips from every stop and back, validated;
-- ranking of the feasible candidates: fewer stops > fewer ARES moves between stops (incl. the leg-change route) >
-  more stones in course 0 within 14..18 (Samuel: "the wall can be a bit shorter") > shorter leg-change route.
+- ranking of the feasible candidates: fewer stops > fewer ARES moves between stops (incl. the leg-change routes) >
+  more stones in course 0 within 14..18 (the L request 2026-10-05: "the wall can be a bit shorter") > shorter
+  leg-change route.
 """
 from __future__ import annotations
 
@@ -47,25 +52,55 @@ from mauer.vision.targets import board_specs  # noqa: E402
 
 RESULTS = REPO / "results"
 CANDIDATES_JSON = RESULTS / "l_wall_candidates.json"
-N_A = range(9, 13)
-N_B = range(5, 9)
+LEG_NAMES = "ABCDEFGH"
 COURSE0_RANGE = (14, 18)          # lead's target range of course-0 stones
 MAX_BOARDS = 8                    # existing wall boards W0..W7 (Samuel: no new markers)
 MIN_BOARDS = 2                    # per stop (heading from the baseline)
 CAP_BOARDS = 4                    # boards per stop counted for robustness
 
 
-def with_legs(cfg: dict, n_a: int, n_b: int) -> dict:
-    """Copy of cfg with [[wall.legs]] = A (wall frame, n_a) + B (butt corner, n_b)."""
+def with_legs(cfg: dict, n0s) -> dict:
+    """Copy of cfg with [[wall.legs]] = A (wall frame, n0s[0]) and every further leg the butt corner of the one before
+    (B = n0s[1], C = n0s[2], ...)."""
     wp = mj.load_wallplan()
     c = copy.deepcopy(cfg)
-    A = wp.Leg("A", n_a)
-    B = wp.butt_corner(c, A, n_b, "B")
-    c["wall"]["legs"] = [
-        {"name": "A", "n0": n_a, "xyz_in_wall": [0.0, 0.0, 0.0], "rpy_in_wall_deg": [0.0, 0.0, 0.0]},
-        {"name": "B", "n0": n_b, "xyz_in_wall": [round(B.x, 6), round(B.y, 6), 0.0],
-         "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(B.theta), 9)]}]
+    legs_ = [wp.Leg(LEG_NAMES[0], int(n0s[0]))]
+    for name, n in zip(LEG_NAMES[1:], n0s[1:]):
+        legs_.append(wp.butt_corner(c, legs_[-1], int(n), name))
+    c["wall"]["legs"] = [{"name": lg.name, "n0": lg.n0, "xyz_in_wall": [round(lg.x, 6), round(lg.y, 6), 0.0],
+                          "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(lg.theta), 9)]} for lg in legs_]
     return c
+
+
+def parse_legs(spec: str) -> list[tuple[int, ...]]:
+    """Candidates from "10,7,5" (one) or "9-12,5-8" (every combination of the per-leg ranges)."""
+    import itertools
+    ranges = []
+    for part in spec.split(","):
+        a, _, b = part.strip().partition("-")
+        ranges.append(range(int(a), int(b or a) + 1))
+    return list(itertools.product(*ranges))
+
+
+def legs_label(r: dict) -> str:
+    return ", ".join(f"{n} {k}" for n, k in zip(LEG_NAMES, r["n0"]))
+
+
+REQUESTS = {
+    "L": ["- Samuel 2026-10-05: a small L with the wall (it can be a bit shorter), 4 courses, keep the 8 existing wall "
+          "boards (placed differently), half stones at the ends and maybe the corners."],
+    "C": ["- Samuel 2026-10-06: a small C - \"one length is 2 m, then 1.5 across and 1 m back\" - and keep the existing "
+          "boards (no new ones): A 10 stones (2.0 m), B 7 (1.4 m; 1.52 m over the outer faces of A and C - B = 6 would "
+          "give 1.32 m and one stop less), C 5 (1.0 m), C parallel to A on the far side from ARES. Before: the L of "
+          "2026-10-05 (A 12, B 6)."],
+}
+
+
+def shape_name(cfg: dict) -> str:
+    """ "L wall", "C wall", ... from [wall] shape (fallback: the number of legs)."""
+    shape = str(cfg.get("wall", {}).get("shape", ""))
+    n = len(cfg.get("wall", {}).get("legs") or [])
+    return f"{shape} wall" if shape and shape != "straight" else f"wall of {n} legs"
 
 
 def all_sites(cfg: dict, legs_: list, size_mm: tuple, extra: int = 3) -> list:
@@ -113,12 +148,12 @@ def select_boards(sites: list, reach: list[set[int]], conflicts: set, centres: l
     return None
 
 
-def evaluate(cfg0: dict, table: dict, n_a: int, n_b: int, ctx: "mj._Ctx", route_all: bool = True) -> dict:
+def evaluate(cfg0: dict, table: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
     """One candidate (module docstring). Never raises for an infeasible candidate: row["feasible"] = False + reason."""
     wp = mj.load_wallplan()
-    cfg = with_legs(cfg0, n_a, n_b)
+    cfg = with_legs(cfg0, n0s)
     legs_ = wp.legs(cfg)
-    row: dict = {"n_A": n_a, "n_B": n_b, "course0": n_a + n_b, "feasible": False, "why": ""}
+    row: dict = {"n0": [int(n) for n in n0s], "course0": int(sum(n0s)), "feasible": False, "why": ""}
     margin = float(cfg["wall"].get("reach_margin_mm", 0.0))
     try:
         stones, plans = wp.plan_legs(cfg, legs_, table, True, margin)
@@ -187,7 +222,7 @@ def evaluate(cfg0: dict, table: dict, n_a: int, n_b: int, ctx: "mj._Ctx", route_
     wall_moves = 0
     for i in range(1, len(stops)):
         a, b = stops[i - 1], stops[i]
-        name = "leg_change" if a["leg"] != b["leg"] else f"stop_move_{i}"
+        name = f"leg_change_{a['leg']}{b['leg']}" if a["leg"] != b["leg"] else f"stop_move_{i}"
         try:
             r = floor.plan_route(a["pose"], b["pose"], obst, ares, rp["clearance_mm"], rp["backoff_mm"], **kw)
             routes[name] = r.stats | {"waypoints": [p.to_dict() for p in r.waypoints]}
@@ -204,7 +239,8 @@ def evaluate(cfg0: dict, table: dict, n_a: int, n_b: int, ctx: "mj._Ctx", route_
                 except floor.RouteError as e:
                     problems.append(f"{name}: {e}")
     row.update(wall_moves=wall_moves, routes=routes, route_problems=problems,
-               leg_change_mm=routes.get("leg_change", {}).get("length_mm"),
+               leg_change_mm=(sum(v["length_mm"] for k, v in routes.items() if k.startswith("leg_change"))
+                              if any(k.startswith("leg_change") for k in routes) else None),
                station_trip_mm=(max(trip_len) if trip_len else None))
     if problems:
         row["why"] = "; ".join(problems[:3])
@@ -220,35 +256,33 @@ def rank_key(r: dict) -> tuple:
             -min(r.get("boards_per_stop") or [0]), r.get("spares", 99), r.get("leg_change_mm") or 1e9)
 
 
-def evaluate_all(cfg: dict, quiet: bool = False) -> list[dict]:
+def evaluate_all(cfg: dict, candidates, quiet: bool = False) -> list[dict]:
+    """Evaluate every candidate (tuples of n0 per leg), ranked (rank_key)."""
     dist = float(cfg["wall"]["dist_nominal"])
     table, _ = mj.load_reach_table(cfg, dist)
     ctx = mj._Ctx(cfg, dist, 2, mj.LOOK_MARGIN_MM)
     rows = []
-    for n_a in N_A:
-        for n_b in N_B:
-            if n_b > n_a:
-                continue
-            r = evaluate(cfg, table, n_a, n_b, ctx)
-            rows.append(r)
-            if not quiet:
-                print(f"  n_A {n_a:2d} n_B {n_b}: {'ok ' if r['feasible'] else 'NO '} stops {r.get('n_stops', '-')}, "
-                      f"boards/stop {r.get('boards_per_stop', '-')}, spares {r.get('spares', '-')}, "
-                      f"wall moves {r.get('wall_moves', '-')} {r['why'][:100]}", flush=True)
+    for n0s in candidates:
+        r = evaluate(cfg, table, n0s, ctx)
+        rows.append(r)
+        if not quiet:
+            print(f"  {legs_label(r)}: {'ok ' if r['feasible'] else 'NO '} stops {r.get('n_stops', '-')}, "
+                  f"boards/stop {r.get('boards_per_stop', '-')}, spares {r.get('spares', '-')}, "
+                  f"wall moves {r.get('wall_moves', '-')} {r['why'][:100]}", flush=True)
     rows.sort(key=rank_key)
     return rows
 
 
-def table_md(rows: list[dict], chosen: tuple[int, int] | None = None) -> list[str]:
-    out = ["| n_A | n_B | course 0 | stones (half) | stops (leg: a mm / stones) | wall moves | boards / stop | "
-           "spare blocks | worst baseline mm | leg change mm | longest station trip mm | feasible |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for r in sorted(rows, key=lambda r: (r["n_A"], r["n_B"])):
-        mark = " **chosen**" if chosen == (r["n_A"], r["n_B"]) else ""
+def table_md(rows: list[dict], chosen: tuple[int, ...] | None = None) -> list[str]:
+    out = ["| legs (n0) | course 0 | stones (half) | stops (leg: a mm / stones) | wall moves | boards / stop | "
+           "spare blocks | worst baseline mm | leg changes mm | longest station trip mm | feasible |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in sorted(rows, key=lambda r: r["n0"]):
+        mark = " **chosen**" if chosen is not None and tuple(chosen) == tuple(r["n0"]) else ""
         st = ", ".join(f"{leg}: {a:.0f}/{n}" for leg, a, n in r.get("stops", []))
         lc = r.get("leg_change_mm")
         trip = r.get("station_trip_mm")
-        out.append(f"| {r['n_A']} | {r['n_B']} | {r['course0']} | {r.get('stones', '-')} ({r.get('half', '-')}) | "
+        out.append(f"| {legs_label(r)} | {r['course0']} | {r.get('stones', '-')} ({r.get('half', '-')}) | "
                    f"{st or '-'} | {r.get('wall_moves', '-')} | {r.get('boards_per_stop', '-')} | "
                    f"{r.get('spares', '-')} | {r.get('min_baseline_mm', '-')} | "
                    f"{'-' if lc is None else f'{lc:.0f}'} | {'-' if trip is None else f'{trip:.0f}'} | "
@@ -258,7 +292,7 @@ def table_md(rows: list[dict], chosen: tuple[int, int] | None = None) -> list[st
 
 def config_snippet(cfg: dict, best: dict) -> str:
     """[[wall.legs]] and the wall [[targets]] (existing names / ids, new places) of a candidate, ready to paste."""
-    c = with_legs(cfg, best["n_A"], best["n_B"])
+    c = with_legs(cfg, best["n0"])
     lines = []
     for lg in c["wall"]["legs"]:
         lines += ["[[wall.legs]]", f'name = "{lg["name"]}"', f"n0 = {lg['n0']}",
@@ -412,7 +446,7 @@ def draw_layout(cfg: dict, geo: dict, path: Path, s: float = 0.3) -> None:
             c.poly(fp, (60, 60, 60), 1, fill=(205, 205, 205))
         L = wp.leg_length(cfg, lg.n0)
         c.poly(wp.leg_footprint(cfg, lg), (40, 40, 40), 2)
-        mx, my = lg.to_wall(L / 2, -cfg["brick"]["width"] / 2 - 180)      # inside of the L
+        mx, my = lg.to_wall(L / 2, -cfg["brick"]["width"] / 2 - 180)      # inside of the wall
         vert = abs(math.sin(lg.theta)) > 0.5
         ins = lg.to_wall(L / 2, -1.0)[0] - lg.to_wall(L / 2, 0.0)[0]
         c.text((mx, my), f"leg {lg.name}: {lg.n0} x 200 = {L:.0f} mm", (20, 20, 20), 0.45, 1,
@@ -469,7 +503,7 @@ def draw_layout(cfg: dict, geo: dict, path: Path, s: float = 0.3) -> None:
                 mid = st.route[len(st.route) // 2]
                 c.text((mid.x_mm + 60, mid.y_mm - 120), "leg change", (0, 0, 200), 0.5, 1)
     # title / legend
-    c.text((15, 28), f"L wall - top view to scale, wall frame [mm], 1 px = {1 / s:.2f} mm, grid 500 mm "
+    c.text((15, 28), f"{shape_name(cfg)} - top view to scale, wall frame [mm], 1 px = {1 / s:.2f} mm, grid 500 mm "
                      "(PLACEHOLDER: station, block size; ASSUMPTION: leg lengths, corner, route clearances)",
            (20, 20, 20), 0.55, 1, px=True)
     c.text((15, 55), "grey: course-0 stones = base blocks | orange: board plates (name, leg u) | coloured: ARES "
@@ -484,7 +518,7 @@ def draw_layout(cfg: dict, geo: dict, path: Path, s: float = 0.3) -> None:
         ox = 40
         base = y_el + H_el - 20
         sc = s * 1.6
-        c.text((ox, y_el - 5), f"leg {lg.name} elevation, seen from the inside of the L (u from the leg start to the "
+        c.text((ox, y_el - 5), f"leg {lg.name} elevation, seen from the inside of the wall (u from the leg start to the "
                                "right; colour = stop as above, hatched = half stone; grey bar = base plate)",
                (20, 20, 20), 0.45, 1, px=True)
         for stn in wp.layout_leg(cfg, lg, True):
@@ -522,25 +556,25 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
     wp = mj.load_wallplan()
     job, legs_ = geo["job"], geo["legs"]
     m = job.meta
-    lines = ["# L wall plan (simulation, 2026-10-05)", "",
+    shape = str(cfg["wall"].get("shape", ""))
+    lines = [f"# {shape_name(cfg)} plan (simulation)", "",
              "Generated by `py.exe tools/plan_layout.py` from `config/station.toml` (+ `results/reach_table.json`, "
              f"key `{m['reach_table']['key']}`); drawing `results/l_wall_layout.png`. Pure Python: kinematic checks "
-             "and a coarse arm-vs-built-wall check of the looks (mauer.armcheck), no occlusion. The RoboDK run in "
-             "`results/l_wall_sim.md` checked the job BEFORE the review fixes of 2026-10-05 (looks W4 at stop 2 and "
-             "W5 at stop 1, leg B at y = -60) - repeat it for this job. Values marked PLACEHOLDER / ASSUMPTION are "
-             "listed at the end - every result here depends on them.", "",
-             "## Request and design",
-             "- Samuel 2026-10-05: a small L with the wall (it can be a bit shorter), 4 courses, keep the 8 existing "
-             "wall boards (placed differently), half stones at the ends and maybe the corners.",
+             "and a coarse arm-vs-built-wall check of the looks (mauer.armcheck), no occlusion; the RoboDK collision "
+             "run of the job is `results/l_wall_sim.md`. Values marked PLACEHOLDER / ASSUMPTION are listed at the "
+             "end - every result here depends on them.", "",
+             "## Request and design"] + REQUESTS.get(shape, []) + [
              "- The 53 x 100.5 mm pin pattern is not square: a stone turned by 90 deg never engages the sockets below, "
-             "so the legs cannot interlock - the corner is a vertical BUTT joint: leg A runs through (its end flush "
-             "with the body of B's outer face; B's ribs stand 1.69 mm proud), leg B starts at A's inside face - "
-             f"beyond A's ribs ([brick] rib_mm {cfg['brick'].get('rib_mm', 0):g} mm, CAD) and a corner gap ([wall] corner_gap_mm "
-             f"{cfg['wall'].get('corner_gap_mm', 0):g} mm, ASSUMPTION): set B's base blocks that far off A's. Half "
-             "stones at both ends of every odd course make each leg a rectangle (no notch at the corner, no stone "
+             "so the legs cannot interlock - every corner is a vertical BUTT joint: the earlier leg runs through (its "
+             "end flush with the body of the next leg's outer face; the next leg's ribs stand 1.69 mm proud), the next "
+             "leg starts at the earlier leg's inside face - beyond its ribs ([brick] rib_mm "
+             f"{cfg['brick'].get('rib_mm', 0):g} mm, CAD) and a corner gap ([wall] corner_gap_mm "
+             f"{cfg['wall'].get('corner_gap_mm', 0):g} mm, ASSUMPTION): set the next leg's base blocks that far off. "
+             "Half stones at both ends of every odd course make each leg a rectangle (no notch at a corner, no stone "
              "supported across legs).",
-             "- Wall frame = leg A frame; ARES works from the OUTSIDE of the L on both legs (wall distance "
-             f"{m['wall_dist_mm']:.0f} mm to each leg centreline); leg A is built completely, then leg B.", "",
+             "- Wall frame = leg A frame; ARES works from the OUTSIDE of every leg (wall distance "
+             f"{m['wall_dist_mm']:.0f} mm to each leg centreline); the legs are built one after the other ("
+             + ", ".join(lg.name for lg in legs_) + ").", "",
              "## Geometry", "", "| leg | stones in course 0 | length mm | frame in the wall frame (x, y mm, heading deg) |",
              "|---|---|---|---|"]
     for lg in legs_:
@@ -568,8 +602,8 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
         lines.append(f"| {st.index} | {st.leg} | {st.a_mm:.0f} | ({st.ares.x_mm:.0f}, {st.ares.y_mm:.0f}) mm, "
                      f"{st.ares.theta_deg:.0f} deg | {len(st.stones)} | {', '.join(rb)} | "
                      f"{', '.join(b for lk in st.looks for b in lk.boards)} |")
-    lines += ["", "Usable look = a board of the stop's OWN leg (a board of the other leg lies across the built corner, "
-              "and a frame fitted over both legs would push a leg-B pose error into the leg-A stones), camera "
+    lines += ["", "Usable look = a board of the stop's OWN leg (a board of another leg lies across a built corner, "
+              "and a frame fitted over two legs would push one leg's pose error into the other leg's stones), camera "
               "fronto-parallel at the working distance, a family IK solution for ARES at the stop, +-50 mm around it "
               "and at the arrival standoff, every one of them clear of the stones built by the END of that stop "
               "(mauer.armcheck: UR5 links, gripper and camera as capsules with ASSUMED radii vs. stone boxes over the "
@@ -630,9 +664,10 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
               f"need more half stones than the station holds - the number of trips is a property of the PLACEHOLDER "
               "station layout ([pickup_station]).", ""]
     if rows:
-        best = (legs_[0].n0, legs_[1].n0) if len(legs_) > 1 else None
-        lines += ["## Trade-off (n_A 9..12 x n_B 5..8)", "",
-                  "`py.exe tools/plan_layout.py --evaluate` (results/l_wall_candidates.json). Per candidate: plan with "
+        best = tuple(lg.n0 for lg in legs_)
+        lines += ["## Candidates", "",
+                  "`py.exe tools/plan_layout.py --evaluate [--legs ...]` (results/l_wall_candidates.json). Per "
+                  "candidate: plan with "
                   "a 20 mm reach margin, plate sites on block centres / spare blocks, usable looks as above (own leg, "
                   "clear of the built wall), best board set (<= 8 boards, boards per stop counted up to 4), routes "
                   "validated. Wall moves = PLC commands of the routes between stops (same leg: 3, leg change: 5). "
@@ -674,18 +709,21 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--evaluate", action="store_true", help="evaluate the leg-length candidates")
+    ap.add_argument("--legs", default=None, help='candidates: "10,7,5" or ranges "9-12,5-8" (default: the config)')
     ap.add_argument("--config", default=None)
     ap.add_argument("--png", default=str(RESULTS / "l_wall_layout.png"))
     ap.add_argument("--md", default=str(RESULTS / "l_wall_plan.md"))
     args = ap.parse_args(argv)
     cfg = mconfig.load(args.config)
     if args.evaluate:
-        rows = evaluate_all(cfg)
+        cands = (parse_legs(args.legs) if args.legs
+                 else [tuple(int(lg["n0"]) for lg in cfg["wall"]["legs"])])
+        rows = evaluate_all(cfg, cands)
         RESULTS.mkdir(exist_ok=True)
         CANDIDATES_JSON.write_text(json.dumps({"rows": rows}, indent=1, default=str) + "\n", encoding="utf-8")
         best = rows[0]
-        print("\n".join(table_md(rows, (best["n_A"], best["n_B"]))))
-        print(f"\nbest: n_A {best['n_A']}, n_B {best['n_B']} -> enter in config/station.toml:\n")
+        print("\n".join(table_md(rows, tuple(best["n0"]))))
+        print(f"\nbest: {legs_label(best)} -> enter in config/station.toml:\n")
         print(config_snippet(cfg, best))
         print(f"\nwritten {CANDIDATES_JSON}")
         return 0
