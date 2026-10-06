@@ -44,7 +44,8 @@ PORT = 20596                      # not the simulation (20599), not test_robodk_
 
 @pytest.fixture(scope="module")
 def cfg():
-    return rc.load_config()
+    from conftest import l_config
+    return l_config()                                     # the L of 2026-10-05 (the config is the C)
 
 
 @pytest.fixture(scope="module")

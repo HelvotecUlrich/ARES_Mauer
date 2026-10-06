@@ -6,6 +6,7 @@ import math
 
 import pytest
 
+from conftest import l_config
 from mauer import REPO, config
 from mauer import floor
 from mauer.reference import Pose2D
@@ -26,7 +27,7 @@ DEG = math.pi / 180.0
 
 @pytest.fixture(scope="module")
 def cfg():
-    return config.load()
+    return l_config()                                    # the L (stops A1 / B0 below)
 
 
 @pytest.fixture(scope="module")

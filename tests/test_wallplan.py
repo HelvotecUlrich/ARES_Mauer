@@ -6,6 +6,7 @@ import math
 
 import pytest
 
+from conftest import l_config
 from mauer import REPO, config
 
 
@@ -23,7 +24,7 @@ wp = _wallplan()
 
 @pytest.fixture(scope="module")
 def cfg():
-    return config.load()
+    return l_config()
 
 
 @pytest.fixture(scope="module")

@@ -4,7 +4,8 @@ real-hardware backends (mauer.backends) against a fake link.
 Error scenarios are ASSUMPTIONS documented in mauer/simworld.py (E003-like drive errors, slip events, hand-eye,
 mount, station placement). Short jobs (2 stops, a few stones) keep the default run fast; the full straight wall and
 the full L run only with MAUER_SLOW=1 (marker `slow`) or via tools/run_job.py --sim. The straight-wall tests use the
-config without legs (conftest.straight_config), the L tests the config's L (job v2: routes, half stones).
+config without legs (conftest.straight_config), the L tests the L of 2026-10-05 (conftest.l_config; job v2:
+routes, half stones).
 """
 import copy
 import importlib.util
@@ -14,8 +15,8 @@ import os
 import numpy as np
 import pytest
 
-from conftest import straight_config
-from mauer import REPO, config
+from conftest import l_config, straight_config
+from mauer import REPO
 from mauer import geometry as g
 from mauer.ares.ads import MoveRefused
 from mauer.backends import RobotError, URRobot, stone_payload
@@ -375,7 +376,7 @@ def test_full_wall(cfg, tmp_path, capsys, scen, limit_mm):
 # ── the L (job v2: routes, half stones) ───────────────────────────────────────
 @pytest.fixture(scope="module")
 def lcfg():
-    return config.load()
+    return l_config()
 
 
 @pytest.fixture(scope="module")

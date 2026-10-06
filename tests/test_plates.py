@@ -8,6 +8,7 @@ import sys
 import numpy as np
 import pytest
 
+from conftest import l_config
 from mauer import REPO, config
 from mauer import geometry as g
 from mauer.reference import placements
@@ -26,7 +27,7 @@ make_plates = _tool("make_plates")
 
 @pytest.fixture(scope="module")
 def cfg():
-    return config.load()
+    return l_config()                                    # the L: W0 / W5 on block 0 of legs A / B
 
 
 def test_leg_board_plates(cfg):

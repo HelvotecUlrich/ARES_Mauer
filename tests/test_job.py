@@ -15,7 +15,7 @@ import math
 import numpy as np
 import pytest
 
-from conftest import straight_config
+from conftest import l_config, straight_config
 from mauer import REPO, config
 from mauer import floor
 from mauer import geometry as g
@@ -260,7 +260,7 @@ def test_stale_reach_table_is_refused(cfg, tmp_path):
 # ── the L of the config (job v2) ──────────────────────────────────────────────
 @pytest.fixture(scope="module")
 def lcfg():
-    return config.load()
+    return l_config()
 
 
 @pytest.fixture(scope="module")
