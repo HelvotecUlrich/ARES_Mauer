@@ -1138,20 +1138,27 @@ class LSim(Sim):
                 self.robot.setJoints(js[0])
                 self.RDK.Update()
                 out[name] = self.pairs()
-            # ARES chassis into the stone (only with the route pairs on)
+            # ARES chassis into the stone (only with the route pairs on): towards the leg of stop 0 (straight ahead
+            # for a leg in front of ARES, sideways for one on its side) until the panel facing the leg is 30 mm inside
+            # the stone (a stone completely inside the hollow chassis shell would not be reported by the surface
+            # check): gap ARES - wall face + 30 mm (250 mm in front at 840 mm, 250 mm on a side at 580 mm)
             p0 = self.pose
             from mauer.reference import Pose2D
-            fwd = (math.cos(p0.theta_rad), math.sin(p0.theta_rad))
+            from make_job import leg_dist, leg_side
+            lg0 = next((lg for lg in wallplan.legs(self.cfg) if lg.name == s0.leg), None)
+            side = leg_side(self.cfg, lg0) if lg0 is not None else self.cfg["wall"]["side"]
+            d0 = leg_dist(self.cfg, lg0, self.dist) if lg0 is not None else self.dist
+            th = (math.atan2(-math.cos(lg0.theta), math.sin(lg0.theta)) if lg0 is not None    # leg -y (wall frame)
+                  else p0.theta_rad)
+            half = self.cfg["ares"]["width" if side in ("left", "right") else "length"] / 2
+            d_in = d0 - half - self.cfg["brick"]["width"] / 2 + 30.0
             self.wall_items["_selftest"] = st
             self.route_pairs(True)
-            # forward until the front panel is 30 mm inside the stone (a stone completely inside the hollow chassis
-            # shell would not be reported by the surface check): gap ARES front - wall face + 30 mm (150 mm at the
-            # wall distance 740, 250 mm at 840)
-            d_in = self.dist - self.cfg["ares"]["length"] / 2 - self.cfg["brick"]["width"] / 2 + 30.0
-            self.set_ares(Pose2D(p0.x_mm + fwd[0] * d_in, p0.y_mm + fwd[1] * d_in, p0.theta_rad))
+            self.set_ares(Pose2D(p0.x_mm + math.cos(th) * d_in, p0.y_mm + math.sin(th) * d_in, p0.theta_rad))
             self.robot.setJoints(self.j_home)
             self.RDK.Update()
-            out[f"ARES chassis {d_in:.0f} mm forward, 30 mm into the wall (route pairs on)"] = self.pairs()
+            out[f"ARES chassis {d_in:.0f} mm towards leg {s0.leg} ({side}), 30 mm into the wall (route pairs on)"] = \
+                self.pairs()
             self.route_pairs(False)
             del self.wall_items["_selftest"]
             self.set_ares(p0)
@@ -1383,8 +1390,10 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
       "when it would bring fewer stones than a full one (`mauer.job.reload_short`, as in the sequencer).")
     for lg in job.legs:
         T = lg["T_wall_leg"]
+        ml = next((d for d in job.meta.get("legs", []) if d.get("name") == lg["name"]), {})
         w(f"- Leg {lg['name']}: {lg['n0']} stones in course 0, frame ({T[0][3]:.0f}, {T[1][3]:.0f}) mm, "
-          f"{math.degrees(math.atan2(T[1][0], T[0][0])):.0f} deg in the wall frame.")
+          f"{math.degrees(math.atan2(T[1][0], T[0][0])):.0f} deg in the wall frame"
+          + (f"; built on ARES's {ml['side']} side at {ml['dist_mm']:.0f} mm" if ml.get("side") else "") + ".")
     w("- Stones: full = `cad/stone_full_2026-10-01.stl` (CAD); half = `cad/stone_half_placeholder.stl` "
       "(`robodk/make_half_stone.py`: full stone clipped to 100 mm, PLACEHOLDER). Collision models 1 mm shorter per "
       "end face and 0.9 mm narrower per ribbed face (clearance for the 0 mm head joints, as before).")
@@ -1545,6 +1554,9 @@ def station_before(job, events: dict, j_stop: int) -> list:
 def run_l(args, cfg: dict, RDK, it: dict) -> int:
     from make_job import build_nominal
     t_start = time.time()
+    from make_job import leg_dist, leg_side
+    for lg in wallplan.legs(cfg):                   # every leg's reach table (side, distance) - computed if missing
+        reach_table(RDK, cfg, leg_dist(cfg, lg, args.dist), leg_side(cfg, lg))
     job = build_nominal(cfg, dist=args.dist)
     print(job.summary(), flush=True)
     initial, events = magazine_events(job)

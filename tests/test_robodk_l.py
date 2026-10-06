@@ -230,7 +230,8 @@ def test_c_self_test_and_first_stones_of_leg_c(rdk_fresh):
     sim.j_home = sim.planner.compact(0.0, [0, -100, 52, -42, -90, 0])
     sim.robot.setJoints(sim.j_home)
     st_res = sim.self_test()                                   # raises if a known collision is not reported
-    assert any(k.startswith("ARES chassis 250 mm forward") and v for k, v in st_res.items())
+    assert any(k.startswith("ARES chassis 250 mm towards leg") and "30 mm into the wall" in k and v
+               for k, v in st_res.items())
     k = next(i for i, s in enumerate(job.stops) if s.leg == "C")
     for st in job.stops[:k]:
         sim.prebuild(st.stones)                                 # legs A and B complete
