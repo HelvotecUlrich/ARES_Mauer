@@ -152,7 +152,7 @@ def rdk_fresh():
     rc.close_instance(RDK)
 
 
-def test_station_trip_moves_stones_into_the_magazine(rdk_fresh, cfg):
+def test_station_trip_moves_stones_into_the_magazine(rdk_fresh, cfg, tmp_path):
     """The first reload of the job, shortened: route to the dock, station boards seen, a top-layer stone, the stone
     below it and a half stone moved station -> magazine with collision-checked motion, route back - no colliding
     route sample, every stone exactly in its magazine slot."""
@@ -190,8 +190,9 @@ def test_station_trip_moves_stones_into_the_magazine(rdk_fresh, cfg):
     sim.set_ares(stop.ares)
     sim.open_camera()
     rdk.Render(False)
-    trip = sim.station_trip(k, 1, stop, ev, animate=False)
+    trip = sim.station_trip(k, 1, stop, ev, animate=False, image=tmp_path / "l_station.png")
     assert trip["moved"] == 3, sim.transfer_log
+    assert trip["image"] == "l_station.png" and (tmp_path / "l_station.png").stat().st_size > 10000
     assert trip["looks"] == {"S0": True, "S1": True}
     st_looks = [e for e in sim.look_log if e["state"] == "station trip 1"]
     assert st_looks and all(r["source"] == "job" for r in st_looks[0]["res"].values())   # the job's own looks

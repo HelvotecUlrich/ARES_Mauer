@@ -1208,7 +1208,7 @@ def station_image(sim: LSim, path: Path, trip: int) -> str | None:
     if not ok:
         return None
     img = cv2.imread(str(path))
-    n_full = sum(1 for k, _ in sim.st.values() if k == "full")
+    n_full = sum(1 for _, kind in sim.st.values() if kind == "full")
     cv2.rectangle(img, (0, 0), (img.shape[1], 44), (255, 255, 255), -1)
     cv2.putText(img, f"pick-up station, trip {trip}: ARES at the dock, {len(sim.st)} stones on the table ({n_full} full "
                 f"in stacks of 2, {len(sim.st) - n_full} half; PLACEHOLDER layout), boards S0 / S1", (14, 29),
