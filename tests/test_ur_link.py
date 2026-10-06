@@ -464,6 +464,23 @@ def test_digital_outputs_in_state(fake):
         assert r.ok and r.state.digital_out(1) is True and r.state.digital_out(0) is False
 
 
+def test_ur_check_grip_reads_the_pulse_back(fake):
+    """tools/ur_check.py grip (first gripper test on the UR5, 2026-10-06): the DO pulse as RTDE saw it."""
+    import importlib.util
+    from mauer import REPO
+    spec = importlib.util.spec_from_file_location("ur_check_t", REPO / "tools" / "ur_check.py")
+    uc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(uc)
+    cfg = {"ur": {"do_grip_open": 0, "do_grip_close": 1, "grip_pulse_s": 0.3, "grip_wait_s": 0.1}}
+    with make_link(fake) as ur:
+        res = uc.grip(ur, cfg, "close")
+        assert res["ok"] and res["do"] == 1 and not res["other_on"]
+        assert 0.2 <= res["pulse_s"] <= 0.4, res
+        assert ur.state().digital_out(1) is False                    # an edge, not a level
+        res = uc.grip(ur, cfg, "open")
+        assert res["ok"] and res["do"] == 0 and 0.2 <= res["pulse_s"] <= 0.4
+
+
 def test_dashboard_client(fake):
     fake.robot_mode = 3
     with Dashboard("127.0.0.1", fake.ports["dash"], timeout_s=2.0) as d:

@@ -5,6 +5,7 @@
     py.exe tools/ur_check.py tool-voltage 24          # set_tool_voltage(24) as a block, verified via RTDE
     py.exe tools/ur_check.py pose                     # T_base_tcp / T_base_flange in mm/deg and UR format
     py.exe tools/ur_check.py block my.script          # run URScript statements as a block with start/done markers
+    py.exe tools/ur_check.py grip open|close          # gripper pulse on [ur] do_grip_*, the pulse read back via RTDE
 
 Host: --host, else [ur].host from config/station.toml (currently an empty PLACEHOLDER). URSim: --host 127.0.0.1
 (tests/ursim.py start). A block is its own `def` program: it stops any program running on the controller.
@@ -14,6 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -126,6 +128,34 @@ def cmd_block(a, cfg) -> int:
         return 1
 
 
+def grip(ur, cfg, action: str) -> dict:
+    """Gripper open/close as a block (script.gripper with [ur] do_grip_open/close, grip_pulse_s, grip_wait_s; no arm
+    motion) and the output pulse as RTDE saw it: {"ok", "error", "do", "pulse_s" (None: never on), "other_on"}."""
+    u = cfg["ur"]
+    do_open, do_close = int(u["do_grip_open"]), int(u["do_grip_close"])
+    this, other = (do_open, do_close) if action == "open" else (do_close, do_open)
+    body = script.gripper(action, do_open, do_close, float(u["grip_pulse_s"]), float(u["grip_wait_s"]))
+    t0 = time.time()
+    r = ur.run_block(body, f"grip_{action}", timeout_s=10.0 + float(u["grip_pulse_s"]) + float(u["grip_wait_s"]))
+    on = [x.t_laptop for x in ur.samples(t0) if x.digital_out(this)]
+    return {"ok": r.ok, "error": r.error, "do": this, "pulse_s": (on[-1] - on[0]) if on else None,
+            "other_on": any(x.digital_out(other) for x in ur.samples(t0 + 0.05))}
+
+
+def cmd_grip(a, cfg) -> int:
+    u = cfg["ur"]
+    with open_link(a, cfg) as ur:
+        res = grip(ur, cfg, a.action)
+    if not res["ok"]:
+        print(f"gripper {a.action} block FAILED: {res['error']}", flush=True)
+        return 1
+    seen = "never on (check the RTDE field actual_digital_output_bits)" if res["pulse_s"] is None else \
+        f"on for {res['pulse_s']:.2f} s (commanded {float(u['grip_pulse_s']):g} s)"
+    print(f"gripper {a.action}: DO{res['do']} {seen}; the other output {'ON' if res['other_on'] else 'off'}. "
+          f"Did the jaws {a.action}?", flush=True)
+    return 0 if res["pulse_s"] is not None and not res["other_on"] else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", help="robot IP (default: [ur].host)")
@@ -144,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeout", type=float, default=120.0, help="[s]")
     p.add_argument("--settle", type=float, default=0.0, help="extra wait after the done marker [s]")
     p.add_argument("--interrupt", action="store_true", help="stop a program that is already running")
+    p = sub.add_parser("grip", help="gripper open/close pulse on [ur] do_grip_* (no arm motion), read back via RTDE")
+    p.add_argument("action", choices=["open", "close"])
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.WARNING, format="%(name)s: %(message)s")
     if not a.verbose:
@@ -154,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("[ur].host is an empty PLACEHOLDER in config/station.toml - pass --host <robot IP> "
                  "(URSim: --host 127.0.0.1)")
     return {"info": cmd_info, "ready": cmd_ready, "tool-voltage": cmd_tool_voltage, "pose": cmd_pose,
-            "block": cmd_block}[a.cmd](a, cfg)
+            "block": cmd_block, "grip": cmd_grip}[a.cmd](a, cfg)
 
 
 if __name__ == "__main__":
