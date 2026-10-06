@@ -62,6 +62,8 @@ SAFETY_OK = (1, 2)            # NORMAL, REDUCED (reduced limits, still allowed t
 RUNTIME_STOPPED = 1
 BIT_POWER_ON, BIT_PROGRAM_RUNNING = 0x1, 0x2   # robot_status_bits (RTDE guide: bits 0-3)
 
+FRESH_STATE_WAIT_S = 2.0   # a block waits this long for a current RTDE sample before it fails (stale stream)
+
 # RTDE output recipe: name -> wire type. Required fields exist on every CB3 >= 3.9 (registers 24..47 since 3.9.0).
 REQUIRED_FIELDS = {
     "timestamp": "DOUBLE",              # controller time since start [s]
@@ -554,6 +556,8 @@ class URLink:
             return res
 
         s0 = self.state()
+        if s0 is None or self.state_age_s() > 0.5:          # e.g. a reconnect, or right after the IDS camera opened
+            s0 = self.wait_until(lambda x: time.time() - x.t_laptop <= 0.5, FRESH_STATE_WAIT_S)   # (UR5, 2026-10-06)
         if s0 is None or self.state_age_s() > 0.5:
             return fail(f"no current RTDE state (age {self.state_age_s():.2f} s; {self.rtde_error or 'no data'})")
         if s0.robot_mode != ROBOT_RUNNING:

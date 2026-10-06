@@ -439,6 +439,16 @@ def test_rtde_protocol_v1_polyscope_3_3():
         f.close()
 
 
+def test_block_waits_for_a_fresh_state(fake):
+    """2026-10-06 on the UR5: right after the IDS camera opened, the first block failed with 'no current RTDE state
+    (age 0.84 s)'. A stale stream is now waited for (up to 2 s) instead of failing at once."""
+    with make_link(fake) as ur:
+        fake.kick_rtde()                                   # stream drops; the link reconnects
+        time.sleep(0.6)                                    # latest sample now older than 0.5 s
+        assert ur.state_age_s() > 0.5
+        assert ur.run_block("", "after_stall", timeout_s=5.0).ok
+
+
 def test_rtde_reconnects(fake):
     with make_link(fake) as ur:
         fake.kick_rtde()
