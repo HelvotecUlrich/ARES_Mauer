@@ -12,6 +12,11 @@ the UR base frame from the current pose (nominal [camera.mount] and intrinsics; 
 the link knows the active TCP offset, else from actual_q with the nominal DH, ~1 mm) and writes it as JSON;
 `--board-pose FILE` on plan / capture / verify aims at that pose instead of the [boards.calib] deck pose and uses the
 board plane as the clearance plane. The pose only aims the camera - the calibration does not depend on it.
+`--q-ref-deg q1,...,q6` (plan / capture / verify): the IK branch of every pose is the one closest to these joints
+(the robot's current ones, `tools/ur_check.py info`) instead of the deck convention "elbow up, wrist down" with the
+base turned towards the board - on the table (2026-10-06) the robot stood in the other branch, and the first look
+move would have turned the base by ~180 deg. On the real robot capture / verify refuse to start when the first pose
+needs a base / shoulder / elbow move of more than MAX_START_JUMP_DEG.
 
 Without hardware (URSim CB3 3.15.8 in Docker, tests/ursim.py): add --ursim (host 127.0.0.1; --start-ursim starts the
 container, never pulls). The camera is then mauer.simcam.SynthCamera: it renders the calib board at its nominal deck
@@ -81,6 +86,9 @@ VERIFY_SEED_OFFSET = 1000           # verify poses: plan seed + this (new poses,
 MIN_CLEARANCE_MM = 50.0             # ASSUMPTION fallback for [vision.handeye_plan] min_clearance_mm: warn when an
                                     # arm point / camera / TCP comes closer to the deck plane
 UNREACHABLE = script.ERR_IK_UNREACHABLE
+MAX_START_JUMP_DEG = 60.0           # ASSUMPTION: largest base/shoulder/elbow change from the current joints to the
+                                    # first look pose that capture/verify accept on the real robot (arm reconfiguration
+                                    # guard); beyond it pass --q-ref-deg with the current joints
 
 # UR5 nominal DH (UR article "DH parameters for calculations of kinematics and dynamics", as in
 # tests/test_ur_ursim.py dh_fk_ur5, which matches URSim to < 0.01 mm): d [mm], a [mm], alpha [rad].
@@ -219,16 +227,23 @@ def deck_z_in_base(cfg: dict) -> float:
 
 def annotate(cfg: dict, T_base_flange: np.ndarray, index: int, name: str | None = None,
              T_flange_cam: np.ndarray | None = None, aim_base_mm: Sequence[float] | None = None,
-             T_base_board: np.ndarray | None = None) -> LookPose:
+             T_base_board: np.ndarray | None = None, q_ref: Sequence[float] | None = None) -> LookPose:
     """LookPose with the nominal IK branch (qnear), the deck clearance and - when aim_base_mm/T_base_board are
-    given - the camera distance to the aim point and the tilt against the board normal."""
+    given - the camera distance to the aim point and the tilt against the board normal. q_ref [rad]: take the branch
+    closest to these joints (unwrapped towards them, so the controller's IK near qnear stays there) instead of the
+    deck convention q_reference."""
     T = np.asarray(T_base_flange, float)
     X = config.T_flange_cam_nominal(cfg) if T_flange_cam is None else np.asarray(T_flange_cam, float)
     T_ft = config.T_flange_tcp(cfg)
     cam = T @ X
     aim = cam[:3, 3] + 300.0 * cam[:3, 2] if aim_base_mm is None else np.asarray(aim_base_mm, float)
     sols = ur5_ik(T)
-    q = choose_branch(sols, q_reference(aim[:2]))
+    if q_ref is None:
+        q = choose_branch(sols, q_reference(aim[:2]))
+    else:
+        ref = np.asarray(q_ref, float)
+        q = choose_branch(sols, ref)
+        q = None if q is None else np.array([ref[i] + _wrap(q[i] - ref[i]) for i in range(6)])
     z0 = deck_z_in_base(cfg)
     pts = [cam[2, 3], (T @ T_ft)[2, 3], T[2, 3]]
     if q is not None:
@@ -240,9 +255,20 @@ def annotate(cfg: dict, T_base_flange: np.ndarray, index: int, name: str | None 
     return LookPose(index, name or f"p{index:02d}", T, q, len(sols), float(min(pts) - z0), dist, tilt)
 
 
-def plan_settings(cfg: dict, n: int | None = None, seed: int = 0) -> dict:
+def parse_q_ref(text: str | None) -> np.ndarray | None:
+    """--q-ref-deg "q1,...,q6" [deg] -> joints [rad] (None without)."""
+    if not text:
+        return None
+    v = [float(x) for x in text.split(",")]
+    if len(v) != 6:
+        raise SystemExit(f"--q-ref-deg needs 6 joint angles in degrees, got {len(v)}")
+    return np.radians(v)
+
+
+def plan_settings(cfg: dict, n: int | None = None, seed: int = 0, q_ref: Sequence[float] | None = None) -> dict:
     p = cfg.get("vision", {}).get("handeye_plan", {})
     return {"n": int(p.get("n_poses", 25) if n is None else n), "seed": int(seed),
+            "q_ref_deg": None if q_ref is None else [round(float(v), 3) for v in np.degrees(q_ref)],
             "dist_mm": [float(v) for v in p.get("dist_mm", (290.0, 355.0))],
             "tilt_deg": [float(v) for v in p.get("tilt_deg", (15.0, 30.0))],
             "roll_deg": [float(v) for v in p.get("roll_deg", (-90.0, 90.0))],
@@ -250,7 +276,8 @@ def plan_settings(cfg: dict, n: int | None = None, seed: int = 0) -> dict:
             "T_flange_cam_nominal": config.T_flange_cam_nominal(cfg).tolist()}
 
 
-def make_plan(cfg: dict, n: int | None = None, seed: int = 0, prefix: str = "p") -> list[LookPose]:
+def make_plan(cfg: dict, n: int | None = None, seed: int = 0, prefix: str = "p",
+              q_ref: Sequence[float] | None = None) -> list[LookPose]:
     """handeye.plan_poses around the calib board centre with the [vision.handeye_plan] ranges and the nominal
     T_flange_cam (the plan only needs to be roughly right), annotated with the nominal IK and deck clearance."""
     st = plan_settings(cfg, n, seed)
@@ -260,7 +287,23 @@ def make_plan(cfg: dict, n: int | None = None, seed: int = 0, prefix: str = "p")
     poses = handeye.plan_poses(T_bb, X, st["n"], tuple(st["dist_mm"]), tuple(st["tilt_deg"]),
                                tuple(st["roll_deg"]), seed=seed, spec=spec)
     aim = g.apply(T_bb, [[*spec.centre_mm, 0.0]])[0]
-    return [annotate(cfg, T, i, f"{prefix}{i:02d}", X, aim, T_bb) for i, T in enumerate(poses)]
+    return [annotate(cfg, T, i, f"{prefix}{i:02d}", X, aim, T_bb, q_ref) for i, T in enumerate(poses)]
+
+
+def start_jump_refusal(q_now: Sequence[float], poses: Sequence[LookPose], limit_deg: float = MAX_START_JUMP_DEG
+                       ) -> str | None:
+    """None if the first pose with a nominal IK branch is within limit_deg of q_now in base / shoulder / elbow, else
+    the refusal message (an arm reconfiguration sweeps across the table/deck)."""
+    first = next((p for p in poses if p.qnear_rad is not None), None)
+    if first is None:
+        return None
+    d = [abs(math.degrees(_wrap(float(first.qnear_rad[i]) - float(q_now[i])))) for i in range(3)]
+    if max(d) <= limit_deg:
+        return None
+    now = ",".join(f"{v:.1f}" for v in np.degrees(np.asarray(q_now, float)))
+    return (f"refusing to move: the first look pose {first.name} needs base/shoulder/elbow changes of "
+            f"{', '.join(f'{v:.0f}' for v in d)} deg (> {limit_deg:g}) - another arm configuration. Plan in the "
+            f"current one: --q-ref-deg={now}")
 
 
 def write_poses_json(path: str | Path, poses: Sequence[LookPose], source: str) -> Path:
@@ -517,7 +560,7 @@ def ik_check_block(cfg: dict, T_base_flange: np.ndarray, qnear_rad: Sequence[flo
 
 def cmd_plan(args) -> int:
     cfg = apply_board_pose(config.load(args.config), args.board_pose)
-    poses = make_plan(cfg, args.n, args.seed)
+    poses = make_plan(cfg, args.n, args.seed, q_ref=parse_q_ref(args.q_ref_deg))
     print_plan(cfg, poses)
     if args.write:
         p = write_poses_json(args.write, poses, f"calib_handeye plan n={len(poses)} seed={args.seed}")
@@ -629,8 +672,9 @@ def capture_poses(rig: Rig, poses: Sequence[LookPose], ds: Dataset, spec: BoardS
 
 def cmd_capture(args) -> int:
     cfg = apply_board_pose(config.load(args.config), args.board_pose)
-    settings = plan_settings(cfg, args.n, args.seed)
-    poses = make_plan(cfg, args.n, args.seed)
+    q_ref = parse_q_ref(args.q_ref_deg)
+    settings = plan_settings(cfg, args.n, args.seed, q_ref)
+    poses = make_plan(cfg, args.n, args.seed, q_ref=q_ref)
     spec = board_specs(cfg)["calib"]
     path = config.repo_path(args.dataset)
     done: set[int] = set()
@@ -666,7 +710,11 @@ def cmd_capture(args) -> int:
                 print("resume with another --inject than the dataset's ground truth - refusing", flush=True)
                 return 2
             ds.update_meta(truth=rig.truth)
-        if not confirm_motion(args, f"{len(todo)} look poses around the deck calib board at "
+        jump = None if args.ursim else start_jump_refusal(rig.link.state().actual_q, todo)
+        if jump:
+            print(jump, flush=True)
+            return 2
+        if not confirm_motion(args, f"{len(todo)} look poses around the calib board at "
                                     f"v_joint {rig.speeds.v_joint} rad/s"):
             print("not confirmed - nothing moved", flush=True)
             return 1
@@ -765,7 +813,7 @@ def cmd_verify(args) -> int:
     intr, intr_label = load_intrinsics(args, cfg, args.ursim)
     spec = board_specs(cfg)["calib"]
     seed = args.seed if args.seed is not None else VERIFY_SEED_OFFSET
-    poses = make_plan(cfg, args.n, seed, prefix="v")
+    poses = make_plan(cfg, args.n, seed, prefix="v", q_ref=parse_q_ref(args.q_ref_deg))
     print(f"verify {he_path} ({res.method}, {res.n_poses} poses) on {len(poses)} new poses (seed {seed}), "
           f"intrinsics {intr_label}", flush=True)
     refusal = check_payload(cfg, args.sim or args.ursim)
@@ -774,7 +822,11 @@ def cmd_verify(args) -> int:
         return 2
     rig = open_rig(args, cfg)
     try:
-        if not confirm_motion(args, f"{len(poses)} verification poses around the deck calib board"):
+        jump = None if args.ursim else start_jump_refusal(rig.link.state().actual_q, poses)
+        if jump:
+            print(jump, flush=True)
+            return 2
+        if not confirm_motion(args, f"{len(poses)} verification poses around the calib board"):
             print("not confirmed - nothing moved", flush=True)
             return 1
         ds = None
@@ -832,6 +884,8 @@ def cmd_verify(args) -> int:
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
+Q_REF_HELP = ("IK branch closest to these joints 'q1,...,q6' [deg] (the robot's current ones) instead of the deck "
+              "convention elbow up / wrist down")
 BOARD_POSE_HELP = "calib board pose JSON from 'locate' (board on a table) instead of the [boards.calib] deck pose"
 
 
@@ -853,6 +907,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--check", action="store_true", help="ask the controller (get_inverse_kin_has_solution, no "
                                                         "motion) - needs --host or --ursim")
     p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
+    p.add_argument("--q-ref-deg", default=None, help=Q_REF_HELP)
     add_robot_args(p)
 
     p = sub.add_parser("capture", help="move through the plan and record a 'handeye' dataset")
@@ -861,6 +916,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n", type=int, default=None, help="number of poses (default [vision.handeye_plan] n_poses)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
+    p.add_argument("--q-ref-deg", default=None, help=Q_REF_HELP)
     add_robot_args(p)
 
     p = sub.add_parser("solve", help="calibrate T_flange_cam from a dataset (tools/handeye_solve.py)")
@@ -884,6 +940,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tol-mm", type=float, default=0.5, help="ASSUMPTION pass threshold, max deviation [mm]")
     p.add_argument("--tol-deg", type=float, default=0.1, help="ASSUMPTION pass threshold [deg]")
     p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
+    p.add_argument("--q-ref-deg", default=None, help=Q_REF_HELP)
     add_robot_args(p)
     return ap
 

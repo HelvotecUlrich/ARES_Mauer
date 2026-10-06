@@ -142,3 +142,36 @@ def test_locate_and_plan_around_a_table_board(monkeypatch, tmp_path, capsys):
     assert all(289.0 <= p.dist_mm <= 356.0 and 14.0 <= p.tilt_deg <= 31.0 for p in poses), \
         [(p.dist_mm, p.tilt_deg) for p in poses]
     assert ch.make_plan(config.load(), 8, seed=0)[0].T_base_flange.tolist() != poses[0].T_base_flange.tolist()
+
+
+def _table_cfg(link):
+    c = config.load()
+    c["vision"]["handeye_plan"]["board_pose"] = {"T_base_board": link.T_board.tolist(), "file": "test"}
+    return c
+
+
+def test_plan_stays_in_the_robots_arm_configuration(monkeypatch):
+    """2026-10-06: the deck convention (elbow up, base turned to the board) put every look pose in the other branch
+    than the robot on the table (q1 -68 deg, q3 -79 deg) - the first move would have swept the base ~180 deg."""
+    cfg = config.load()
+    link = fake_rig(cfg, monkeypatch, config.T_flange_cam_nominal(cfg))
+    c = _table_cfg(link)
+    deck = ch.make_plan(c, 10, seed=0)
+    msg = ch.start_jump_refusal(Q0, deck)
+    assert msg and "--q-ref-deg=-68.4,-90.4,-79.4" in msg
+    table = ch.make_plan(c, 10, seed=0, q_ref=Q0)
+    assert all(p.qnear_rad is not None for p in table) and ch.start_jump_refusal(Q0, table) is None
+    for p in table:                                   # same branch: base, shoulder, elbow stay near the start
+        assert np.max(np.abs(np.degrees(p.qnear_rad[:3] - Q0[:3]))) < 60.0, (p.name, np.degrees(p.qnear_rad))
+        assert np.allclose(ur5_fk(p.qnear_rad), p.T_base_flange, atol=1e-3)
+    assert ch.plan_settings(c, 10, 0, Q0)["q_ref_deg"] == pytest.approx(np.degrees(Q0).round(3).tolist())
+
+
+def test_capture_refuses_an_arm_reconfiguration(monkeypatch, tmp_path, capsys):
+    cfg = config.load()
+    link = fake_rig(cfg, monkeypatch, config.T_flange_cam_nominal(cfg))
+    link.info = lambda: {"host": "fake"}
+    bp = tmp_path / "board.json"
+    bp.write_text(json.dumps({"T_base_board": link.T_board.tolist()}))
+    assert ch.main(["capture", "--dataset", str(tmp_path / "he"), "--board-pose", str(bp), "--n", "6"]) == 2
+    assert "refusing to move" in capsys.readouterr().out and link.blocks == []
