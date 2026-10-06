@@ -354,6 +354,24 @@ class _Ctx:
         self.board_leg = {str(t["name"]): (str(t["leg"]) if "leg" in t else None)
                           for t in cfg.get("targets", []) if t.get("parent") == "wall"}
         self.standoff = arrival_standoff(cfg)
+        self._magazine: mjob.Magazine | None = None
+        self._ares_arm = None
+
+    def magazine(self) -> mjob.Magazine:
+        """The deck magazine (built once, its warnings once)."""
+        if self._magazine is None:
+            self._magazine = _magazine(self)
+        return self._magazine
+
+    def ares_arm(self) -> "armcheck.ArmChecker":
+        """Arm check against the ARES chassis and a FULL magazine (mauer.armcheck.ares_boxes, fixed to ARES): every look
+        is taken with them (RoboDK 2026-10-06: looks of the C put the gripper / wrist into ARES and the forearm into
+        the full magazine)."""
+        if self._ares_arm is None:
+            m = self.magazine()
+            full = [sl for sl in m.slots if sl.id in m.take_order]
+            self._ares_arm = armcheck.ArmChecker(self.cfg, armcheck.ares_boxes(self.cfg, full), on_ares=self.T_ares_base)
+        return self._ares_arm
 
 
 def arrival_standoff(cfg: dict) -> float:
@@ -377,7 +395,8 @@ def wall_look_candidates(ctx: _Ctx, ares: Pose2D, T_wall_leg: np.ndarray, leg: s
     arrival standoff, and none of these configurations hits the stones in `built` (mauer.armcheck)."""
     T_base_wall = ctx.T_base_ares @ g.inv(ares.T)
     R_pref = preferred_flange_R((T_base_wall @ T_wall_leg)[:3, :3], ctx.T_flange_tcp)
-    arm = armcheck.ArmChecker(ctx.cfg, armcheck.stone_boxes(ctx.cfg, built, legs_by_name)) if built else None
+    wall = armcheck.ArmChecker(ctx.cfg, armcheck.stone_boxes(ctx.cfg, built, legs_by_name)) if built else None
+    arm = armcheck.Checkers(wall, ctx.ares_arm())
     offs = standoff_offset(ares, ctx.standoff if standoff_mm is None else standoff_mm)
     cands, centres = {}, {}
     for p in ctx.pl:
@@ -496,7 +515,8 @@ def _station(ctx: _Ctx) -> mjob.Station:
     R_pref = preferred_flange_R(T_base_station[:3, :3], ctx.T_flange_tcp)
     # looks clear of a FULL station (every usable holder filled - the state on arrival after a top-up) and the table
     full = [s for s in st_slots if s.id in st_take]
-    arm = armcheck.ArmChecker(cfg, armcheck.station_boxes(cfg, full, floor.station_table_extent(cfg)))
+    arm = armcheck.Checkers(armcheck.ArmChecker(cfg, armcheck.station_boxes(cfg, full, floor.station_table_extent(cfg))),
+                            ctx.ares_arm())
     cands, centres = {}, {}
     st_boards = [p for p in ctx.pl if p.parent == "station"]
     for p in st_boards:
@@ -603,7 +623,7 @@ def build_nominal(cfg: dict, length: int | None = None, dist: float | None = Non
         looks = _wall_looks(ctx, k, a, ares, np.eye(4), None, built, None, standoff_mm=0.0)   # direct moves
         tasks = [_stone_task(ctx, k, s, T_base_wall, None) for s in batch]
         stops.append(mjob.Stop(k, float(a), ares, looks, tasks))
-    return _finish(ctx, stops, _magazine(ctx), _station(ctx), key,
+    return _finish(ctx, stops, ctx.magazine(), _station(ctx), key,
                    {"shape": "straight", "length_stones": int(length), "n_stones": len(stones),
                     "plan_a_mm": [float(a) for a, _ in plan]}, config_path)
 
@@ -740,7 +760,7 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
             looks = _wall_looks(ctx, k, a, ares, T_wl, lg.name, built, by_name)
             tasks = [_stone_task(ctx, k, s, T_base_wall, T_wl) for s in batch]
             stops.append(mjob.Stop(k, float(a), ares, looks, tasks, lg.name))
-    magazine, station = _magazine(ctx), _station(ctx)
+    magazine, station = ctx.magazine(), _station(ctx)
     sites = target_sites(cfg, legs_)
     obstacles, fproblems = floor_model(cfg, legs_, sites, [(f"stop {s.index}", s.ares) for s in stops])
     rinfo = plan_l_routes(cfg, stops, obstacles, station.dock_in_wall)

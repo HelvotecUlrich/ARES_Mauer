@@ -200,7 +200,8 @@ def evaluate(cfg0: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
     for s in stops:
         T_base_wall = ctx.T_base_ares @ g.inv(s["pose"].T)
         R_pref = mj.preferred_flange_R((T_base_wall @ T_legs[s["leg"]])[:3, :3], ctx.T_flange_tcp)
-        arm = armcheck.ArmChecker(cfg, armcheck.stone_boxes(cfg, s["built"], by_name))
+        arm = armcheck.Checkers(armcheck.ArmChecker(cfg, armcheck.stone_boxes(cfg, s["built"], by_name)),
+                                ctx.ares_arm())
         offs = mj.standoff_offset(s["pose"], mj.arrival_standoff(cfg))
         ok = set()
         for i, T in enumerate(T_wb):

@@ -253,37 +253,38 @@ dictionary = "DICT_APRILTAG_36h11"
 # 2026-10-05 in tests/conftest.py L_BOARDS): the 8 existing boards (Samuel: no new markers / boards; the engraved
 # "u = ..." on the plates is now wrong, the names/ids are what count) on the INSIDE faces of the legs (ARES side), no
 # spare block, plates clear of each other, the other legs, ARES at its stops and the routes. A stop only looks at
-# boards of its OWN leg, with looks clear of the wall built by the end of the stop (tools/make_job.py,
-# mauer.armcheck): A 4 boards, B 2, C 2 -> 3, 2, 2, 2, 2 usable boards at the 5 stops (+-50 mm ARES margin and the
-# arrival standoff), worst baseline 600 mm. Boards of legs B / C are in their leg frame, so they follow the corner
+# boards of its OWN leg, with looks clear of the wall built by the end of the stop, of the ARES chassis and of a full
+# magazine (tools/make_job.py, mauer.armcheck; RoboDK 2026-10-06: looks to boards behind the UR5 hit the full
+# magazine, looks beside ARES put the gripper into it): A 4 boards, B 2, C 2 -> 3, 2, 2, 2, 2 usable boards at the 5
+# stops (+-50 mm ARES margin and the arrival standoff), worst baseline 600 mm. Boards of legs B / C are in their leg frame, so they follow the corner
 # offsets (rib + corner gap).
 [[targets]]
 name = "W0"
 parent = "wall"
-leg = "A"                   # block k = 0 of leg A (u 100)
+leg = "A"                   # block k = 1 of leg A (u 300)
 first_id = 30
-xyz = [60.0, 147.0, 4.1]
+xyz = [260.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W1"
 parent = "wall"
-leg = "A"                   # block k = 2 (u 500)
+leg = "A"                   # block k = 3 (u 700)
 first_id = 40
-xyz = [460.0, 147.0, 4.1]
+xyz = [660.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W2"
 parent = "wall"
-leg = "A"                   # block k = 4 (u 900)
+leg = "A"                   # block k = 5 (u 1100)
 first_id = 50
-xyz = [860.0, 147.0, 4.1]
+xyz = [1060.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W3"
 parent = "wall"
-leg = "A"                   # block k = 7 (u 1500)
+leg = "A"                   # block k = 8 (u 1700)
 first_id = 60
-xyz = [1460.0, 147.0, 4.1]
+xyz = [1660.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W4"

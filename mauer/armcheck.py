@@ -177,18 +177,21 @@ def stone_boxes(cfg: Mapping, stones: Iterable, legs: Mapping[str, object] | Non
     return out
 
 
+def _stone_box(cfg: Mapping, name: str, T_tcp, kind: str = "full") -> Box:
+    """Box of a stone held / standing with its top centre at T_tcp (TCP z into the stone, length along TCP x; width
+    incl. the ribs)."""
+    rib = float(cfg["brick"].get("rib_mm", 0.0))
+    dims = cfg["half_brick"] if kind == "half" else cfg["brick"]
+    L, W, H = float(dims["length"]), float(dims["width"]), float(dims["height"])
+    T = np.asarray(T_tcp, float)
+    return Box(name, g.apply(T, [[0.0, 0.0, H / 2.0]])[0], T[:3, :3], np.array([L / 2.0, W / 2.0 + rib, H / 2.0]))
+
+
 def station_boxes(cfg: Mapping, slots: Iterable, table: tuple[float, float] | None = None) -> list[Box]:
     """Boxes (station frame) of the stones in the given station holders (T_station_tcp = top centre, TCP z into the
     stone, stone length along TCP x; width incl. the ribs) and, if `table` = (x_max, y_max) is given, the table top
     ([pickup_station] table_z, 30 mm slab like robodk/build_station.py)."""
-    out = []
-    rib = float(cfg["brick"].get("rib_mm", 0.0))
-    for s in slots:
-        dims = cfg["half_brick"] if getattr(s, "kind", "full") == "half" else cfg["brick"]
-        L, W, H = float(dims["length"]), float(dims["width"]), float(dims["height"])
-        T = np.asarray(s.T_station_tcp, float)
-        out.append(Box(f"station stone {s.id}", g.apply(T, [[0.0, 0.0, H / 2.0]])[0], T[:3, :3],
-                       np.array([L / 2.0, W / 2.0 + rib, H / 2.0])))
+    out = [_stone_box(cfg, f"station stone {s.id}", s.T_station_tcp, getattr(s, "kind", "full")) for s in slots]
     if table is not None:
         z = float(cfg["pickup_station"]["table_z"])
         out.append(Box("pick-up table", np.array([table[0] / 2.0, table[1] / 2.0, z - 15.0]), np.eye(3),
@@ -196,21 +199,49 @@ def station_boxes(cfg: Mapping, slots: Iterable, table: tuple[float, float] | No
     return out
 
 
+def ares_boxes(cfg: Mapping, magazine_slots: Iterable = ()) -> list[Box]:
+    """Boxes in the ARES frame: the chassis up to the deck top ([ares] length x width x deck_top_z) and a FULL magazine
+    (full stones in every given slot, T_ares_tcp - the state on arrival at a stop and at the dock). RoboDK found the
+    looks of the C putting the gripper / wrist into ARES and the forearm into the magazine (2026-10-06)."""
+    a = cfg["ares"]
+    L, W, H = float(a["length"]), float(a["width"]), float(a["deck_top_z"])
+    out = [Box("ARES chassis", np.array([0.0, 0.0, H / 2.0]), np.eye(3), np.array([L / 2.0, W / 2.0, H / 2.0]))]
+    out += [_stone_box(cfg, f"magazine stone {s.id}", s.T_ares_tcp) for s in magazine_slots]
+    return out
+
+
 class ArmChecker:
     """Collision test of UR5 configurations against a fixed set of boxes (parent frame), with the tool envelope of
     the config. `hits(q, T_parent_base)` -> collisions(...) list (empty = free)."""
 
-    def __init__(self, cfg: Mapping, boxes: Sequence[Box], clearance_mm: float = CLEARANCE_MM):
+    def __init__(self, cfg: Mapping, boxes: Sequence[Box], clearance_mm: float = CLEARANCE_MM,
+                 on_ares: np.ndarray | None = None):
+        """on_ares = T_ares_base: the boxes are in the ARES frame (ares_boxes) and move with ARES - hits() ignores
+        T_parent_base and leaves out the base column and the shoulder (they stand on the deck)."""
         self.tool = tool_capsules(cfg)
         self.boxes = list(boxes)
         self.clearance = float(clearance_mm)
+        self.on_ares = None if on_ares is None else np.asarray(on_ares, float)
 
     def hits(self, q_rad: Sequence[float], T_parent_base: np.ndarray) -> list[tuple[str, str, float]]:
         if not self.boxes:
             return []
+        if self.on_ares is not None:                  # boxes fixed to ARES: the arm in the UR base pose on ARES
+            caps = [c for c in arm_capsules(q_rad, self.on_ares, self.tool) if c.name not in ("base", "shoulder")]
+            return collisions(caps, self.boxes, self.clearance)
         caps = arm_capsules(q_rad, T_parent_base, self.tool)
         base = np.asarray(T_parent_base, float)[:3, 3]
         # UR5 reach 850 mm + tool ~200 mm: boxes farther than that cannot be touched (cost only)
         near = [b for b in self.boxes
                 if float(np.linalg.norm(b.centre[:2] - base[:2]) - np.linalg.norm(b.half[:2])) < 1300.0]
         return collisions(caps, near, self.clearance)
+
+
+class Checkers:
+    """Several checkers as one: hits() = the hits of all (e.g. the built wall in the wall frame + ARES / magazine)."""
+
+    def __init__(self, *checkers):
+        self.checkers = [c for c in checkers if c is not None]
+
+    def hits(self, q_rad: Sequence[float], T_parent_base: np.ndarray) -> list[tuple[str, str, float]]:
+        return [h for c in self.checkers for h in c.hits(q_rad, T_parent_base)]

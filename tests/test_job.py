@@ -344,7 +344,7 @@ def test_l_looks_use_boards_of_the_stops_own_leg_clear_of_the_built_wall(ljob, l
     for s in ljob.stops:
         built += [stones[t.key] for t in s.stones]
         arm = armcheck.ArmChecker(lcfg, armcheck.stone_boxes(lcfg, built, by_name))
-        assert len(s.looks) == 2
+        assert len(s.looks) == (1 if s.index == 1 else 2)                  # see below
         T_base_wall = g.inv(T_ab) @ g.inv(s.ares.T)
         for lk in s.looks:
             (b,) = lk.boards
@@ -353,7 +353,9 @@ def test_l_looks_use_boards_of_the_stops_own_leg_clear_of_the_built_wall(ljob, l
             assert g.apply(T_cam_board, [[*specs[b].centre_mm, 0.0]])[0] == pytest.approx(
                 [0.0, 0.0, lcfg["camera"]["working_dist"]], abs=1e-6)
             assert arm.hits(lk.qnear_rad, s.ares.T @ T_ab) == []
-    assert [[lk.boards[0] for lk in s.looks] for s in ljob.stops] == [["W0", "W3"], ["W2", "W4"], ["W5", "W7"]]
+    # 2026-10-06: looks are also checked against the ARES chassis and a full magazine - the W4 look from stop 1 (RoboDK:
+    # "ARES / UR5 link 6") is rejected, the L's stop 1 keeps W2 only (its board layout predates that check)
+    assert [[lk.boards[0] for lk in s.looks] for s in ljob.stops] == [["W0", "W3"], ["W2"], ["W5", "W7"]]
     # the rejected looks of the first L plan: W4 from stop 2 and W5 from stop 1, once leg A is complete
     ctx = make_job._Ctx(lcfg, lcfg["wall"]["dist_nominal"], 2, make_job.LOOK_MARGIN_MM)
     T_legs = config.leg_frames(lcfg)
