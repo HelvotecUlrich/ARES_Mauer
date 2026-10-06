@@ -51,6 +51,11 @@ class MountLink:
     def flange(self):
         return self.T_tcp @ g.inv(T_FT)
 
+    tcp_source = "tracked set_tcp"
+
+    def flange_T(self, s=None):          # PolyScope 3.3 before this link sent a set_tcp: unknown active TCP
+        raise ValueError("sample has no tcp_offset (RTDE field missing): pass T_flange_tcp")
+
     def abort(self):
         return "aborted"
 
@@ -65,6 +70,7 @@ def fake_rig(cfg, monkeypatch, T_flange_cam_true):
     c = (link.flange() @ T_flange_cam_true)[:3, 3]
     w, h = spec.squares_x * spec.square_mm, spec.squares_y * spec.square_mm
     T_board = g.transl(c[0], c[1], c[2] - 400.0) @ g.rotx(np.pi) @ g.transl(-w / 2, -h / 2, 0.0)
+    link.T_board = T_board
     cam = SynthCamera(link.flange, T_flange_cam_true, [(spec, T_board)], intrinsics.nominal(cfg), supersample=1)
     cam.open()
     rig = ch.Rig(cfg=cfg, link=link, camera=cam, sim=True, ursim=False, speeds=script.Speeds.from_config(cfg))
@@ -118,3 +124,21 @@ def test_no_motion_without_move(monkeypatch, tmp_path, capsys):
     link = fake_rig(cfg, monkeypatch, config.T_flange_cam_nominal(cfg))
     assert mt.main(["mount", "--boards", "calib", "--nominal-intrinsics", "--move-mm", "0", "--settle-s", "0"]) == 0
     assert link.blocks == [] and "using calib" in capsys.readouterr().out
+
+
+def test_locate_and_plan_around_a_table_board(monkeypatch, tmp_path, capsys):
+    """calib_handeye locate (no motion) finds the board on the table; --board-pose aims the plan at it."""
+    cfg = config.load()
+    link = fake_rig(cfg, monkeypatch, config.T_flange_cam_nominal(cfg))
+    out = tmp_path / "board.json"
+    assert ch.main(["locate", "--nominal-intrinsics", "--write", str(out)]) == 0
+    assert "nominal UR5 DH" in capsys.readouterr().out and link.blocks == []
+    T = np.asarray(json.loads(out.read_text())["T_base_board"])
+    dt, dr = g.pose_delta(T, link.T_board)
+    assert dt < 1.0 and dr < 0.2, (dt, dr)
+    c2 = ch.apply_board_pose(config.load(), out)
+    assert np.allclose(ch.calib_board_in_base(c2), T) and ch.deck_z_in_base(c2) == pytest.approx(T[2, 3])
+    poses = ch.make_plan(c2, 8, seed=0)
+    assert all(289.0 <= p.dist_mm <= 356.0 and 14.0 <= p.tilt_deg <= 31.0 for p in poses), \
+        [(p.dist_mm, p.tilt_deg) for p in poses]
+    assert ch.make_plan(config.load(), 8, seed=0)[0].T_base_flange.tolist() != poses[0].T_base_flange.tolist()

@@ -1,10 +1,17 @@
 """Hand-eye calibration on the robot: plan look poses around the deck calib board, capture images with the flange
 pose at the exposure, solve T_flange_cam, verify on new poses.
 
+    py.exe tools/calib_handeye.py locate --nominal-intrinsics [--write data/board_table.json]   # no motion
     py.exe tools/calib_handeye.py plan [--n 25] [--seed 0] [--write poses.json] [--check --host IP]
     py.exe tools/calib_handeye.py capture --host IP --dataset data/he_2026-10-06 [--resume]
     py.exe tools/calib_handeye.py solve data/he_2026-10-06 [--out calib/handeye.json] [--force]
     py.exe tools/calib_handeye.py verify --host IP [--n 5] [--handeye calib/handeye.json]
+
+Board on a table instead of the ARES deck (UR5 on the lab table, 2026-10-06): `locate` measures the calib board in
+the UR base frame from the current pose (nominal [camera.mount] and intrinsics; flange from the controller's TCP if
+the link knows the active TCP offset, else from actual_q with the nominal DH, ~1 mm) and writes it as JSON;
+`--board-pose FILE` on plan / capture / verify aims at that pose instead of the [boards.calib] deck pose and uses the
+board plane as the clearance plane. The pose only aims the camera - the calibration does not depend on it.
 
 Without hardware (URSim CB3 3.15.8 in Docker, tests/ursim.py): add --ursim (host 127.0.0.1; --start-ursim starts the
 container, never pulls). The camera is then mauer.simcam.SynthCamera: it renders the calib board at its nominal deck
@@ -178,13 +185,35 @@ class LookPose:
                 "qnear_rad": None if self.qnear_rad is None else self.qnear_rad.tolist()}
 
 
+def apply_board_pose(cfg: dict, path: str | Path | None) -> dict:
+    """--board-pose: the calib board pose measured by `locate` (UR base frame) replaces the [boards.calib] deck pose
+    in cfg (in place) for calib_board_in_base / deck_z_in_base; no-op without a path."""
+    if path:
+        doc = json.loads(config.repo_path(path).read_text(encoding="utf-8"))
+        cfg.setdefault("vision", {}).setdefault("handeye_plan", {})["board_pose"] = {
+            "T_base_board": [[float(v) for v in row] for row in doc["T_base_board"]], "file": str(path)}
+    return cfg
+
+
+def _board_pose(cfg: dict) -> dict | None:
+    return cfg.get("vision", {}).get("handeye_plan", {}).get("board_pose")
+
+
 def calib_board_in_base(cfg: dict) -> np.ndarray:
-    """T_base_board of the calib board at its [boards.calib] deck pose (ARES frame, PLACEHOLDER) via T_ares_base."""
+    """T_base_board of the calib board: the measured pose of --board-pose (apply_board_pose), else its [boards.calib]
+    deck pose (ARES frame, PLACEHOLDER) via T_ares_base."""
+    bp = _board_pose(cfg)
+    if bp is not None:
+        return np.asarray(bp["T_base_board"], float)
     return g.inv(config.T_ares_base(cfg)) @ config.pose(cfg["boards"]["calib"])
 
 
 def deck_z_in_base(cfg: dict) -> float:
-    """Deck top plane in the UR base frame [mm] ([ares] deck_top_z - [ur5] mount height; 0 with no adapter)."""
+    """Clearance plane in the UR base frame [mm]: the deck top ([ares] deck_top_z - [ur5] mount height; 0 with no
+    adapter), or with --board-pose the plane the board lies on (its printed face, the table + plate)."""
+    bp = _board_pose(cfg)
+    if bp is not None:
+        return float(np.asarray(bp["T_base_board"], float)[2, 3])
     return float(cfg["ares"]["deck_top_z"]) - float(config.T_ares_base(cfg)[2, 3])
 
 
@@ -460,7 +489,9 @@ def print_plan(cfg: dict, poses: Sequence[LookPose]) -> None:
     spec = board_specs(cfg)["calib"]
     T_bb = calib_board_in_base(cfg)
     print(f"calib board {spec.describe()}", flush=True)
-    print(f"  T_base_board ([boards.calib] PLACEHOLDER deck pose via [ur5] mount): {fmt_T(T_bb)}", flush=True)
+    src = (f"measured, --board-pose {_board_pose(cfg)['file']}" if _board_pose(cfg) is not None else
+           "[boards.calib] PLACEHOLDER deck pose via [ur5] mount")
+    print(f"  T_base_board ({src}): {fmt_T(T_bb)}", flush=True)
     print(f"  board centre in base: ({', '.join(f'{v:.1f}' for v in g.apply(T_bb, [[*spec.centre_mm, 0]])[0])}) mm",
           flush=True)
     print(f"T_flange_cam nominal ([camera.mount] PLACEHOLDER): {fmt_T(config.T_flange_cam_nominal(cfg))}", flush=True)
@@ -485,7 +516,7 @@ def ik_check_block(cfg: dict, T_base_flange: np.ndarray, qnear_rad: Sequence[flo
 
 
 def cmd_plan(args) -> int:
-    cfg = config.load(args.config)
+    cfg = apply_board_pose(config.load(args.config), args.board_pose)
     poses = make_plan(cfg, args.n, args.seed)
     print_plan(cfg, poses)
     if args.write:
@@ -512,6 +543,46 @@ def cmd_plan(args) -> int:
     finally:
         link.stop()
     print(f"controller IK: {n_ok}/{len(poses)} poses reachable", flush=True)
+    return 0
+
+
+# ── locate ────────────────────────────────────────────────────────────────────
+def cmd_locate(args) -> int:
+    """The calib board in the UR base frame from the current pose (no motion) -> JSON for --board-pose."""
+    from mauer.simworld import ur5_fk as fk_flange
+    from mauer.vision.detect import measure
+    cfg = config.load(args.config)
+    spec = board_specs(cfg)["calib"]
+    intr, intr_label = load_intrinsics(args, cfg, args.ursim)
+    X = config.T_flange_cam_nominal(cfg)
+    rig = open_rig(args, cfg)
+    try:
+        st = rig.link.state()
+        try:
+            T_bf, src = rig.link.flange_T(st), f"controller TCP pose ({rig.link.tcp_source})"
+        except ValueError:                  # PolyScope 3.3: no tcp_offset and no set_tcp sent by this link yet
+            T_bf, src = fk_flange(st.actual_q), "actual_q with the nominal UR5 DH (~1 mm)"
+        bp = measure(rig.camera.grab().image, {"calib": spec}, intr, cfg.get("vision", {}))["calib"]
+    finally:
+        rig.close()
+    if not bp.ok:
+        print(f"calib board not measured ({bp.n_corners} corners, {bp.reason}) - put it in view", flush=True)
+        return 1
+    T_bb = T_bf @ X @ bp.T_cam_board
+    centre = g.apply(T_bb, [[*spec.centre_mm, 0.0]])[0]
+    tilt = math.degrees(math.acos(min(1.0, abs(float(T_bb[2, 2])))))
+    print(f"calib board: {bp.n_corners} corners, RMS {bp.rms_px:.2f} px; flange from {src}; nominal [camera.mount], "
+          f"intrinsics {intr_label}", flush=True)
+    print(f"  T_base_board {fmt_T(T_bb)}", flush=True)
+    print(f"  centre ({', '.join(f'{v:.1f}' for v in centre)}) mm, normal {tilt:.1f} deg from vertical", flush=True)
+    if args.write:
+        out = config.repo_path(args.write)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"source": "calib_handeye locate", "frame": "UR base", "units": "mm",
+                                   "T_base_board": T_bb.tolist(), "flange_source": src, "intrinsics": intr_label,
+                                   "T_flange_cam": "nominal [camera.mount]", "n_corners": bp.n_corners,
+                                   "rms_px": bp.rms_px}, indent=1) + "\n", encoding="utf-8")
+        print(f"written {out} (use: --board-pose {args.write})", flush=True)
     return 0
 
 
@@ -557,7 +628,7 @@ def capture_poses(rig: Rig, poses: Sequence[LookPose], ds: Dataset, spec: BoardS
 
 
 def cmd_capture(args) -> int:
-    cfg = config.load(args.config)
+    cfg = apply_board_pose(config.load(args.config), args.board_pose)
     settings = plan_settings(cfg, args.n, args.seed)
     poses = make_plan(cfg, args.n, args.seed)
     spec = board_specs(cfg)["calib"]
@@ -685,7 +756,7 @@ def measure_poses(rig: Rig, poses: Sequence[dict], specs: dict, intr, T_flange_c
 
 
 def cmd_verify(args) -> int:
-    cfg = config.load(args.config)
+    cfg = apply_board_pose(config.load(args.config), args.board_pose)
     he_path = config.repo_path(args.handeye or cfg.get("vision", {}).get("handeye_file", "calib/handeye.json"))
     if not he_path.exists():
         print(f"{he_path} missing - run 'solve' first", flush=True)
@@ -761,10 +832,19 @@ def cmd_verify(args) -> int:
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
+BOARD_POSE_HELP = "calib board pose JSON from 'locate' (board on a table) instead of the [boards.calib] deck pose"
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=None, help="station.toml (default config/station.toml)")
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("locate", help="measure the calib board in the base frame from the current pose (no motion)")
+    p.add_argument("--intrinsics", default=None)
+    p.add_argument("--nominal-intrinsics", action="store_true")
+    p.add_argument("--write", default="data/board_table.json", help="output JSON for --board-pose")
+    add_robot_args(p)
 
     p = sub.add_parser("plan", help="look poses around the deck calib board (optionally checked on the controller)")
     p.add_argument("--n", type=int, default=None, help="number of poses (default [vision.handeye_plan] n_poses)")
@@ -772,6 +852,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--write", default=None, help="write the poses as JSON (for measure_target.py poses)")
     p.add_argument("--check", action="store_true", help="ask the controller (get_inverse_kin_has_solution, no "
                                                         "motion) - needs --host or --ursim")
+    p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
     add_robot_args(p)
 
     p = sub.add_parser("capture", help="move through the plan and record a 'handeye' dataset")
@@ -779,6 +860,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--resume", action="store_true", help="continue an existing dataset (same plan)")
     p.add_argument("--n", type=int, default=None, help="number of poses (default [vision.handeye_plan] n_poses)")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
     add_robot_args(p)
 
     p = sub.add_parser("solve", help="calibrate T_flange_cam from a dataset (tools/handeye_solve.py)")
@@ -801,6 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dataset", default=None, help="also store the images as a 'measure' dataset")
     p.add_argument("--tol-mm", type=float, default=0.5, help="ASSUMPTION pass threshold, max deviation [mm]")
     p.add_argument("--tol-deg", type=float, default=0.1, help="ASSUMPTION pass threshold [deg]")
+    p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
     add_robot_args(p)
     return ap
 
@@ -809,7 +892,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("rtde").setLevel(logging.ERROR)
-    return {"plan": cmd_plan, "capture": cmd_capture, "solve": cmd_solve, "verify": cmd_verify}[args.cmd](args)
+    return {"locate": cmd_locate, "plan": cmd_plan, "capture": cmd_capture, "solve": cmd_solve,
+            "verify": cmd_verify}[args.cmd](args)
 
 
 if __name__ == "__main__":
