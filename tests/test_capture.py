@@ -44,7 +44,18 @@ def cfg():
     c["boards"]["calib"]["xyz"] = [-82.5, 60.0, 336.6]
     c["boards"]["calib"]["rpy_deg"] = [180.0, 0.0, 0.0]
     c["camera"]["mount"] = {"xyz": [-150.0, 0.0, 60.0], "rpy_deg": [0.0, 0.0, 0.0]}   # mount of that scenario
+    c["ur"]["payload_tool_kg"] = 0.0      # unknown payload: refusal + sim fallback (the real 1.68 kg is set 2026-10-06)
     return c
+
+
+def config_file_without_payload(tmp_path) -> str:
+    """station.toml with payload_tool_kg = 0 (unknown) for the CLI refusal tests."""
+    text = (REPO / "config" / "station.toml").read_text(encoding="utf-8")
+    new = re.sub(r"(?m)^payload_tool_kg = [0-9.]+", "payload_tool_kg = 0.0", text)
+    assert new != text
+    p = tmp_path / "station_no_payload.toml"
+    p.write_text(new, encoding="utf-8")
+    return str(p)
 
 
 @pytest.fixture(scope="module")
@@ -384,11 +395,12 @@ def test_plan_cli_and_refusals(cfg, tmp_path, capsys):
     out = tmp_path / "p.json"
     assert ch.main(["plan", "--n", "6", "--seed", "3", "--write", str(out)]) == 0
     assert len(ch.load_poses_json(out, cfg)) == 6
-    # payload 0 (PLACEHOLDER) -> refused before connecting, no dataset created
+    # payload 0 (unknown) -> refused before connecting, no dataset created
     ds = tmp_path / "he"
-    assert ch.main(["capture", "--dataset", str(ds), "--host", "192.0.2.1"]) == 2
+    no_payload = config_file_without_payload(tmp_path)
+    assert ch.main(["--config", no_payload, "capture", "--dataset", str(ds), "--host", "192.0.2.1"]) == 2
     assert not ds.exists() and "refusing to move the real robot" in capsys.readouterr().out
-    assert mt.main(["poses", "--poses", str(out), "--host", "192.0.2.1", "--nominal-mount",
+    assert mt.main(["--config", no_payload, "poses", "--poses", str(out), "--host", "192.0.2.1", "--nominal-mount",
                     "--nominal-intrinsics"]) == 2
     no_host = copy.deepcopy(cfg)
     no_host["ur"]["host"] = ""                              # the config's host is set since 2026-10-06

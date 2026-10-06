@@ -274,7 +274,8 @@ def test_step_mode_confirms_every_motion(cfg, job10, tmp_path):
 # ── (v) real-run preflight ────────────────────────────────────────────────────
 def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
     no_host = copy.deepcopy(cfg)
-    no_host["ur"]["host"] = ""                              # the config's host is set since 2026-10-06
+    no_host["ur"]["host"] = ""                              # host and payload are set since 2026-10-06
+    no_host["ur"]["payload_tool_kg"] = 0.0
     problems = preflight_real(no_host, job10, intrinsics_file=tmp_path / "none_i.json",
                               handeye_file=tmp_path / "none_h.json")
     text = "\n".join(problems)
@@ -318,9 +319,13 @@ class _FakeLink:
 
 
 def test_ur_robot_programs(cfg, job10):
-    with pytest.raises(ValueError, match="payload_tool_kg"):
-        URRobot(_FakeLink(job10.park_q_rad), cfg, job10)
     c = copy.deepcopy(cfg)
+    c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"] = 0.0, 3.0
+    with pytest.raises(ValueError, match="payload_tool_kg"):
+        URRobot(_FakeLink(job10.park_q_rad), c, job10)
+    c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"] = 1.5, 0.0
+    with pytest.raises(ValueError, match="mass_kg"):
+        URRobot(_FakeLink(job10.park_q_rad), c, job10)
     c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"] = 1.5, 3.0
     link = _FakeLink(job10.park_q_rad)
     r = URRobot(link, c, job10)

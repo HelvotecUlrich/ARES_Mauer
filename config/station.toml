@@ -420,7 +420,8 @@ do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel): the gripper switche
 do_grip_open = 0            # and DO1 (close; his message said "opens" for both, read as close = DO1 as in Gino's code)
 grip_pulse_s = 0.5          # PLACEHOLDER
 grip_wait_s = 1.0           # PLACEHOLDER: EHPS-20-A stroke time not looked up
-payload_tool_kg = 0.0       # PLACEHOLDER: gripper + adapter + camera + bracket; 0 = unknown -> real runs refuse to start
+payload_tool_kg = 1.68      # CONFIRMED 2026-10-06 (Samuel, table test): gripper + camera as mounted, also set as the
+                            # pendant payload
 payload_cog_mm = [0.0, 0.0, 60.0]  # PLACEHOLDER: centre of gravity in the flange frame
 v_joint = 0.5               # ASSUMPTION: rad/s, conservative first-run value
 a_joint = 0.5               # ASSUMPTION: rad/s²
