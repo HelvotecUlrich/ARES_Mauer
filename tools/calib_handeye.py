@@ -715,6 +715,10 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
     depth = float(centre_cam[2])
     pivot = T_cam0[:3, 3] + depth * T_cam0[:3, 2]
     plane_z = float((T_cam0 @ np.array([*centre_cam, 1.0]))[2])
+    n_board = (T_cam0 @ np.asarray(T_cam_board0, float))[:3, 2]        # board normal in base (into the board)
+
+    def board_tilt(T_cam: np.ndarray) -> float:
+        return math.degrees(math.acos(float(np.clip(T_cam[:3, 2] @ n_board, -1.0, 1.0))))
     lim = float(cfg.get("vision", {}).get("handeye_plan", {}).get("min_clearance_mm", MIN_CLEARANCE_MM))
     from mauer.armcheck import SELF_CLEARANCE_MM
     q0 = np.asarray(q0, float)
@@ -722,7 +726,8 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
     prev_T, prev_q = np.asarray(T_base_flange0, float), q0
     for i, (az, tilt, roll, d) in enumerate(orbit_views()):
         name = f"o{i:02d}"
-        T_f = orbit_target(T_cam0, pivot, az, tilt, roll, d) @ g.inv(X)
+        T_cam = orbit_target(T_cam0, pivot, az, tilt, roll, d)
+        T_f = T_cam @ g.inv(X)
         q = choose_branch(ur5_ik(T_f), q0)
         if q is None:
             dropped.append(f"{name}: no nominal IK")
@@ -741,7 +746,8 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
             dropped.append(f"{name}: {part} vs {link} {sc:.0f} mm on the way (< {SELF_CLEARANCE_MM:g})")
             continue
         kept.append({"index": i, "name": name, "T_base_flange": T_f, "tilt": tilt, "roll": roll, "d_mm": d,
-                     "azimuth": az, "q_nominal": q_end, "clearance_mm": float(low), "self_mm": float(sc)})
+                     "azimuth": az, "q_nominal": q_end, "clearance_mm": float(low), "self_mm": float(sc),
+                     "board_tilt": board_tilt(T_cam)})
         prev_T, prev_q = T_f, q_end
     while kept:                                   # the way back to the start must be clear too
         last = kept[-1]
@@ -750,7 +756,8 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
             break
         dropped.append(f"{last['name']}: {part} vs {link} {sc:.0f} mm on the way back to the start")
         kept.pop()
-    return kept, dropped, {"pivot": pivot.tolist(), "distance_mm": depth, "board_plane_z": plane_z}
+    return kept, dropped, {"pivot": pivot.tolist(), "distance_mm": depth, "board_plane_z": plane_z,
+                           "start_board_tilt_deg": board_tilt(T_cam0)}
 
 
 def cmd_orbit(args) -> int:
@@ -772,6 +779,10 @@ def cmd_orbit(args) -> int:
     kg, cog = payload(cfg, sim=args.sim or args.ursim)
     pre = script.preamble(T_ft, kg, cog)
     settle, max_qd = settle_value(args, cfg), max_qd_value(args, cfg)
+    ipath = config.repo_path(cfg.get("vision", {}).get("intrinsics_file", "calib/camera_intrinsics.json"))
+    start_intr = intrinsics.load(ipath) if ipath.exists() and not args.ursim else intrinsics.nominal(cfg)
+    print(f"start view measured with {'calibrated intrinsics ' + str(ipath) if ipath.exists() and not args.ursim else 'nominal intrinsics'}"
+          " (only to aim the views)", flush=True)
     rig = open_rig(args, cfg)
     try:
         r = rig.link.run_block(pre, "orbit_tcp", timeout_s=10.0)          # no motion: set_tcp/set_payload, so the
@@ -781,17 +792,21 @@ def cmd_orbit(args) -> int:
         st = rig.link.state()
         T_f0, q0 = rig.link.flange_T(st), np.asarray(st.actual_q, float)
         T_tcp0 = T_f0 @ T_ft
-        bp = measure(rig.camera.grab().image, {"calib": spec}, intrinsics.nominal(cfg), cfg.get("vision", {}))["calib"]
-        if not bp.ok:
+        bp = measure(rig.camera.grab().image, {"calib": spec}, start_intr, cfg.get("vision", {}))["calib"]
+        if bp.T_cam_board is None:
             print(f"calib board not measured at the start ({bp.n_corners} corners, {bp.reason}) - point the camera at "
                   "it", flush=True)
             return 1
+        if not bp.ok:                     # e.g. the RMS gate with intrinsics weak at the image edges - aiming only
+            print(f"note: start pose {bp.reason} - good enough to aim the views", flush=True)
         views, dropped, geo = orbit_plan(cfg, T_f0, q0, bp.T_cam_board, spec)
-        print(f"start: board centre {geo['distance_mm']:.0f} mm in front of the camera; {len(views)} views kept"
+        print(f"start: board centre {geo['distance_mm']:.0f} mm in front of the camera, camera {geo['start_board_tilt_deg']:.0f}"
+              f" deg off the board normal, wrist 3 at {math.degrees(q0[5]):.1f} deg; {len(views)} views kept"
               + (f", dropped: {'; '.join(dropped)}" if dropped else ""), flush=True)
         for v in views:
             print(f"  {v['name']}: tilt {v['tilt']:4.1f} deg towards {v['azimuth']:6.1f} deg, roll {v['roll']:+5.1f} deg,"
-                  f" distance {v['d_mm']:+5.1f} mm, clearance {v['clearance_mm']:4.0f} mm, tool vs arm "
+                  f" distance {v['d_mm']:+5.1f} mm, {v['board_tilt']:4.1f} deg to the board, clearance "
+                  f"{v['clearance_mm']:4.0f} mm, tool vs arm "
                   f"{v['self_mm']:3.0f} mm, nominal joint change "
                   f"{np.round(np.degrees(v['q_nominal'] - q0), 0).tolist()} deg", flush=True)
         if not confirm_motion(args, f"{len(views)} views around the calib board (tilts up to 25 deg about its centre, "
