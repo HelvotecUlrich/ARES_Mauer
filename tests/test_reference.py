@@ -138,7 +138,7 @@ def test_station_frame_from_both_station_boards(pl, specs):
     fit = fit_frame(obs, pl, specs, "station")
     assert np.allclose(fit.T_base_parent, T_base_station, atol=1e-9)
     c0, c1 = (board_centre(specs[n], _pl(pl, n).T_parent_board) for n in ("S0", "S1"))
-    assert fit.baseline_mm == pytest.approx(float(np.linalg.norm(c1 - c0)), abs=1e-6) == pytest.approx(1020.0)
+    assert fit.baseline_mm == pytest.approx(float(np.linalg.norm(c1 - c0)), abs=1e-6)
 
 
 def test_ares_pose_in_the_wall_frame(cfg, T_base_wall):

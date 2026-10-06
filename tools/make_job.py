@@ -35,7 +35,8 @@ joints and via points):
 - pick-up station from [pickup_station]: station frame in the wall frame, docking pose, stacked holders at the
   slots_xy / half_slots_xy positions (stone length along the station x axis, TCP = stone top at table_z +
   [pickup_station] holder_z (default 0) + layer x stone height), look poses for the station boards at the nominal
-  dock; unreachable slots and the slots stacked on them dropped (warning), emptied top layer first;
+  dock clear of a full station and the table (mauer.armcheck.station_boxes); unreachable slots and the slots stacked
+  on them dropped (warning), emptied top layer first;
 - park pose: [ur] park_q_deg if present, else the IK of the compact pose robodk/simulate.py:280 starts from (TCP
   300 mm ahead of the UR base at the transfer height over a full magazine, simulate.py:114-117, tool down, seed
   [0, -100, 52, -42, -90, 0] deg) - not collision-checked here;
@@ -430,11 +431,14 @@ def _station(ctx: _Ctx) -> mjob.Station:
     if not st_take:
         ctx.warnings.append("no station slot reachable: reloads impossible with this [pickup_station] layout")
     R_pref = preferred_flange_R(T_base_station[:3, :3], ctx.T_flange_tcp)
+    # looks clear of a FULL station (every usable holder filled - the state on arrival after a top-up) and the table
+    full = [s for s in st_slots if s.id in st_take]
+    arm = armcheck.ArmChecker(cfg, armcheck.station_boxes(cfg, full, floor.station_table_extent(cfg)))
     cands, centres = {}, {}
     st_boards = [p for p in ctx.pl if p.parent == "station"]
     for p in st_boards:
         r = find_look(T_base_station @ p.T_parent_board, ctx.specs[p.name], ctx.T_flange_cam, ctx.work, R_pref,
-                      ctx.q_park, g.inv(T_base_station), ctx.look_margin)
+                      ctx.q_park, g.inv(T_base_station), ctx.look_margin, arm=arm)
         if r is not None:
             cands[p.name] = r
             centres[p.name] = board_centre(ctx.specs[p.name], p.T_parent_board)

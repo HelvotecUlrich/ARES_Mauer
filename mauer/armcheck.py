@@ -177,6 +177,25 @@ def stone_boxes(cfg: Mapping, stones: Iterable, legs: Mapping[str, object] | Non
     return out
 
 
+def station_boxes(cfg: Mapping, slots: Iterable, table: tuple[float, float] | None = None) -> list[Box]:
+    """Boxes (station frame) of the stones in the given station holders (T_station_tcp = top centre, TCP z into the
+    stone, stone length along TCP x; width incl. the ribs) and, if `table` = (x_max, y_max) is given, the table top
+    ([pickup_station] table_z, 30 mm slab like robodk/build_station.py)."""
+    out = []
+    rib = float(cfg["brick"].get("rib_mm", 0.0))
+    for s in slots:
+        dims = cfg["half_brick"] if getattr(s, "kind", "full") == "half" else cfg["brick"]
+        L, W, H = float(dims["length"]), float(dims["width"]), float(dims["height"])
+        T = np.asarray(s.T_station_tcp, float)
+        out.append(Box(f"station stone {s.id}", g.apply(T, [[0.0, 0.0, H / 2.0]])[0], T[:3, :3],
+                       np.array([L / 2.0, W / 2.0 + rib, H / 2.0])))
+    if table is not None:
+        z = float(cfg["pickup_station"]["table_z"])
+        out.append(Box("pick-up table", np.array([table[0] / 2.0, table[1] / 2.0, z - 15.0]), np.eye(3),
+                       np.array([table[0] / 2.0, table[1] / 2.0, 15.0])))
+    return out
+
+
 class ArmChecker:
     """Collision test of UR5 configurations against a fixed set of boxes (parent frame), with the tool envelope of
     the config. `hits(q, T_parent_base)` -> collisions(...) list (empty = free)."""
