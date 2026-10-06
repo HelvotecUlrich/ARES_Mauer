@@ -4,6 +4,7 @@ pose at the exposure, solve T_flange_cam, verify on new poses.
     py.exe tools/calib_handeye.py locate --nominal-intrinsics [--write data/board_table.json]   # no motion
     py.exe tools/calib_handeye.py plan [--n 25] [--seed 0] [--write poses.json] [--check --host IP]
     py.exe tools/calib_handeye.py capture --host IP --dataset data/he_2026-10-06 [--resume]
+    py.exe tools/calib_handeye.py orbit --dataset data/he_2026-10-06 [--v-mm-s 50]   # relative to the current pose
     py.exe tools/calib_handeye.py solve data/he_2026-10-06 [--out calib/handeye.json] [--force]
     py.exe tools/calib_handeye.py verify --host IP [--n 5] [--handeye calib/handeye.json]
 
@@ -18,6 +19,14 @@ the one closest to these joints (the robot's current ones, `tools/ur_check.py in
 these joints (wrist 3 stays within about the roll range of its current angle, not up to 180 deg away) - on the table (2026-10-06) the robot stood in the other branch, and the first look
 move would have turned the base by ~180 deg. On the real robot capture / verify refuse to start when the first pose
 needs a base / shoulder / elbow move of more than MAX_START_JUMP_DEG.
+
+orbit (UR5 on the lab table, 2026-10-06 - the simple way): start with the camera looking at the calib board (any
+pose, board roughly in the image centre). The views are relative to that start: the camera tilts about the board
+centre (a point on the start optical axis at the board's depth) in 8 directions by 15-25 deg, rolls about its axis by
+up to ORBIT_ROLL_DEG and moves 20 mm closer / farther - straight-line moves (movel) from one view to the next, the arm
+stays in its configuration, no planned poses, no IK branch, no board pose needed; back to the start at the end.
+Each view is checked first (nominal UR5 IK near the start joints, clearance above the board plane); views that fail
+are dropped and listed. The images + flange poses form a normal "handeye" dataset (solve, calib_intrinsics solve).
 
 Without hardware (URSim CB3 3.15.8 in Docker, tests/ursim.py): add --ursim (host 127.0.0.1; --start-ursim starts the
 container, never pulls). The camera is then mauer.simcam.SynthCamera: it renders the calib board at its nominal deck
@@ -635,6 +644,163 @@ def cmd_locate(args) -> int:
     return 0
 
 
+# ── orbit ─────────────────────────────────────────────────────────────────────
+ORBIT_AZIMUTHS = 8                  # tilt directions about the start optical axis
+ORBIT_SET = ((15.0, -1.0, 20.0), (25.0, 0.0, 0.0), (15.0, 1.0, -20.0))   # per direction: (tilt deg, roll sign,
+                                    # distance change mm, + = farther) - ASSUMPTION, inside the 290-355 mm focus band
+ORBIT_ROLL_DEG = 40.0               # ASSUMPTION: roll about the optical axis (wrist 3 stays within ~this of its start)
+ORBIT_V_MM_S = 50.0                 # default straight-line speed [mm/s] (first runs; [ur] v_lin is 100)
+ORBIT_MAX_JOINT_DEG = (60.0, 60.0, 60.0, 90.0, 90.0, 120.0)   # ASSUMPTION: largest nominal joint change from the
+                                    # start per joint for a view to be kept (same arm configuration)
+
+
+def orbit_views(n_az: int = ORBIT_AZIMUTHS, roll_deg: float = ORBIT_ROLL_DEG) -> list[tuple[float, float, float, float]]:
+    """(azimuth deg, tilt deg, roll deg, distance change mm) of the views; first the start view (0, 0, 0, 0), then per
+    tilt direction the ORBIT_SET, in a snake order (roll -, 0, + then +, 0, -) so that neighbours are close."""
+    out = [(0.0, 0.0, 0.0, 0.0)]
+    for k in range(n_az):
+        group = [(360.0 * k / n_az + 15.0 * (j - 1), t, sgn * roll_deg, d) for j, (t, sgn, d) in enumerate(ORBIT_SET)]
+        out += group if k % 2 == 0 else group[::-1]
+    return out
+
+
+def orbit_target(T_base_cam0: np.ndarray, pivot: Sequence[float], az_deg: float, tilt_deg: float, roll_deg: float,
+                 d_mm: float) -> np.ndarray:
+    """Camera pose of a view: the start camera turned by tilt_deg about an axis through `pivot` normal to the start
+    optical axis (direction az_deg in the start image plane, 0 = image x), rolled about its own optical axis and
+    moved d_mm away from the pivot along it."""
+    T0 = np.asarray(T_base_cam0, float)
+    a = math.radians(az_deg)
+    u = math.cos(a) * T0[:3, 0] + math.sin(a) * T0[:3, 1]
+    c = np.asarray(pivot, float)
+    R = g.rotvec_to_R(u * math.radians(tilt_deg))
+    T = g.transl(*c) @ g.make_T(R, np.zeros(3)) @ g.transl(*(-c)) @ T0
+    return T @ g.rotz(math.radians(roll_deg)) @ g.transl(0.0, 0.0, -float(d_mm))
+
+
+def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam_board0: np.ndarray,
+               spec: BoardSpec) -> tuple[list[dict], list[str], dict]:
+    """Views relative to the start: [{"name", "T_base_flange", "tilt", "roll", "d_mm", "q_nominal"}] kept, the
+    reasons of the dropped ones, and the geometry (pivot, distance, board plane z)."""
+    X = config.T_flange_cam_nominal(cfg)
+    T_ft = config.T_flange_tcp(cfg)
+    T_cam0 = np.asarray(T_base_flange0, float) @ X
+    centre_cam = (np.asarray(T_cam_board0, float) @ np.array([*spec.centre_mm, 0.0, 1.0]))[:3]
+    depth = float(centre_cam[2])
+    pivot = T_cam0[:3, 3] + depth * T_cam0[:3, 2]
+    plane_z = float((T_cam0 @ np.array([*centre_cam, 1.0]))[2])
+    lim = float(cfg.get("vision", {}).get("handeye_plan", {}).get("min_clearance_mm", MIN_CLEARANCE_MM))
+    q0 = np.asarray(q0, float)
+    kept, dropped = [], []
+    for i, (az, tilt, roll, d) in enumerate(orbit_views()):
+        name = f"o{i:02d}"
+        T_f = orbit_target(T_cam0, pivot, az, tilt, roll, d) @ g.inv(X)
+        q = choose_branch(ur5_ik(T_f), q0)
+        if q is None:
+            dropped.append(f"{name}: no nominal IK")
+            continue
+        q = np.array([q0[j] + _wrap(q[j] - q0[j]) for j in range(6)])
+        dq = np.abs(np.degrees(q - q0))
+        if np.any(dq > np.asarray(ORBIT_MAX_JOINT_DEG)):
+            dropped.append(f"{name}: joint change {np.round(dq, 0).tolist()} deg from the start")
+            continue
+        low = min((T_f @ X)[2, 3], (T_f @ T_ft)[2, 3], T_f[2, 3]) - plane_z
+        if low < lim:
+            dropped.append(f"{name}: {low:.0f} mm above the board plane (< {lim:g})")
+            continue
+        kept.append({"index": i, "name": name, "T_base_flange": T_f, "tilt": tilt, "roll": roll, "d_mm": d,
+                     "azimuth": az, "q_nominal": q, "clearance_mm": float(low)})
+    return kept, dropped, {"pivot": pivot.tolist(), "distance_mm": depth, "board_plane_z": plane_z}
+
+
+def cmd_orbit(args) -> int:
+    from mauer.vision.detect import measure
+    cfg = config.load(args.config)
+    spec = board_specs(cfg)["calib"]
+    path = config.repo_path(args.dataset)
+    if (path / "meta.json").exists():
+        print(f"dataset {path} exists - choose another --dataset", flush=True)
+        return 2
+    refusal = check_payload(cfg, args.sim or args.ursim)
+    if refusal:
+        print(refusal, flush=True)
+        return 2
+    if not 0.0 < args.v_mm_s <= 1000.0 * float(cfg["ur"]["v_lin"]):
+        print(f"--v-mm-s must be in (0, [ur] v_lin = {1000.0 * float(cfg['ur']['v_lin']):g}]", flush=True)
+        return 2
+    T_ft = config.T_flange_tcp(cfg)
+    kg, cog = payload(cfg, sim=args.sim or args.ursim)
+    pre = script.preamble(T_ft, kg, cog)
+    settle, max_qd = settle_value(args, cfg), max_qd_value(args, cfg)
+    rig = open_rig(args, cfg)
+    try:
+        r = rig.link.run_block(pre, "orbit_tcp", timeout_s=10.0)          # no motion: set_tcp/set_payload, so the
+        if not r.ok:                                                       # link knows the active TCP (PolyScope 3.3)
+            print(f"preamble block failed: {r.error}", flush=True)
+            return 1
+        st = rig.link.state()
+        T_f0, q0 = rig.link.flange_T(st), np.asarray(st.actual_q, float)
+        T_tcp0 = T_f0 @ T_ft
+        bp = measure(rig.camera.grab().image, {"calib": spec}, intrinsics.nominal(cfg), cfg.get("vision", {}))["calib"]
+        if not bp.ok:
+            print(f"calib board not measured at the start ({bp.n_corners} corners, {bp.reason}) - point the camera at "
+                  "it", flush=True)
+            return 1
+        views, dropped, geo = orbit_plan(cfg, T_f0, q0, bp.T_cam_board, spec)
+        print(f"start: board centre {geo['distance_mm']:.0f} mm in front of the camera; {len(views)} views kept"
+              + (f", dropped: {'; '.join(dropped)}" if dropped else ""), flush=True)
+        for v in views:
+            print(f"  {v['name']}: tilt {v['tilt']:4.1f} deg towards {v['azimuth']:6.1f} deg, roll {v['roll']:+5.1f} deg,"
+                  f" distance {v['d_mm']:+5.1f} mm, clearance {v['clearance_mm']:4.0f} mm, nominal joint change "
+                  f"{np.round(np.degrees(v['q_nominal'] - q0), 0).tolist()} deg", flush=True)
+        if not confirm_motion(args, f"{len(views)} views around the calib board (tilts up to 25 deg about its centre, "
+                                    f"rolls up to {ORBIT_ROLL_DEG:g} deg, straight-line moves at {args.v_mm_s:g} mm/s), "
+                                    "then back to the start"):
+            print("not confirmed - nothing moved", flush=True)
+            return 1
+        ds = Dataset.create(path, "handeye", camera=rig.camera.info(), board="calib",
+                            notes="tools/calib_handeye.py orbit (views relative to the start pose)")
+        ds.update_meta(plan={"kind": "orbit", "q_start_deg": np.degrees(q0).tolist(), **geo,
+                             "views": [{k: v[k] for k in ("name", "azimuth", "tilt", "roll", "d_mm")} for v in views]},
+                       camera=rig.camera.info(), robot=rig.link.info())
+        border = float(cfg.get("vision", {}).get("border_px", 10))
+        a_lin, v_lin = float(cfg["ur"]["a_lin"]), args.v_mm_s / 1000.0
+        stopped = None
+        try:
+            for v in views:
+                r = rig.link.run_block("\n".join([pre, script.movel(v["T_base_flange"] @ T_ft, a_lin, v_lin)]),
+                                       "orbit_move", timeout_s=args.timeout_s)
+                if not r.ok:
+                    stopped = f"{v['name']}: move FAILED: {r.error}"
+                    break
+                try:
+                    shot = capture_shot(rig.link, rig.camera, settle_s=settle, max_qd=max_qd, retries=args.retries)
+                except CaptureError as e:
+                    print(f"{v['name']}: no usable image: {e}", flush=True)
+                    continue
+                det = detect_boards(shot.frame.image, [spec], border).get(spec.name)
+                n = 0 if det is None else det.n
+                d_mm, d_deg = g.pose_delta(v["T_base_flange"], shot.T_base_flange)
+                ds.add(shot.frame.image, **shot.dataset_fields(), pose_index=v["index"], pose_name=v["name"],
+                       T_base_flange_planned=v["T_base_flange"], corners=n)
+                print(f"{v['name']}: {n:3d} corners | flange vs plan {d_mm:.2f} mm / {d_deg:.3f} deg", flush=True)
+            if stopped is None:
+                r = rig.link.run_block("\n".join([pre, script.movel(T_tcp0, a_lin, v_lin)]), "orbit_home",
+                                       timeout_s=args.timeout_s)
+                if not r.ok:
+                    stopped = f"back to the start FAILED: {r.error}"
+        except KeyboardInterrupt:
+            print(f"interrupted - abort: {rig.link.abort()}", flush=True)
+            return 130
+    finally:
+        rig.close()
+    if stopped:
+        print(f"STOPPED - {stopped}", flush=True)
+    print(f"{len(ds)} images in {path}; next: tools/calib_intrinsics.py solve {args.dataset}, then "
+          f"tools/calib_handeye.py solve {args.dataset}", flush=True)
+    return 1 if stopped else 0
+
+
 # ── capture ───────────────────────────────────────────────────────────────────
 def capture_poses(rig: Rig, poses: Sequence[LookPose], ds: Dataset, spec: BoardSpec, settle_s: float,
                   max_qd: float, retries: int, timeout_s: float, done: set[int] | None = None) -> dict:
@@ -925,6 +1091,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--q-ref-deg", default=None, help=Q_REF_HELP)
     add_robot_args(p)
 
+    p = sub.add_parser("orbit", help="views relative to the current pose around the calib board -> 'handeye' dataset")
+    p.add_argument("--dataset", required=True, help="new dataset folder, e.g. data/he_2026-10-06")
+    p.add_argument("--v-mm-s", type=float, default=ORBIT_V_MM_S, help="straight-line speed [mm/s]")
+    add_robot_args(p)
+
     p = sub.add_parser("solve", help="calibrate T_flange_cam from a dataset (tools/handeye_solve.py)")
     p.add_argument("dataset")
     p.add_argument("--intrinsics", default=None)
@@ -955,8 +1126,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("rtde").setLevel(logging.ERROR)
-    return {"locate": cmd_locate, "plan": cmd_plan, "capture": cmd_capture, "solve": cmd_solve,
-            "verify": cmd_verify}[args.cmd](args)
+    return {"locate": cmd_locate, "plan": cmd_plan, "capture": cmd_capture, "orbit": cmd_orbit,
+            "solve": cmd_solve, "verify": cmd_verify}[args.cmd](args)
 
 
 if __name__ == "__main__":

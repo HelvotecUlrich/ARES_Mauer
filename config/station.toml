@@ -404,7 +404,12 @@ search_mm = 2500.0          # ASSUMPTION: search area around start and goal
 # with start/done markers in RTDE output registers; Dashboard Server for power, brakes and protective stops.
 host = "192.168.56.101"     # CONFIRMED 2026-10-06 (table test, lab switch): Dashboard + RTDE answer. The lab's UR5
                             # runs PolyScope 3.3.3.292: RTDE protocol v1 only (vendored client patched, see its
-                            # README), no tcp_offset field, output_int_register 24..47 do not exist
+                            # README), no tcp_offset field, output_int_register 24..47 do not exist. A set_tcp of a
+                            # block stays active after the block (probe 2026-10-06). get_inverse_kin_has_solution does
+                            # NOT exist (compile error) - every IK-guarded block (look_pose, pick/place, plan --check)
+                            # fails on this robot until mauer/ur/script.py ik_guard has a 3.3 variant; get_inverse_kin
+                            # itself works and raises a runtime error (program stops, no motion) for an unreachable
+                            # pose. tools/calib_handeye.py orbit needs neither (movel relative to the start)
 dashboard_port = 29999      # CONFIRMED: UR Dashboard Server
 script_port = 30002         # CONFIRMED: secondary client interface (URScript)
 rtde_port = 30004           # CONFIRMED: RTDE

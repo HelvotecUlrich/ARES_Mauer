@@ -27,11 +27,19 @@ T_FT = g.transl(0.0, 0.0, 200.0)                                        # its pe
 
 
 class MountLink:
-    """URLink stand-in: movel blocks translate the TCP, the joint angles stay at Q0 (R_base_flange from ur5_fk)."""
+    """URLink stand-in: movel blocks move the TCP (joint angles stay at Q0 - R_base_flange from ur5_fk), set_tcp
+    changes the active TCP and stays (PolyScope 3.3, probe 2026-10-06); no tcp_offset field, so flange_T only works
+    after this link sent a set_tcp."""
 
     def __init__(self):
-        self.T_tcp = ur5_fk(Q0) @ T_FT
+        self.F = ur5_fk(Q0)                       # flange
+        self.T_ft = T_FT                          # active TCP: the pendant's
+        self.tracked = None
         self.blocks: list[str] = []
+
+    @property
+    def T_tcp(self):
+        return self.F @ self.T_ft
 
     def state(self):
         T = self.T_tcp.copy()
@@ -44,17 +52,26 @@ class MountLink:
     def run_block(self, body, name, timeout_s):
         script.block_program(name, body, 1, 20, 21, 22)          # the real link validates name + body first
         self.blocks.append(body)
-        p = re.search(r"movel\(p\[([^\]]*)\]", body).group(1)
-        self.T_tcp = g.ur_to_T([float(v) for v in p.split(",")])
+        m = re.search(r"set_tcp\(p\[([^\]]*)\]", body)
+        if m:
+            self.T_ft = self.tracked = g.ur_to_T([float(v) for v in m.group(1).split(",")])
+        m = re.search(r"movel\(p\[([^\]]*)\]", body)
+        if m:
+            self.F = g.ur_to_T([float(v) for v in m.group(1).split(",")]) @ g.inv(self.T_ft)
         return SimpleNamespace(ok=True, error="")
 
     def flange(self):
-        return self.T_tcp @ g.inv(T_FT)
+        return self.F.copy()
 
     tcp_source = "tracked set_tcp"
 
-    def flange_T(self, s=None):          # PolyScope 3.3 before this link sent a set_tcp: unknown active TCP
-        raise ValueError("sample has no tcp_offset (RTDE field missing): pass T_flange_tcp")
+    def flange_T(self, s=None):
+        if self.tracked is None:                  # PolyScope 3.3 before this link sent a set_tcp
+            raise ValueError("sample has no tcp_offset (RTDE field missing): pass T_flange_tcp")
+        return (s or self.state()).T_base_tcp_mm() @ g.inv(self.tracked)
+
+    def info(self):
+        return {"host": "fake"}
 
     def abort(self):
         return "aborted"
@@ -171,8 +188,48 @@ def test_plan_stays_in_the_robots_arm_configuration(monkeypatch):
 def test_capture_refuses_an_arm_reconfiguration(monkeypatch, tmp_path, capsys):
     cfg = config.load()
     link = fake_rig(cfg, monkeypatch, config.T_flange_cam_nominal(cfg))
-    link.info = lambda: {"host": "fake"}
     bp = tmp_path / "board.json"
     bp.write_text(json.dumps({"T_base_board": link.T_board.tolist()}))
     assert ch.main(["capture", "--dataset", str(tmp_path / "he"), "--board-pose", str(bp), "--n", "6"]) == 2
     assert "refusing to move" in capsys.readouterr().out and link.blocks == []
+
+
+class _Shot:
+    """capture_shot stand-in: the image now and the true flange pose (the fake arm stands still)."""
+
+    def __init__(self, link, camera):
+        self.frame = camera.grab()
+        self.T_base_flange = link.flange()
+
+    def dataset_fields(self):
+        return {"t_start": self.frame.t_start, "t_end": self.frame.t_end, "T_base_flange": self.T_base_flange,
+                "q_rad": Q0.tolist(), "tcp_pose_ur": None, "max_qd": 0.0}
+
+
+def test_orbit_relative_to_the_start_and_solve(monkeypatch, tmp_path, capsys):
+    """orbit (2026-10-06, the simple way on the table): views relative to the start pose, straight-line moves only,
+    back to the start; the hand-eye solve on its images recovers a camera mounted 2-3 mm / <1 deg off the design."""
+    from mauer.vision import handeye
+    cfg = config.load()
+    X_true = config.T_flange_cam_nominal(cfg) @ g.pose_xyz_rpy([2.0, -3.0, 1.0], [0.5, -0.3, 0.8])
+    link = fake_rig(cfg, monkeypatch, X_true)
+    monkeypatch.setattr(ch, "capture_shot", lambda lk, cam, **kw: _Shot(lk, cam))
+    start = link.T_tcp.copy()
+    ds = tmp_path / "he"
+    assert ch.main(["orbit", "--dataset", str(ds), "--yes", "--settle-s", "0"]) == 0, capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "25 views kept" in out and "25 images" in out, out
+    assert all("movej" not in b and "get_inverse_kin" not in b and "set_tcp" in b for b in link.blocks)
+    assert g.pose_delta(link.F @ config.T_flange_tcp(cfg), start @ g.inv(T_FT) @ config.T_flange_tcp(cfg))[0] < 1e-6
+    he = tmp_path / "he.json"
+    assert ch.main(["solve", str(ds), "--nominal-intrinsics", "--out", str(he)]) == 0
+    dt, dr = g.pose_delta(handeye.load(he).T_flange_cam, X_true)
+    assert dt < 1.0 and dr < 0.1, (dt, dr)
+
+
+def test_orbit_views_are_small_and_snake():
+    v = ch.orbit_views()
+    assert len(v) == 25 and v[0] == (0.0, 0.0, 0.0, 0.0)
+    assert max(t for _, t, _, _ in v) == 25.0 and max(abs(r) for _, _, r, _ in v) == ch.ORBIT_ROLL_DEG
+    rolls = [r for _, _, r, _ in v[1:]]
+    assert all(abs(a - b) <= ch.ORBIT_ROLL_DEG for a, b in zip(rolls, rolls[1:]))     # no -40 -> +40 jumps
