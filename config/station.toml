@@ -426,10 +426,11 @@ reg_error = 22              # 2026-10-06 (nothing writes them) - assumed free of
 contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
 abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
-do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel): the gripper switches on an edge of standard DO0 (open)
-do_grip_open = 0            # and DO1 (close; his message said "opens" for both, read as close = DO1 as in Gino's code)
-grip_pulse_s = 0.5          # PLACEHOLDER
-grip_wait_s = 1.0           # PLACEHOLDER: EHPS-20-A stroke time not looked up
+do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel; tools/ur_check.py grip on the UR5): the gripper switches on
+do_grip_open = 0            # an edge of standard DO0 (open) and DO1 (close)
+grip_pulse_s = 0.5          # CONFIRMED 2026-10-06: a 0.5 s pulse opens/closes reliably (shorter ones not tried)
+grip_wait_s = 0.5           # ASSUMPTION: the jaws take ~0.5 s (Samuel by eye, opening, 2026-10-06) from the edge;
+                            # pulse + wait = 1.0 s after the edge = 2x the stroke. Closing on a stone not timed yet
 payload_tool_kg = 1.68      # CONFIRMED 2026-10-06 (Samuel, table test): gripper + camera as mounted, also set as the
                             # pendant payload
 payload_cog_mm = [0.0, 0.0, 60.0]  # PLACEHOLDER: centre of gravity in the flange frame

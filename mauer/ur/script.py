@@ -229,7 +229,7 @@ def look_pose(T_base_target: np.ndarray, qnear_rad: Sequence[float], a: float, v
 
 def gripper(action: str, do_open: int | None, do_close: int | None, pulse_s: float, wait_s: float) -> str:
     """Open/close the jaws with standard digital outputs (set_standard_digital_out SM p.100 l.4164; sleep SM p.50
-    l.2134). Wiring is a PLACEHOLDER ([ur] do_grip_*: Gino's code pulses DO1 = close, DO0 = open).
+    l.2134). Wiring [ur] do_grip_*: DO0 = open, DO1 = close, edge-triggered (UR5 test 2026-10-06).
 
     pulse_s > 0: the other output off, this output on for pulse_s, off again, then wait_s for the stroke.
     pulse_s == 0: level mode – the other output off, this output stays on, then wait_s.
@@ -245,7 +245,7 @@ def gripper(action: str, do_open: int | None, do_close: int | None, pulse_s: flo
         raise ValueError("do_open and do_close must differ")
     if not (np.isfinite(pulse_s) and pulse_s >= 0.0 and np.isfinite(wait_s) and wait_s >= 0.0):
         raise ValueError("pulse_s and wait_s must be >= 0 s")
-    lines = [f"# gripper {action} (DO{this}, PLACEHOLDER wiring)"]
+    lines = [f"# gripper {action} (DO{this})"]
     if other is not None:
         lines.append(f"set_standard_digital_out({_do(other)}, False)")
     lines.append(f"set_standard_digital_out({this}, True)")

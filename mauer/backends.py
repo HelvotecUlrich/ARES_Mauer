@@ -14,8 +14,9 @@ Real implementations:
 - `URRobot`: mauer.ur.link.URLink + mauer.ur.script. Every block starts with set_tcp + set_payload (research
   recommendation, mauer/ur/script.py preamble); picks/places with script.pick_stone / place_stone relative to the
   measured frame (pose_trans on the controller), contact speed over the last [ur] contact_mm, gripper pulses on the
-  [ur] do_grip_* outputs (PLACEHOLDER wiring). IK branch hints (qnear) come from the job, else from the nominal UR5
-  kinematics (mauer.simworld.ik_near) seeded with the current joints - the controller solves the real IK.
+  [ur] do_grip_* outputs (DO0 open, DO1 close, confirmed 2026-10-06). IK branch hints (qnear) come from the job,
+  else from the nominal UR5 kinematics (mauer.simworld.ik_near) seeded with the current joints - the controller
+  solves the real IK.
   Shots: mauer.capture.capture_shot (flange pose = mean of the RTDE samples of the exposure window).
 - `AdsAres`: thin adapter around mauer.ares.AresAds (pattern A, amr_hmi owns heartbeat/MANUAL/HALT).
 
