@@ -68,13 +68,13 @@ Leg change to stop 2 (3203 mm, 4 translations, 1 rotation):
 
 | stop | to station mm (waypoints) | back mm (waypoints) |
 |---|---|---|
-| 0 | 2020 (5) | 1940 (4) |
-| 1 | 3120 (5) | 3120 (5) |
-| 2 | 5743 (5) | 5983 (6) |
+| 0 | 1931 (5) | 1931 (4) |
+| 1 | 3030 (5) | 2980 (4) |
+| 2 | 5883 (6) | 5923 (5) |
 
 ## Magazine and reloads
 
-Magazine 15 deck slots (each holds a full or a half stone), station 5 reachable slots (3 full, 2 half). Planned: 19 reloads (station trips), 18 station refills by the operator. The PLACEHOLDER station has only 3 reachable full-stone slots, so a trip brings at most 3 full + 2 half stones - the number of trips is a property of that placeholder.
+Magazine 15 deck slots (each holds a full or a half stone), station 20 reachable slots (16 full, 4 half, stacks of up to 2). Planned: 5 reloads (station trips), 3 station refills by the operator. A trip brings at most min(magazine, station) = 15 stones, fewer when the next stones need more half stones than the station holds - the number of trips is a property of the PLACEHOLDER station layout ([pickup_station]).
 
 ## Trade-off (n_A 9..12 x n_B 5..8)
 
@@ -82,44 +82,45 @@ Magazine 15 deck slots (each holds a full or a half stone), station 5 reachable 
 
 | n_A | n_B | course 0 | stones (half) | stops (leg: a mm / stones) | wall moves | boards / stop | spare blocks | worst baseline mm | leg change mm | longest station trip mm | feasible |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 9 | 5 | 14 | 60 (8) | A: 680/26, A: 1480/12, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 2803 | 5283 | yes |
-| 9 | 6 | 15 | 64 (8) | A: 680/26, A: 1480/12, B: 600/26 | 8 | [3, 3, 3] | 0 | 1000.0 | 2903 | 5383 | yes |
-| 9 | 7 | 16 | 68 (8) | A: 680/26, A: 1480/12, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 2983 | 6143 | yes |
-| 9 | 8 | 17 | 72 (8) | A: 680/26, A: 1480/12, B: 680/26, B: 1380/8 | 11 | [3, 3, 4, 3] | 0 | 1000.0 | 2983 | 6163 | yes |
-| 10 | 5 | 15 | 64 (8) | A: 680/26, A: 1580/16, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 2903 | 5483 | yes |
-| 10 | 6 | 16 | 68 (8) | A: 680/26, A: 1580/16, B: 600/26 | 8 | [4, 3, 3] | 0 | 1000.0 | 3003 | 5583 | yes |
-| 10 | 7 | 17 | 72 (8) | A: 680/26, A: 1580/16, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 3083 | 6343 | yes |
-| 10 | 8 | 18 | 76 (8) | A: 680/26, A: 1580/16, B: 680/26, B: 1380/8 | 11 | [4, 3, 3, 3] | 0 | 1000.0 | 3083 | 6363 | yes |
-| 11 | 5 | 16 | 68 (8) | A: 680/26, A: 1680/20, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 3003 | 5683 | yes |
-| 11 | 6 | 17 | 72 (8) | A: 680/26, A: 1680/20, B: 600/26 | 8 | [4, 3, 3] | 0 | 1000.0 | 3103 | 5783 | yes |
-| 11 | 7 | 18 | 76 (8) | A: 680/26, A: 1680/20, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 3183 | 6543 | yes |
-| 11 | 8 | 19 | 80 (8) | A: 680/26, A: 1680/20, B: 680/26, B: 1380/8 | 11 | [4, 3, 3, 3] | 0 | 1000.0 | 3183 | 6563 | yes |
-| 12 | 5 | 17 | 72 (8) | A: 680/26, A: 1780/24, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 3103 | 5883 | yes |
-| 12 | 6 | 18 | 76 (8) | A: 680/26, A: 1780/24, B: 600/26 | 8 | [4, 3, 3] | 0 | 1000.0 | 3203 | 5983 | yes **chosen** |
-| 12 | 7 | 19 | 80 (8) | A: 680/26, A: 1780/24, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 3283 | 6743 | yes |
-| 12 | 8 | 20 | 84 (8) | A: 680/26, A: 1780/24, B: 680/26, B: 1380/8 | 11 | [4, 3, 3, 3] | 0 | 1000.0 | 3283 | 6763 | yes |
+| 9 | 5 | 14 | 60 (8) | A: 680/26, A: 1480/12, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 2803 | 5223 | yes |
+| 9 | 6 | 15 | 64 (8) | A: 680/26, A: 1480/12, B: 600/26 | 8 | [3, 3, 3] | 0 | 1000.0 | 2903 | 5323 | yes |
+| 9 | 7 | 16 | 68 (8) | A: 680/26, A: 1480/12, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 2983 | 6083 | yes |
+| 9 | 8 | 17 | 72 (8) | A: 680/26, A: 1480/12, B: 680/26, B: 1380/8 | 11 | [3, 3, 4, 3] | 0 | 1000.0 | 2983 | 6103 | yes |
+| 10 | 5 | 15 | 64 (8) | A: 680/26, A: 1580/16, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 2903 | 5423 | yes |
+| 10 | 6 | 16 | 68 (8) | A: 680/26, A: 1580/16, B: 600/26 | 8 | [4, 3, 3] | 0 | 1000.0 | 3003 | 5523 | yes |
+| 10 | 7 | 17 | 72 (8) | A: 680/26, A: 1580/16, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 3083 | 6283 | yes |
+| 10 | 8 | 18 | 76 (8) | A: 680/26, A: 1580/16, B: 680/26, B: 1380/8 | 11 | [4, 3, 3, 3] | 0 | 1000.0 | 3083 | 6303 | yes |
+| 11 | 5 | 16 | 68 (8) | A: 680/26, A: 1680/20, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 3003 | 5623 | yes |
+| 11 | 6 | 17 | 72 (8) | A: 680/26, A: 1680/20, B: 600/26 | 8 | [4, 3, 3] | 0 | 1000.0 | 3103 | 5723 | yes |
+| 11 | 7 | 18 | 76 (8) | A: 680/26, A: 1680/20, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 3183 | 6483 | yes |
+| 11 | 8 | 19 | 80 (8) | A: 680/26, A: 1680/20, B: 680/26, B: 1380/8 | 11 | [4, 3, 3, 3] | 0 | 1000.0 | 3183 | 6503 | yes |
+| 12 | 5 | 17 | 72 (8) | A: 680/26, A: 1780/24, B: 500/22 | 8 | [4, 3, 3] | 0 | 800.0 | 3103 | 5823 | yes |
+| 12 | 6 | 18 | 76 (8) | A: 680/26, A: 1780/24, B: 600/26 | 8 | [4, 3, 3] | 0 | 1000.0 | 3203 | 5923 | yes **chosen** |
+| 12 | 7 | 19 | 80 (8) | A: 680/26, A: 1780/24, B: 680/29, B: 1360/1 | 11 | [4, 3, 3, 3] | 0 | 800.0 | 3283 | 6683 | yes |
+| 12 | 8 | 20 | 84 (8) | A: 680/26, A: 1780/24, B: 680/26, B: 1380/8 | 11 | [4, 3, 3, 3] | 0 | 1000.0 | 3283 | 6703 | yes |
 
 ## World simulation (mauer.simworld)
 
-tools/run_job.py data/jobs/nominal_L.json --sim --scenario realistic --seed N --compare (camera loop vs dead reckoning, strict grasp) and --no-camera --lenient-grasp (dead reckoning to the end), seeds 1-3, plus --scenario slip --seed 1 (camera loop); the rows collected with run_job.sim_once (2026-10-05, job after the review fixes: own-leg looks, B corner over the ribs, routes for every move between stops, 40 mm arrival standoff). New: the true ARES path is checked against the legs, plates and the station table (mauer.simworld floor check).
+tools/run_job.py data/jobs/nominal_L.json --sim --scenario realistic --seed N --compare (camera loop vs dead reckoning, strict grasp) and --no-camera --lenient-grasp (dead reckoning to the end), seeds 1-3, plus --scenario slip --seed 1 (camera loop); the rows collected with run_job.sim_once (2026-10-06, job with the stacked pick-up station: 16 full + 4 half stones within reach of the dock, 5 reloads - was 3 + 2 slots and 19 reloads). The true ARES path is checked against the legs, plates and the station table (mauer.simworld floor check).
 
 | seed | scenario | mode | placed | seated (half) | horizontal mean / p95 / max mm | at the pins max mm | ARES moves | slips | corrections | reloads | shots | ARES on a plate / leg (max mm, move) | smallest gap mm | stopped |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | realistic | camera loop | 76 | 76 (8/8) | 1.74 / 2.07 / 4.02 | 4.05 | 224 | 25 | 30 | 19 | 142 | 1 (9.7, stop 2 correction 1) | 0.0 | - |
-| 1 | realistic | dead reckoning, strict grasp | 15 | 14 (2/2) | 8.93 / 10.11 / 10.80 | 10.93 | 4 | 1 | 0 | 1 | 0 | - | 67.3 | SequencerError: robot pick_station failed (pick station slot s00 (full |
-| 1 | realistic | dead reckoning, lenient grasp | 76 | 14 (2/8) | 260.71 / 825.76 / 967.93 | 972.61 | 164 | 22 | 0 | 19 | 0 | 4 (132.6, station -> stop 2 leg 1 (dead reckoning)) | 35.2 | - |
-| 2 | realistic | camera loop | 76 | 76 (8/8) | 1.81 / 2.74 / 3.98 | 3.98 | 226 | 35 | 34 | 19 | 152 | 1 (12.9, stop 2 correction 1) | 0.0 | - |
-| 2 | realistic | dead reckoning, strict grasp | 24 | 15 (2/2) | 14.33 / 40.20 / 41.54 | 42.14 | 25 | 3 | 0 | 4 | 0 | - | 12.2 | SequencerError: robot pick_station failed (pick station slot s00 (full |
-| 2 | realistic | dead reckoning, lenient grasp | 76 | 15 (2/8) | 277.54 / 832.85 / 1034.09 | 1039.96 | 164 | 25 | 0 | 19 | 0 | 6 (268.8, station -> stop 2 leg 1 (dead reckoning)) | 12.2 | - |
-| 3 | realistic | camera loop | 76 | 76 (8/8) | 1.74 / 2.34 / 3.92 | 3.91 | 231 | 32 | 35 | 19 | 156 | 5 (14.5, stop 0 correction 1, stop 0 correction 2, stop 2 correction 1) | 0.0 | - |
-| 3 | realistic | dead reckoning, strict grasp | 15 | 0 (0/2) | 36.67 / 37.43 / 37.47 | 37.76 | 4 | 1 | 0 | 1 | 0 | - | 91.2 | SequencerError: robot pick_station failed (pick station slot s00 (full |
-| 3 | realistic | dead reckoning, lenient grasp | 76 | 0 (0/8) | 327.60 / 894.49 / 1055.50 | 1061.02 | 164 | 23 | 0 | 19 | 0 | 7 (160.7, station -> stop 2 leg 1 (dead reckoning)) | 8.0 | - |
-| 1 | slip | camera loop | 76 | 76 (8/8) | 0.26 / 0.59 / 0.87 | 0.68 | 222 | 25 | 27 | 19 | 136 | - | 4.8 | - |
+| 1 | realistic | camera loop | 76 | 76 (8/8) | 1.80 / 2.09 / 4.02 | 4.05 | 66 | 10 | 13 | 5 | 52 | - | 8.8 | - |
+| 1 | realistic | dead reckoning, strict grasp | 15 | 14 (2/2) | 8.93 / 10.11 / 10.80 | 10.93 | 4 | 1 | 0 | 1 | 0 | - | 73.3 | SequencerError: robot pick_station failed (pick station slot s00l2 (fu |
+| 1 | realistic | dead reckoning, lenient grasp | 76 | 14 (2/8) | 70.88 / 133.27 / 257.41 | 258.43 | 47 | 6 | 0 | 5 | 0 | - | 35.3 | - |
+| 2 | realistic | camera loop | 76 | 76 (8/8) | 1.87 / 2.74 / 3.98 | 3.98 | 60 | 9 | 8 | 5 | 42 | - | 8.8 | - |
+| 2 | realistic | dead reckoning, strict grasp | 30 | 23 (2/2) | 8.76 / 14.55 / 15.59 | 15.98 | 14 | 3 | 0 | 2 | 0 | - | 14.0 | SequencerError: robot pick_station failed (pick station slot s00l2 (fu |
+| 2 | realistic | dead reckoning, lenient grasp | 76 | 25 (2/8) | 25.96 / 52.96 / 136.21 | 136.75 | 47 | 7 | 0 | 5 | 0 | - | 3.5 | - |
+| 3 | realistic | camera loop | 76 | 76 (8/8) | 1.80 / 2.34 / 3.92 | 3.91 | 65 | 4 | 10 | 5 | 46 | - | 8.7 | - |
+| 3 | realistic | dead reckoning, strict grasp | 15 | 0 (0/2) | 36.67 / 37.43 / 37.47 | 37.76 | 4 | 1 | 0 | 1 | 0 | - | 91.2 | SequencerError: robot pick_station failed (pick station slot s00l2 (fu |
+| 3 | realistic | dead reckoning, lenient grasp | 76 | 0 (0/8) | 62.35 / 130.64 / 168.98 | 169.43 | 47 | 7 | 0 | 5 | 0 | 2 (33.3, ?) | 0.3 | - |
+| 1 | slip | camera loop | 76 | 76 (8/8) | 0.33 / 0.67 / 0.82 | 0.65 | 61 | 9 | 10 | 5 | 46 | - | 5.4 | - |
 
-- Camera loop, realistic: 76/76 seated in every seed (8/8 half stones), horizontal error max 4.02 mm, dominated by the errors outside the loop (1 mm UR-mount error and 1 mm holder scatter on the deck magazine, WorldErrors.realistic): the `slip` scenario (same drive errors and slips without them) gives 76/76 within 0.87 mm (seed 1).
-- True ARES path (camera loop): no route leg touches a leg, plate or the table. A plate is touched in 3 of 3 realistic runs, on 5 moves, up to 14.5 mm, ALL closed-loop corrections from the wall measurement at the arrival standoff (stop 0 correction 1, stop 0 correction 2, stop 2 correction 1): 4 slip events of 15-24 mm toward the plates on that last ~40-60 mm move, plus (seed 3) a 0.6 deg correction rotation while ARES still stood on the plate. The slip model is an ASSUMPTION (20 % per translation, up to 30 mm in any direction, on every move whatever its length) and the plates end 10 mm before the ARES front at a stop ([plates] plate_depth) - no approach strategy keeps that gap under such a slip. Open decision (Samuel): a larger gap (shallower plates, or a larger wall distance with a new RoboDK reach table) or a measured slip figure for short moves on the real ARES. Before the review fixes the dead-reckoned routes ended 10 mm from the plates and slipped onto them in 5 of 8 seeds (up to 18 mm, review R6); the `slip` scenario run had no contact (smallest gap 4.8 mm).
+- Camera loop, realistic: 76/76 seated in every seed (8/8 half stones), horizontal error max 3.92-4.02 mm, dominated by the errors outside the loop (1 mm UR-mount error and 1 mm holder scatter on the deck magazine, WorldErrors.realistic): the `slip` scenario (same drive errors and slips without them) gives 76/76 within 0.82 mm (seed 1).
+- Pick-up station (2026-10-06, PLACEHOLDER layout: ARES docks 100 mm from the table, 8 stacks of 2 full stones + 4 half stones): every reload brings a full magazine, 5 reloads instead of 19 - 60-66 ARES moves and ~8 min driving per run (seed 1 before: 224 moves, 30 min).
+- True ARES path (camera loop): no move touches a leg, plate or the table in any of the 4 runs (smallest gap 8.7-8.8 mm realistic, 5.4 mm slip). Before, a plate was touched in all 3 realistic seeds (up to 14.5 mm), always by the closed-loop correction after the arrival standoff with a slip of 15-24 mm on that last move. With 5 instead of 19 returns from the station there are far fewer such arrivals; the geometry is unchanged (plates end 10 mm before the ARES front at a stop, slip model ASSUMPTION 20 % per translation, up to 30 mm), so the open decision stays: a larger gap or a measured slip figure for short moves on the real ARES.
 - Seed 3: the start pose (operator placement, sigma 10 mm, WorldErrors.realistic) already lies 16 mm on plates W1 / W2 - a note of the simulation, not a move of the sequencer.
-- Dead reckoning stops at the first station pick (the gripper misses the stone); with a lenient gripper it misses the pins by up to 1.1 m and drives ARES into the plates and the station table on the 4.3 m return leg from the station to leg B (up to 269 mm) - the reference case without the camera.
+- Dead reckoning stops at a station pick (the gripper misses stone s00l2: seeds 1 and 3 on the first trip, seed 2 on the second, 15, 30, 15 stones placed); with a lenient gripper the 76 stones miss the pins by up to 257 mm (14, 25, 0 seated), 61, 61, 48 of the 61 stones moved station -> magazine land off their holders (up to 120 mm) and in seed 3 ARES drifts 33 mm onto plate W0 on the 4.3 m return leg from the station to leg B - the reference case without the camera.
 
 ## Depends on (non-CONFIRMED config values)
 
@@ -178,30 +179,25 @@ tools/run_job.py data/jobs/nominal_L.json --sim --scenario realistic --seed N --
 | `[[targets]] W6.rpy_deg` | PLACEHOLDER | [180.0, 0.0, 0.0] |
 | `[[targets]] W7.xyz` | PLACEHOLDER | [1060.0, 147.0, 4.1] |
 | `[[targets]] W7.rpy_deg` | PLACEHOLDER | [180.0, 0.0, 0.0] |
-| `[[targets]] S0.xyz` | PLACEHOLDER | [100.0, 100.0, 3.0] |
+| `[[targets]] S0.xyz` | PLACEHOLDER | [45.0, 128.0, 404.1] |
 | `[[targets]] S0.rpy_deg` | PLACEHOLDER | [180.0, 0.0, 0.0] |
-| `[[targets]] S1.xyz` | PLACEHOLDER | [700.0, 100.0, 3.0] |
+| `[[targets]] S1.xyz` | PLACEHOLDER | [1575.0, 128.0, 404.1] |
 | `[[targets]] S1.rpy_deg` | PLACEHOLDER | [180.0, 0.0, 0.0] |
 | `[plates] block_width` | PLACEHOLDER | 120.0 |
 | `[plates] block_length` | PLACEHOLDER | 200.0 |
 | `[plates] plate_length` | ASSUMPTION | 220.0 |
 | `[plates] plate_depth` | ASSUMPTION | 110.0 |
-| `[pickup_station] xyz_in_wall` | PLACEHOLDER | [-1500.0, 1500.0, 0.0] |
+| `[pickup_station] xyz_in_wall` | PLACEHOLDER | [-1950.0, 1500.0, 0.0] |
 | `[pickup_station] rpy_in_wall_deg` | PLACEHOLDER | [0.0, 0.0, 0.0] |
 | `[pickup_station] table_z` | PLACEHOLDER | 400.0 |
-| `[pickup_station] ares_xyz` | PLACEHOLDER | [400.0, -800.0, 0.0] |
+| `[pickup_station] table_size` | PLACEHOLDER | [1700.0, 400.0] |
+| `[pickup_station] ares_xyz` | PLACEHOLDER | [850.0, -660.0, 0.0] |
 | `[pickup_station] ares_rpy_deg` | PLACEHOLDER | [0.0, 0.0, 90.0] |
-| `[pickup_station] slot_rows` | PLACEHOLDER | 2 |
-| `[pickup_station] slot_cols` | PLACEHOLDER | 6 |
-| `[pickup_station] slot_pitch_x` | PLACEHOLDER | 260.0 |
-| `[pickup_station] slot_pitch_y` | PLACEHOLDER | 200.0 |
-| `[pickup_station] slot_origin` | PLACEHOLDER | [150.0, 250.0] |
 | `[pickup_station] holder_z` | PLACEHOLDER | 0.0 |
-| `[pickup_station] half_slot_rows` | PLACEHOLDER | 1 |
-| `[pickup_station] half_slot_cols` | PLACEHOLDER | 2 |
-| `[pickup_station] half_slot_pitch_x` | PLACEHOLDER | 260.0 |
-| `[pickup_station] half_slot_pitch_y` | PLACEHOLDER | 200.0 |
-| `[pickup_station] half_slot_origin` | PLACEHOLDER | [280.0, 70.0] |
+| `[pickup_station] slots_xy` | PLACEHOLDER | [[440, 80], [645, 80], [850, 80], [1055, 80], [1260, 80],... |
+| `[pickup_station] slot_layers` | PLACEHOLDER | 2 |
+| `[pickup_station] half_slots_xy` | PLACEHOLDER | [[285, 80], [1415, 80], [490, 300], [1210, 300]] |
+| `[pickup_station] half_slot_layers` | PLACEHOLDER | 1 |
 | `[routes] clearance_mm` | ASSUMPTION | 50.0 |
 | `[routes] backoff_mm` | ASSUMPTION | 100.0 |
 | `[routes] after_rotation_weight` | ASSUMPTION | 5.0 |
@@ -214,4 +210,3 @@ tools/run_job.py data/jobs/nominal_L.json --sim --scenario realistic --seed N --
 Warnings of the job build:
 
 - magazine slots without a kinematic IK solution (dropped): ['r0y0l3', 'r0y1l3', 'r0y2l3']
-- station slots without a kinematic IK solution at the nominal dock (not used): ['s03', 's04', 's05', 's10', 's11', 's12', 's13', 's14', 's15'] - [pickup_station] layout is a PLACEHOLDER

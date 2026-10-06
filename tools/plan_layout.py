@@ -619,14 +619,16 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
         a, b = route_stats(st.route_to_station), route_stats(st.route_from_station)
         lines.append(f"| {st.index} | {a['length_mm']:.0f} ({len(st.route_to_station)}) | {b['length_mm']:.0f} "
                      f"({len(st.route_from_station)}) |")
+    used = [job.station.slot(i) for i in job.station.take_order]
+    n_full, n_half = sum(s_.kind == "full" for s_ in used), sum(s_.kind == "half" for s_ in used)
     lines += ["", "## Magazine and reloads", "",
               f"Magazine {job.magazine.capacity} deck slots (each holds a full or a half stone), station "
-              f"{len(job.station.take_order)} reachable slots ("
-              f"{sum(1 for s_ in job.station.slots if s_.ik_ok and s_.kind == 'full')} full, "
-              f"{sum(1 for s_ in job.station.slots if s_.ik_ok and s_.kind == 'half')} half). Planned: "
-              f"{m.get('planned_reloads')} reloads (station trips), {m.get('planned_station_refills')} station "
-              "refills by the operator. The PLACEHOLDER station has only 3 reachable full-stone slots, so a trip "
-              "brings at most 3 full + 2 half stones - the number of trips is a property of that placeholder.", ""]
+              f"{len(used)} reachable slots ({n_full} full, {n_half} half, stacks of up to "
+              f"{max((s_.layer for s_ in used), default=0)}). Planned: {m.get('planned_reloads')} reloads (station "
+              f"trips), {m.get('planned_station_refills')} station refills by the operator. A trip brings at most "
+              f"min(magazine, station) = {min(job.magazine.capacity, len(used))} stones, fewer when the next stones "
+              f"need more half stones than the station holds - the number of trips is a property of the PLACEHOLDER "
+              "station layout ([pickup_station]).", ""]
     if rows:
         best = (legs_[0].n0, legs_[1].n0) if len(legs_) > 1 else None
         lines += ["## Trade-off (n_A 9..12 x n_B 5..8)", "",

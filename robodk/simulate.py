@@ -45,7 +45,7 @@ L wall (config [wall] shape "L", [[wall.legs]]; default when legs exist) - runs 
     report results/l_wall_sim.md.
 
 Usage (Windows Python):
-    py.exe robodk/simulate.py                       # the L of the config (full run, ~1 h)
+    py.exe robodk/simulate.py --animate             # the L of the config incl. station trips (~25 min)
     py.exe robodk/simulate.py --length 16           # straight wall of 16 stones
     py.exe robodk/simulate.py --plan-only           # reach table + plan only
     py.exe robodk/simulate.py --from-stop 2         # L: stops before 2 built without motion, simulate from stop 2

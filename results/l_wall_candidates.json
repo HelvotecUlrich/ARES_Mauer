@@ -199,7 +199,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3202.69,
-   "station_trip_mm": 5982.6900000000005
+   "station_trip_mm": 5922.6900000000005
   },
   {
    "n_A": 12,
@@ -400,7 +400,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3102.6899999999996,
-   "station_trip_mm": 5882.69
+   "station_trip_mm": 5822.69
   },
   {
    "n_A": 11,
@@ -601,7 +601,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3102.69,
-   "station_trip_mm": 5782.6900000000005
+   "station_trip_mm": 5722.6900000000005
   },
   {
    "n_A": 11,
@@ -802,7 +802,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3002.6899999999996,
-   "station_trip_mm": 5682.69
+   "station_trip_mm": 5622.69
   },
   {
    "n_A": 10,
@@ -1003,7 +1003,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3002.69,
-   "station_trip_mm": 5582.6900000000005
+   "station_trip_mm": 5522.6900000000005
   },
   {
    "n_A": 10,
@@ -1204,7 +1204,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 2902.6899999999996,
-   "station_trip_mm": 5482.69
+   "station_trip_mm": 5422.69
   },
   {
    "n_A": 9,
@@ -1394,7 +1394,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 2902.69,
-   "station_trip_mm": 5382.6900000000005
+   "station_trip_mm": 5322.6900000000005
   },
   {
    "n_A": 9,
@@ -1595,7 +1595,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 2802.6899999999996,
-   "station_trip_mm": 5282.69
+   "station_trip_mm": 5222.69
   },
   {
    "n_A": 10,
@@ -1831,7 +1831,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3082.69,
-   "station_trip_mm": 6362.6900000000005
+   "station_trip_mm": 6302.6900000000005
   },
   {
    "n_A": 11,
@@ -2067,7 +2067,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3182.69,
-   "station_trip_mm": 6542.6900000000005
+   "station_trip_mm": 6482.6900000000005
   },
   {
    "n_A": 9,
@@ -2303,7 +2303,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 2982.69,
-   "station_trip_mm": 6162.6900000000005
+   "station_trip_mm": 6102.6900000000005
   },
   {
    "n_A": 10,
@@ -2539,7 +2539,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3082.69,
-   "station_trip_mm": 6342.6900000000005
+   "station_trip_mm": 6282.6900000000005
   },
   {
    "n_A": 9,
@@ -2775,7 +2775,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 2982.69,
-   "station_trip_mm": 6142.6900000000005
+   "station_trip_mm": 6082.6900000000005
   },
   {
    "n_A": 12,
@@ -3011,7 +3011,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3282.69,
-   "station_trip_mm": 6762.6900000000005
+   "station_trip_mm": 6702.6900000000005
   },
   {
    "n_A": 11,
@@ -3247,7 +3247,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3182.69,
-   "station_trip_mm": 6562.6900000000005
+   "station_trip_mm": 6502.6900000000005
   },
   {
    "n_A": 12,
@@ -3483,7 +3483,7 @@
    },
    "route_problems": [],
    "leg_change_mm": 3282.69,
-   "station_trip_mm": 6742.6900000000005
+   "station_trip_mm": 6682.6900000000005
   }
  ]
 }
