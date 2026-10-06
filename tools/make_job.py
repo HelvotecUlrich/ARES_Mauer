@@ -120,32 +120,35 @@ def wall_frame_in_ares(cfg: dict, dist: float) -> np.ndarray:
     raise ValueError(f"wall.side must be right/left/front/rear, not {side!r}")
 
 
-def reach_key(cfg: dict, dist: float) -> str:
-    """Cache key of the reach table of cfg at dist (mauer.reach_cache.key, shared with robodk/simulate.py and
-    robodk/look_study.py). [brick] rib_mm is left out: it only places the corner of a wall of legs
-    (wallplan.butt_corner) - the ribs are part of the stone mesh the reach study used."""
-    return reach_cache.key(cfg, dist)
+def reach_key(cfg: dict, dist: float, side: str | None = None) -> str:
+    """Cache key of the reach table of cfg at dist, wall on `side` of ARES (mauer.reach_cache.key, shared with
+    robodk/simulate.py and robodk/look_study.py). [brick] rib_mm is left out: it only places the corner of a wall of
+    legs (wallplan.butt_corner) - the ribs are part of the stone mesh the reach study used."""
+    return reach_cache.key(cfg, dist, side)
 
 
-def load_reach_table(cfg: dict, dist: float, path: Path | None = None, allow_stale: bool = False) -> tuple[dict, str]:
+def load_reach_table(cfg: dict, dist: float, path: Path | None = None, allow_stale: bool = False,
+                     side: str | None = None) -> tuple[dict, str]:
     """({course: {u_rel: ok}}, key) from the reach-table cache (results/reach_table.json, mauer.reach_cache - one
-    table per key, several wall distances side by side); ValueError if there is none for this configuration and
-    distance (allow_stale: then the table cached for the same distance, else the only one)."""
+    table per key, several wall distances / sides side by side); ValueError if there is none for this configuration,
+    distance and side (allow_stale: then the table cached for the same distance and side, else the only one)."""
     path = Path(path or REACH_TABLE)
     tables = reach_cache.read(path)
     if not tables:
         raise ValueError(f"{path} missing - run py.exe robodk/simulate.py --plan-only once (RoboDK)")
-    key = reach_key(cfg, dist)
+    side = str(side or cfg["wall"].get("side", "front"))
+    key = reach_key(cfg, dist, side)
     if key in tables:
         return tables[key]["table"], key
     if allow_stale:
-        same = [k for k, v in tables.items() if v["dist"] is not None and abs(v["dist"] - dist) < 1e-6]
+        same = [k for k, v in tables.items() if v["dist"] is not None and abs(v["dist"] - dist) < 1e-6
+                and v.get("side", "front") == side]
         k = same[0] if same else (next(iter(tables)) if len(tables) == 1 else None)
         if k is not None:
             return tables[k]["table"], k
-    raise ValueError(f"{path} was computed for another configuration (key {key} not among "
-                     f"{sorted(f'{k} ({v["dist"]:g} mm)' for k, v in tables.items())}) - rerun "
-                     f"py.exe robodk/simulate.py --plan-only --dist {dist:g}")
+    raise ValueError(f"{path} was computed for another configuration (key {key}: {side}, {dist:g} mm, not among "
+                     f"{sorted(f'{k} ({v["side"]}, {v["dist"]:g} mm)' for k, v in tables.items())}) - rerun "
+                     f"py.exe robodk/simulate.py --plan-only")
 
 
 def make_plan(cfg: dict, length: int, table: dict) -> tuple[list, list]:

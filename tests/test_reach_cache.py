@@ -49,3 +49,31 @@ def test_key_is_make_jobs_and_the_loader_refuses_other_distances(tmp_path):
     with pytest.raises(ValueError, match="another configuration"):
         mj.load_reach_table(cfg, 840.0, p)
     assert mj.load_reach_table(cfg, 840.0, p, allow_stale=True)[0] == {0: {0.0: True}}   # the only table
+
+
+def test_side_enters_the_key_but_front_keys_stay(tmp_path):
+    cfg = l_config()
+    assert reach_cache.key(cfg, 840.0) == reach_cache.key(cfg, 840.0, "front")     # tables cached before the sides
+    keys = {s: reach_cache.key(cfg, 580.0, s) for s in ("front", "left", "right")}
+    assert len(set(keys.values())) == 3
+    p = tmp_path / "reach.json"
+    reach_cache.store(cfg, 580.0, {0: {0.0: True}}, p, side="left")
+    assert reach_cache.get(cfg, 580.0, p, side="left") == {0: {0.0: True}}
+    assert reach_cache.get(cfg, 580.0, p, side="right") is None and reach_cache.get(cfg, 580.0, p) is None
+    assert reach_cache.read(p)[keys["left"]]["side"] == "left"
+    mj = _make_job()
+    assert mj.load_reach_table(cfg, 580.0, p, side="left")[1] == keys["left"]
+    with pytest.raises(ValueError, match="left, 580 mm"):
+        mj.load_reach_table(cfg, 580.0, p, side="right", allow_stale=False)
+
+
+def test_committed_side_tables_mirror_each_other():
+    """The RoboDK side tables (580 mm, wall on ARES's left / right) are mirror images (u -> -u): the UR5 sits on the
+    centreline, 354 mm ahead of the ARES centre."""
+    cfg = l_config()
+    left, right = reach_cache.get(cfg, 580.0, side="left"), reach_cache.get(cfg, 580.0, side="right")
+    assert left and right
+    for k in right:
+        assert {u for u, ok in right[k].items() if ok} == {-u for u, ok in left[k].items() if ok}
+        ok = [u for u, v in right[k].items() if v]
+        assert min(ok) < 353.6 < max(ok)                                     # around the UR5, not the ARES centre

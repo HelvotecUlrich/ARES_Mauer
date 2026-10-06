@@ -58,6 +58,7 @@ at the nominal stop and dock), the operator's refills of the station (stones app
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import sys
@@ -99,20 +100,25 @@ OCCL_MAX = 0.002                                      # max. fraction of changed
 DIFF_MIN = 40                                         # grey-level change that counts as "changed"
 
 
-def reach_table(RDK, cfg: dict, dist: float) -> dict:
-    """{course: {u_rel: ok}} for the wall at `dist`, cached per configuration key and distance (mauer.reach_cache,
-    results/reach_table.json; tables of other distances are kept)."""
+def reach_table(RDK, cfg: dict, dist: float, side: str | None = None) -> dict:
+    """{course: {u_rel: ok}} for the wall at `dist` on `side` of ARES (default [wall] side), cached per configuration
+    key, distance and side (mauer.reach_cache, results/reach_table.json; the other tables are kept). Grid u
+    -1000..1000 mm in front / behind, -1400..1400 mm on a side (the UR5 sits 354 mm ahead of the ARES centre)."""
     from mauer import reach_cache
-    table = reach_cache.get(cfg, dist)
+    side = str(side or cfg["wall"]["side"])
+    table = reach_cache.get(cfg, dist, side=side)
     if table is not None:
         return table
-    print("computing reach table (about 1 min) ...", flush=True)
-    chk = Checker(RDK, cfg, True)
-    us = frange(-1000.0, 1000.0, 20.0)
-    table = {k: {u: chk.check_both(place_pose(cfg, u, dist, course_top_z(cfg, k)))[0] for u in us}
-             for k in range(cfg["wall"]["courses"])}
+    print(f"computing reach table ({side}, {dist:.0f} mm, about 1 min) ...", flush=True)
+    c = copy.deepcopy(cfg)
+    c["wall"]["side"] = side
+    chk = Checker(RDK, c, True)
+    span = 1400.0 if side in ("left", "right") else 1000.0
+    us = frange(-span, span, 20.0)
+    table = {k: {u: chk.check_both(place_pose(c, u, dist, course_top_z(c, k)))[0] for u in us}
+             for k in range(c["wall"]["courses"])}
     chk.close()
-    reach_cache.store(cfg, dist, table)
+    reach_cache.store(cfg, dist, table, side=side)
     return table
 
 
