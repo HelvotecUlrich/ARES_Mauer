@@ -42,6 +42,7 @@ class MountLink:
         return s if pred(s) else None
 
     def run_block(self, body, name, timeout_s):
+        script.block_program(name, body, 1, 20, 21, 22)          # the real link validates name + body first
         self.blocks.append(body)
         p = re.search(r"movel\(p\[([^\]]*)\]", body).group(1)
         self.T_tcp = g.ur_to_T([float(v) for v in p.split(",")])

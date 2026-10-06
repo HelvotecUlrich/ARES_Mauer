@@ -361,12 +361,13 @@ def cmd_mount(args) -> int:
         for k in (0, 1):
             d = np.zeros(3)
             d[k] = args.move_mm
-            for T, tag in ((g.transl(*d) @ T0, f"mount_+{'xy'[k]}"), (T0, f"mount_back_{'xy'[k]}")):
+            for T, tag, out in ((g.transl(*d) @ T0, f"mount_{'xy'[k]}", True),
+                                (T0, f"mount_back_{'xy'[k]}", False)):           # names: URScript identifiers
                 r = rig.link.run_block(script.movel(T, MOUNT_A, v_lin), tag, args.timeout_s)
                 if not r.ok:
                     print(f"{tag} failed: {r.error} - stopping", flush=True)
                     return 1
-                if tag.startswith("mount_+"):
+                if out:
                     st = rig.link.state()
                     bp = grab_boards(rig, specs, intr, vcfg, settle).get(name)
                     if bp is None or not bp.ok:
