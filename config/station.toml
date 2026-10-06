@@ -228,7 +228,7 @@ min_clearance_mm = 50.0     # ASSUMPTION: plan warns when arm/camera points come
 # Intrinsics and hand-eye board; fixed on the ARES deck for the hand-eye calibration so ARES sway cancels out.
 squares_x = 11
 squares_y = 8
-square_mm = 15.0            # PLACEHOLDER: nominal, replace with the measured print size
+square_mm = 15.0            # CONFIRMED 2026-10-06 (Samuel measured the printed calib board)
 marker_mm = 11.0            # PLACEHOLDER: nominal
 dictionary = "DICT_5X5_100"
 first_id = 0

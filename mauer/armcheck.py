@@ -22,6 +22,11 @@ Obstacles: `Box` (centre, rotation, half extents) in the parent frame (wall). `s
 robodk/wallplan.py stones and their legs: length along the leg, width + 2 x [brick] rib_mm across (ribs on the long
 faces), height [brick] height, plus the base plate under course 0 ([wall] base_z).
 
+Self-collision (`self_clearance`): the tool envelopes against the arm's own links. Calibrated on the real contact of
+2026-10-06 (UR5 on the lab table, tools/calib_handeye.py orbit): on the straight-line move o17 -> o18 the camera
+adapter touched the arm at wrist 1, the end of the forearm; this model gives -3.7 mm (camera adapter vs forearm) for
+that move and >= 17 mm for the 17 moves before it, which ran clear -> `SELF_CLEARANCE_MM`.
+
 Units mm, rad. Frames: docs/ARCHITECTURE.md.
 """
 from __future__ import annotations
@@ -50,6 +55,12 @@ ADAPTER_RADIUS_MM = 36.0          # hypot(31.3, 18): adapter arm y +-31.3, z -24
 ADAPTER_Z_MM = -6.0
 CLEARANCE_MM = 10.0               # ASSUMPTION: extra distance beyond the envelopes
 STEP_MM = 10.0                    # capsule sampling step
+ARM_LINKS = ("base", "shoulder", "upper arm", "elbow", "forearm", "wrist 1", "wrist 2", "wrist 3")
+SELF_SKIP = {("camera adapter", "wrist 2"), ("camera adapter", "wrist 3"), ("camera", "wrist 3"),
+             ("gripper", "wrist 2"), ("gripper", "wrist 3"), ("jaw bar", "wrist 3")}   # mounted on / next to them:
+                                  # the envelopes overlap by construction
+SELF_CLEARANCE_MM = 15.0          # required tool-vs-arm distance in this model: the contact of 2026-10-06 was -3.7 mm,
+                                  # the closest clear move 17.1 mm (module docstring)
 
 
 @dataclass(frozen=True)
@@ -106,6 +117,30 @@ def arm_capsules(q_rad: Sequence[float], T_parent_base: np.ndarray, tool: Sequen
             caps.append(Capsule(name, g.apply(F, [a])[0], g.apply(F, [b])[0], float(r)))
     return caps
 
+
+
+def _point_segment_distance(P: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    ab = b - a
+    t = np.clip(((P - a) @ ab) / max(float(ab @ ab), 1e-12), 0.0, 1.0)
+    return np.linalg.norm(P - (a + t[:, None] * ab), axis=1)
+
+
+def self_clearance(q_rad: Sequence[float], cfg: Mapping, step_mm: float = 5.0) -> tuple[float, str, str]:
+    """Smallest distance [mm] between the tool envelopes (gripper, jaws, camera, camera adapter) and the arm's own
+    links at joints q, with the pair (tool part, link); structural neighbours (SELF_SKIP) are left out."""
+    caps = arm_capsules(q_rad, np.eye(4), tool_capsules(cfg))
+    arm = [c for c in caps if c.name in ARM_LINKS]
+    best = (math.inf, "", "")
+    for t in caps[len(arm):]:
+        n = max(2, int(math.ceil(float(np.linalg.norm(t.b - t.a)) / step_mm)) + 1)
+        P = t.a + np.linspace(0.0, 1.0, n)[:, None] * (t.b - t.a)
+        for a in arm:
+            if (t.name, a.name) in SELF_SKIP:
+                continue
+            d = float(_point_segment_distance(P, a.a, a.b).min()) - t.r - a.r
+            if d < best[0]:
+                best = (d, t.name, a.name)
+    return best
 
 def _samples(caps: Sequence[Capsule], step: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     pts, rad, idx = [], [], []

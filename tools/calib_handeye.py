@@ -25,8 +25,10 @@ pose, board roughly in the image centre). The views are relative to that start: 
 centre (a point on the start optical axis at the board's depth) in 8 directions by 15-25 deg, rolls about its axis by
 up to ORBIT_ROLL_DEG and moves 20 mm closer / farther - straight-line moves (movel) from one view to the next, the arm
 stays in its configuration, no planned poses, no IK branch, no board pose needed; back to the start at the end.
-Each view is checked first (nominal UR5 IK near the start joints, clearance above the board plane); views that fail
-are dropped and listed. The images + flange poses form a normal "handeye" dataset (solve, calib_intrinsics solve).
+Each view and the straight-line move to it are checked first: nominal UR5 IK near the start joints, clearance above
+the board plane, and the tool (camera adapter, camera, gripper) against the arm's own links (mauer.armcheck
+self_clearance >= SELF_CLEARANCE_MM along the move - the first run touched wrist 1 with the camera adapter on the
+way to o18, 2026-10-06); views that fail are dropped and listed, the return to the start is checked too. The images + flange poses form a normal "handeye" dataset (solve, calib_intrinsics solve).
 
 Without hardware (URSim CB3 3.15.8 in Docker, tests/ursim.py): add --ursim (host 127.0.0.1; --start-ursim starts the
 container, never pulls). The camera is then mauer.simcam.SynthCamera: it renders the calib board at its nominal deck
@@ -678,6 +680,30 @@ def orbit_target(T_base_cam0: np.ndarray, pivot: Sequence[float], az_deg: float,
     return T @ g.rotz(math.radians(roll_deg)) @ g.transl(0.0, 0.0, -float(d_mm))
 
 
+def move_self_clearance(cfg: dict, T0: np.ndarray, T1: np.ndarray, q0: Sequence[float], step_mm: float = 5.0,
+                        step_deg: float = 1.0) -> tuple[float, str, str, np.ndarray | None]:
+    """Smallest tool-vs-arm clearance (armcheck.self_clearance) along a straight-line flange move T0 -> T1 (position
+    linear, orientation along the shortest rotation, as movel), joints followed from q0 with the nominal IK; returns
+    (mm, tool part, link, q at T1) - q None (and -inf) if the IK branch is lost on the way."""
+    from mauer import armcheck
+    T0, T1 = np.asarray(T0, float), np.asarray(T1, float)
+    rv = g.R_to_rotvec(T0[:3, :3].T @ T1[:3, :3])
+    n = max(2, int(math.ceil(max(float(np.linalg.norm(T1[:3, 3] - T0[:3, 3])) / step_mm,
+                                 math.degrees(float(np.linalg.norm(rv))) / step_deg))))
+    q = np.asarray(q0, float)
+    worst = (math.inf, "", "")
+    for s in np.linspace(0.0, 1.0, n + 1):
+        T = g.make_T(T0[:3, :3] @ g.rotvec_to_R(rv * s), T0[:3, 3] + s * (T1[:3, 3] - T0[:3, 3]))
+        qq = choose_branch(ur5_ik(T), q)
+        if qq is None:
+            return -math.inf, "IK lost", "", None
+        q = np.array([q[j] + _wrap(qq[j] - q[j]) for j in range(6)])
+        c = armcheck.self_clearance(q, cfg)
+        if c[0] < worst[0]:
+            worst = c
+    return worst[0], worst[1], worst[2], q
+
+
 def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam_board0: np.ndarray,
                spec: BoardSpec) -> tuple[list[dict], list[str], dict]:
     """Views relative to the start: [{"name", "T_base_flange", "tilt", "roll", "d_mm", "q_nominal"}] kept, the
@@ -690,8 +716,10 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
     pivot = T_cam0[:3, 3] + depth * T_cam0[:3, 2]
     plane_z = float((T_cam0 @ np.array([*centre_cam, 1.0]))[2])
     lim = float(cfg.get("vision", {}).get("handeye_plan", {}).get("min_clearance_mm", MIN_CLEARANCE_MM))
+    from mauer.armcheck import SELF_CLEARANCE_MM
     q0 = np.asarray(q0, float)
     kept, dropped = [], []
+    prev_T, prev_q = np.asarray(T_base_flange0, float), q0
     for i, (az, tilt, roll, d) in enumerate(orbit_views()):
         name = f"o{i:02d}"
         T_f = orbit_target(T_cam0, pivot, az, tilt, roll, d) @ g.inv(X)
@@ -708,8 +736,20 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
         if low < lim:
             dropped.append(f"{name}: {low:.0f} mm above the board plane (< {lim:g})")
             continue
+        sc, part, link, q_end = move_self_clearance(cfg, prev_T, T_f, prev_q)
+        if sc < SELF_CLEARANCE_MM:
+            dropped.append(f"{name}: {part} vs {link} {sc:.0f} mm on the way (< {SELF_CLEARANCE_MM:g})")
+            continue
         kept.append({"index": i, "name": name, "T_base_flange": T_f, "tilt": tilt, "roll": roll, "d_mm": d,
-                     "azimuth": az, "q_nominal": q, "clearance_mm": float(low)})
+                     "azimuth": az, "q_nominal": q_end, "clearance_mm": float(low), "self_mm": float(sc)})
+        prev_T, prev_q = T_f, q_end
+    while kept:                                   # the way back to the start must be clear too
+        last = kept[-1]
+        sc, part, link, _ = move_self_clearance(cfg, last["T_base_flange"], T_base_flange0, last["q_nominal"])
+        if sc >= SELF_CLEARANCE_MM:
+            break
+        dropped.append(f"{last['name']}: {part} vs {link} {sc:.0f} mm on the way back to the start")
+        kept.pop()
     return kept, dropped, {"pivot": pivot.tolist(), "distance_mm": depth, "board_plane_z": plane_z}
 
 
@@ -751,7 +791,8 @@ def cmd_orbit(args) -> int:
               + (f", dropped: {'; '.join(dropped)}" if dropped else ""), flush=True)
         for v in views:
             print(f"  {v['name']}: tilt {v['tilt']:4.1f} deg towards {v['azimuth']:6.1f} deg, roll {v['roll']:+5.1f} deg,"
-                  f" distance {v['d_mm']:+5.1f} mm, clearance {v['clearance_mm']:4.0f} mm, nominal joint change "
+                  f" distance {v['d_mm']:+5.1f} mm, clearance {v['clearance_mm']:4.0f} mm, tool vs arm "
+                  f"{v['self_mm']:3.0f} mm, nominal joint change "
                   f"{np.round(np.degrees(v['q_nominal'] - q0), 0).tolist()} deg", flush=True)
         if not confirm_motion(args, f"{len(views)} views around the calib board (tilts up to 25 deg about its centre, "
                                     f"rolls up to {ORBIT_ROLL_DEG:g} deg, straight-line moves at {args.v_mm_s:g} mm/s), "

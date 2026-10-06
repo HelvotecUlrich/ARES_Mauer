@@ -218,7 +218,10 @@ def test_orbit_relative_to_the_start_and_solve(monkeypatch, tmp_path, capsys):
     ds = tmp_path / "he"
     assert ch.main(["orbit", "--dataset", str(ds), "--yes", "--settle-s", "0"]) == 0, capsys.readouterr().out
     out = capsys.readouterr().out
-    assert "25 views kept" in out and "25 images" in out, out
+    n = int(re.search(r"(\d+) views kept", out).group(1))
+    assert 20 <= n <= 25 and f"{n} images" in out, out           # this start is the touching one of 2026-10-06:
+    dropped = re.search(r"dropped: (.*)", out)                    # its dropped views are tool-vs-arm ones
+    assert dropped is None or all(" vs " in d for d in dropped.group(1).split("; ")), out
     assert all("movej" not in b and "get_inverse_kin" not in b and "set_tcp" in b for b in link.blocks)
     assert g.pose_delta(link.F @ config.T_flange_tcp(cfg), start @ g.inv(T_FT) @ config.T_flange_tcp(cfg))[0] < 1e-6
     he = tmp_path / "he.json"
@@ -233,3 +236,29 @@ def test_orbit_views_are_small_and_snake():
     assert max(t for _, t, _, _ in v) == 25.0 and max(abs(r) for _, _, r, _ in v) == ch.ORBIT_ROLL_DEG
     rolls = [r for _, _, r, _ in v[1:]]
     assert all(abs(a - b) <= ch.ORBIT_ROLL_DEG for a, b in zip(rolls, rolls[1:]))     # no -40 -> +40 jumps
+
+
+def test_orbit_drops_the_view_that_touched_the_arm():
+    """2026-10-06, first orbit on the table: the camera adapter touched wrist 1 (end of the forearm) on the way to o18
+    - the user hit the e-stop; o00..o17 ran clear. With the recorded start the self-collision check drops o18 and keeps
+    everything before it."""
+    from mauer import armcheck
+    cfg = config.load()
+    q0 = np.radians([-69.3583, -88.6686, -97.7776, -83.5734, 90.0611, 20.7653])     # data/he_2026-10-06 meta
+    spec = board_specs(cfg)["calib"]
+    T_cam_board0 = g.transl(-spec.centre_mm[0], -spec.centre_mm[1], 346.86)            # board centre on the axis
+    kept, dropped, geo = ch.orbit_plan(cfg, ur5_fk(q0), q0, T_cam_board0, spec)
+    names = [v["name"] for v in kept]
+    assert names[:18] == [f"o{i:02d}" for i in range(18)], names
+    assert "o18" not in names and any(d.startswith("o18: camera adapter vs forearm") for d in dropped), dropped
+    assert all(v["self_mm"] >= armcheck.SELF_CLEARANCE_MM for v in kept)
+    assert armcheck.self_clearance(q0, cfg)[0] > armcheck.SELF_CLEARANCE_MM
+
+
+def test_self_clearance_sees_the_camera_folded_onto_the_forearm():
+    from mauer import armcheck
+    cfg = config.load()
+    q = np.radians([-69.0, -89.0, -98.0, -84.0, 90.0, 21.0])
+    ok = armcheck.self_clearance(q, cfg)[0]
+    worst = min(armcheck.self_clearance(np.r_[q[:5], q[5] + np.radians(a)], cfg)[0] for a in range(0, 360, 10))
+    assert ok > 15.0 and worst < ok                              # turning wrist 3 brings the adapter to the arm
