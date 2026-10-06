@@ -205,3 +205,49 @@ def test_station_trip_moves_stones_into_the_magazine(rdk_fresh, cfg, tmp_path):
         want = g.from_robodk(sim.slot_T[mid] * rc.rotx(np.pi) * rc.T_tc_cad(cfg, kind))
         assert np.allclose(g.from_robodk(item.Pose()), want, atol=1e-3), mid
     assert len(sim.st) == 17 and sim.pose.delta(stop.ares)[0] < 1e-6       # ARES back at the stop
+
+
+# ── the C of the config (2026-10-06, wall distance 840 mm) ───────────────────────────────────────────────────────────
+def test_c_self_test_and_first_stones_of_leg_c(rdk_fresh):
+    """The C as configured: the collision self-test at 840 mm (ARES driven into the wall is reported), legs A and B
+    built without motion, the leg-C boards seen from the C stop and C's first stones next to B's inside face (the
+    second corner) placed with collision-checked motion."""
+    import simulate as S
+    from make_job import build_nominal
+    cfg = rc.load_config()
+    assert cfg["wall"]["shape"] == "C" and cfg["wall"]["dist_nominal"] == 840.0
+
+    class Args:
+        dist = float(cfg["wall"]["dist_nominal"])
+
+    rdk = rdk_fresh
+    it = bs.build(rdk, cfg)
+    job = build_nominal(cfg)
+    sim = S.LSim(rdk, cfg, it, job, Args())
+    sim.setup()
+    rdk.Render(False)
+    sim.planner.z_safe = sim.safe_z(full=True)
+    sim.j_home = sim.planner.compact(0.0, [0, -100, 52, -42, -90, 0])
+    sim.robot.setJoints(sim.j_home)
+    st_res = sim.self_test()                                   # raises if a known collision is not reported
+    assert any(k.startswith("ARES chassis 250 mm forward") and v for k, v in st_res.items())
+    k = next(i for i, s in enumerate(job.stops) if s.leg == "C")
+    for st in job.stops[:k]:
+        sim.prebuild(st.stones)                                 # legs A and B complete
+    initial, events = S.magazine_events(job)
+    first = sum(len(s.stones) for s in job.stops[:k])
+    for sid, kind in S.magazine_before(job, initial, events, first):
+        sim.fill_slot(sid, kind)
+    stop = job.stops[k]
+    sim.set_ares(stop.ares)
+    sim.open_camera()
+    rdk.Render(False)
+    planned = {lk.boards[0]: lk for lk in stop.looks}
+    seen = [n for n in sorted(planned) if sim.check_board(n, planned[n])["ok"]]
+    assert seen == sorted(planned) == ["W6", "W7"], seen
+    for i, t in enumerate(stop.stones[:4]):
+        for _, sid, kind in events.get(first + i, {}).get("pairs", []):     # a reload before this stone (no trip)
+            sim.fill_slot(sid, kind)
+        rec = sim.lay(t)
+        assert rec["ok"], rec
+    assert {t.label for t in stop.stones[:4]} >= {"Cc0i0", "Cc1i0h"}

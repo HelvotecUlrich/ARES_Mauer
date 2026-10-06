@@ -1138,12 +1138,14 @@ class LSim(Sim):
             fwd = (math.cos(p0.theta_rad), math.sin(p0.theta_rad))
             self.wall_items["_selftest"] = st
             self.route_pairs(True)
-            # 150 mm forward: the front panel cuts through the stone (a stone completely inside the hollow chassis
-            # shell would not be reported by the surface check)
-            self.set_ares(Pose2D(p0.x_mm + fwd[0] * 150, p0.y_mm + fwd[1] * 150, p0.theta_rad))
+            # forward until the front panel is 30 mm inside the stone (a stone completely inside the hollow chassis
+            # shell would not be reported by the surface check): gap ARES front - wall face + 30 mm (150 mm at the
+            # wall distance 740, 250 mm at 840)
+            d_in = self.dist - self.cfg["ares"]["length"] / 2 - self.cfg["brick"]["width"] / 2 + 30.0
+            self.set_ares(Pose2D(p0.x_mm + fwd[0] * d_in, p0.y_mm + fwd[1] * d_in, p0.theta_rad))
             self.robot.setJoints(self.j_home)
             self.RDK.Update()
-            out["ARES chassis 150 mm forward into the wall (route pairs on)"] = self.pairs()
+            out[f"ARES chassis {d_in:.0f} mm forward, 30 mm into the wall (route pairs on)"] = self.pairs()
             self.route_pairs(False)
             del self.wall_items["_selftest"]
             self.set_ares(p0)
