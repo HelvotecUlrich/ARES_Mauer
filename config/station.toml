@@ -41,9 +41,9 @@ head_joint = 0.0            # dry-stacked, interlocking
 bed_joint = 0.0
 rib_mm = 1.69               # CONFIRMED (CAD): horizontal ribs on both long faces, full length, 1.6858 mm high (mesh bbox
                             # x -1.6858..121.6858, checked 2026-10-05) -> width over the ribs 123.37 mm; end faces flat
-mass_kg = 0.0               # UNKNOWN: volume 2880 cm3 (CAD mesh, consistently oriented; the raw STL has 516 of 1980
-                            # faces flipped and gave 2270 - wrong). Concrete ~2.3 g/cm3 would give ~6.6 kg > UR5 payload
-                            # 5 kg -> check the STEP volume and weigh a stone
+mass_kg = 3.0               # ASSUMPTION: "about 3 kg" (Samuel 2026-10-06) - weigh it exactly: tool 1.68 + stone 3.0 =
+                            # 4.68 kg of the UR5's 5 kg. (CAD volume 2880 cm3 x concrete 2.3 g/cm3 would have been ~6.6 kg;
+                            # the raw STL has 516 of 1980 faces flipped and gave 2270 cm3 - wrong)
 
 [half_brick]
 # Half stone (Samuel 2026-10-05: "half stones will go on the end and maybe also the corners"): closes the odd courses

@@ -133,7 +133,7 @@ def test_provenance(job, cfg):
     keys = {d["key"]: d for d in job.depends_on}
     assert keys["[ur5] mount_z"]["status"] == "PLACEHOLDER" and keys["[ur5] mount_z"]["value"] == 333.6
     assert keys["[tool] tcp_z"]["status"] == "ASSUMPTION"
-    assert keys["[brick] mass_kg"]["status"] == "UNKNOWN"
+    assert keys["[brick] mass_kg"]["status"] == "ASSUMPTION"           # "about 3 kg", 2026-10-06
     assert keys["[[targets]] W0.xyz"]["status"] == "PLACEHOLDER"
     assert "[ares] steer_axis_x" not in keys and "[brick] length" not in keys        # CONFIRMED keys are not listed
     assert job.meta["reach_check"] == "kinematic" and job.meta["look_source"] == "nominal"
@@ -238,7 +238,7 @@ def test_config_status_parser():
     assert st["[camera.mount] xyz"]["status"] == "ASSUMPTION"               # inline tag (design value 2026-10-05)
     assert st["[[targets]] W3.xyz"]["status"] == "PLACEHOLDER"              # from the [[targets]] block comment
     assert st["[[targets]] S0.xyz"]["status"] == "PLACEHOLDER"              # own inline tag
-    assert st["[brick] mass_kg"]["status"] == "UNKNOWN"
+    assert st["[brick] mass_kg"]["status"] == "ASSUMPTION"
 
 
 def test_make_job_cli(tmp_path, capsys):

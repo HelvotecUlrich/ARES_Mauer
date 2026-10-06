@@ -5,7 +5,8 @@ A reach table is {course: {u_rel: ok}}: can the UR5 place a full stone of that c
 (relative to the ARES centre, 20 mm grid) from a stop at wall distance `dist` with the wall on `side` of ARES (front,
 left, right, rear; robodk/simulate.py reach_table). Its cache key covers everything the table depends on: the UR5
 mount, the tool, the stone (without [brick] rib_mm - the ribs only place the corner of a wall of legs, they are part of
-the stone mesh the check uses), [wall] base_z / courses, [study] approach, the wall distance and the side (the side
+the stone mesh the check uses - and without mass_kg, which does not change what the arm reaches; dropped from the key
+2026-10-06 when the stone was weighed, the cached tables re-keyed), [wall] base_z / courses, [study] approach, the wall distance and the side (the side
 enters the key only when it is not "front", so the front tables cached before 2026-10-06 keep their keys).
 
 File layout (version 2, 2026-10-06 - one table per key, so several wall distances / sides live side by side):
@@ -27,7 +28,7 @@ PATH = REPO / "results" / "reach_table.json"
 def key(cfg: Mapping, dist: float, side: str | None = None) -> str:
     """Cache key of the reach table for cfg at wall distance dist [mm], wall on `side` of ARES (default [wall] side)."""
     side = str(side or cfg["wall"].get("side", "front"))
-    brick = {k: v for k, v in cfg["brick"].items() if k != "rib_mm"}
+    brick = {k: v for k, v in cfg["brick"].items() if k not in ("rib_mm", "mass_kg")}
     parts = ["family-v2", cfg["ur5"], cfg["tool"], brick, cfg["wall"]["base_z"], cfg["wall"]["courses"],
              cfg["study"]["approach"], dist] + ([] if side == "front" else [side])
     src = json.dumps(parts, sort_keys=True)

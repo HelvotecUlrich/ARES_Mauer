@@ -274,8 +274,9 @@ def test_step_mode_confirms_every_motion(cfg, job10, tmp_path):
 # ── (v) real-run preflight ────────────────────────────────────────────────────
 def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
     no_host = copy.deepcopy(cfg)
-    no_host["ur"]["host"] = ""                              # host and payload are set since 2026-10-06
+    no_host["ur"]["host"] = ""                              # host, payload and stone mass are set since 2026-10-06
     no_host["ur"]["payload_tool_kg"] = 0.0
+    no_host["brick"]["mass_kg"] = 0.0
     problems = preflight_real(no_host, job10, intrinsics_file=tmp_path / "none_i.json",
                               handeye_file=tmp_path / "none_h.json")
     text = "\n".join(problems)
