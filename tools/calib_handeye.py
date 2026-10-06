@@ -12,9 +12,10 @@ the UR base frame from the current pose (nominal [camera.mount] and intrinsics; 
 the link knows the active TCP offset, else from actual_q with the nominal DH, ~1 mm) and writes it as JSON;
 `--board-pose FILE` on plan / capture / verify aims at that pose instead of the [boards.calib] deck pose and uses the
 board plane as the clearance plane. The pose only aims the camera - the calibration does not depend on it.
-`--q-ref-deg q1,...,q6` (plan / capture / verify): the IK branch of every pose is the one closest to these joints
-(the robot's current ones, `tools/ur_check.py info`) instead of the deck convention "elbow up, wrist down" with the
-base turned towards the board - on the table (2026-10-06) the robot stood in the other branch, and the first look
+`--q-ref-deg=q1,...,q6` (plan / capture / verify; "=" because of the minus signs): the IK branch of every pose is
+the one closest to these joints (the robot's current ones, `tools/ur_check.py info`) instead of the deck convention
+"elbow up, wrist down" with the base turned towards the board, and the roll range is centred on the camera's roll at
+these joints (wrist 3 stays within about the roll range of its current angle, not up to 180 deg away) - on the table (2026-10-06) the robot stood in the other branch, and the first look
 move would have turned the base by ~180 deg. On the real robot capture / verify refuse to start when the first pose
 needs a base / shoulder / elbow move of more than MAX_START_JUMP_DEG.
 
@@ -284,8 +285,13 @@ def make_plan(cfg: dict, n: int | None = None, seed: int = 0, prefix: str = "p",
     spec = board_specs(cfg)["calib"]
     T_bb = calib_board_in_base(cfg)
     X = config.T_flange_cam_nominal(cfg)
+    roll = tuple(st["roll_deg"])
+    if q_ref is not None:       # roll range around the camera's roll at q_ref: wrist 3 stays within ~it of q_ref
+        R_bc = T_bb[:3, :3].T @ (ur5_fk(q_ref)[-1] @ X)[:3, :3]
+        r0 = math.degrees(math.atan2(R_bc[1, 0], R_bc[0, 0]))
+        roll = (r0 + roll[0], r0 + roll[1])
     poses = handeye.plan_poses(T_bb, X, st["n"], tuple(st["dist_mm"]), tuple(st["tilt_deg"]),
-                               tuple(st["roll_deg"]), seed=seed, spec=spec)
+                               roll, seed=seed, spec=spec)
     aim = g.apply(T_bb, [[*spec.centre_mm, 0.0]])[0]
     return [annotate(cfg, T, i, f"{prefix}{i:02d}", X, aim, T_bb, q_ref) for i, T in enumerate(poses)]
 

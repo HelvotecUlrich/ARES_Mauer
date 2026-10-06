@@ -164,6 +164,7 @@ def test_plan_stays_in_the_robots_arm_configuration(monkeypatch):
     for p in table:                                   # same branch: base, shoulder, elbow stay near the start
         assert np.max(np.abs(np.degrees(p.qnear_rad[:3] - Q0[:3]))) < 60.0, (p.name, np.degrees(p.qnear_rad))
         assert np.allclose(ur5_fk(p.qnear_rad), p.T_base_flange, atol=1e-3)
+        assert abs(np.degrees(p.qnear_rad[5] - Q0[5])) < 110.0, (p.name, np.degrees(p.qnear_rad))   # cables
     assert ch.plan_settings(c, 10, 0, Q0)["q_ref_deg"] == pytest.approx(np.degrees(Q0).round(3).tolist())
 
 
