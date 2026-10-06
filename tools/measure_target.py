@@ -21,7 +21,7 @@ poses: look poses from a JSON file (format: tools/calib_handeye.py docstring; `c
 mount: is the camera mounted as [camera.mount] says (2026-10-06, first table test, before any larger move)? A board
   lies anywhere in view (flat on the table is best). Without motion (--move-mm 0): the board's distance and tilt with
   the nominal mount. With --move-mm D (default 10): the TCP moves D mm along base +x and back, then base +y and back
-  (pure translations at 20 mm/s, so the pendant's TCP and payload do not matter - the block sets neither). The
+  (pure translations at --v-mm-s, default 20 mm/s, so the pendant's TCP and payload do not matter - the block sets neither). The
   board's apparent shift in the camera frame gives R_base_cam (Kabsch), with R_base_flange from the joint angles
   (nominal UR5 DH, mauer.simworld.ur5_fk - PolyScope 3.3 streams no tcp_offset) -> R_flange_cam, compared with
   [camera.mount]: which flange axis the image right / image down / optical axis point along. Translations only: the
@@ -272,7 +272,7 @@ def cmd_poses(args) -> int:
 
 
 # ── mount ─────────────────────────────────────────────────────────────────────
-MOUNT_V, MOUNT_A = 0.02, 0.2         # m/s, m/s² for the mount-check translations (slow, short)
+MOUNT_V, MOUNT_A = 0.02, 0.2         # m/s, m/s² for the mount-check translations (slow, short; --v-mm-s)
 MOUNT_TOL_DEG = 5.0                  # nominal intrinsics + nominal DH: a correct mount lands well inside this
 
 
@@ -349,7 +349,11 @@ def cmd_mount(args) -> int:
         report.update(board=name, distance_mm=float(np.linalg.norm(T_cb[:3, 3])), tilt_nominal_deg=tilt)
         if args.move_mm <= 0.0:
             return 0
-        if not ch.confirm_motion(args, f"4 moves of {args.move_mm:g} mm at {MOUNT_V * 1000:.0f} mm/s from the current "
+        v_lin = args.v_mm_s / 1000.0
+        if not 0.0 < v_lin <= MOUNT_V:
+            print(f"--v-mm-s must be in (0, {MOUNT_V * 1000:.0f}]", flush=True)
+            return 2
+        if not ch.confirm_motion(args, f"4 moves of {args.move_mm:g} mm at {args.v_mm_s:g} mm/s from the current "
                                        "pose: base +x and back, base +y and back (pendant TCP and payload stay active)"):
             print("not confirmed - nothing moved", flush=True)
             return 1
@@ -358,7 +362,7 @@ def cmd_mount(args) -> int:
             d = np.zeros(3)
             d[k] = args.move_mm
             for T, tag in ((g.transl(*d) @ T0, f"mount_+{'xy'[k]}"), (T0, f"mount_back_{'xy'[k]}")):
-                r = rig.link.run_block(script.movel(T, MOUNT_A, MOUNT_V), tag, args.timeout_s)
+                r = rig.link.run_block(script.movel(T, MOUNT_A, v_lin), tag, args.timeout_s)
                 if not r.ok:
                     print(f"{tag} failed: {r.error} - stopping", flush=True)
                     return 1
@@ -430,6 +434,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--report", default=None, help="write the results as JSON")
     p.add_argument("--move-mm", type=float, default=10.0, help="translation along base x and y [mm]; 0 = no motion")
     p.add_argument("--exposure-us", type=float, default=None, help="exposure for this check [us]")
+    p.add_argument("--v-mm-s", type=float, default=MOUNT_V * 1000.0, help="speed of the translations [mm/s], "
+                                                                          "at most the default")
     ch.add_robot_args(p, "wait after the arm stops before each image [s] (default 0.5)")
     return ap
 
