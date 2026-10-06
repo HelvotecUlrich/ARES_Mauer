@@ -61,14 +61,19 @@ CAP_BOARDS = 4                    # boards per stop counted for robustness
 
 def with_legs(cfg: dict, n0s) -> dict:
     """Copy of cfg with [[wall.legs]] = A (wall frame, n0s[0]) and every further leg the butt corner of the one before
-    (B = n0s[1], C = n0s[2], ...)."""
+    (B = n0s[1], C = n0s[2], ...): away from ARES's side, or towards it with [wall] ares_inside (ARES works inside the
+    corners). A leg keeps the side / dist of the config's leg of the same name."""
     wp = mj.load_wallplan()
     c = copy.deepcopy(cfg)
+    inside = bool(c["wall"].get("ares_inside", False))
     legs_ = [wp.Leg(LEG_NAMES[0], int(n0s[0]))]
     for name, n in zip(LEG_NAMES[1:], n0s[1:]):
-        legs_.append(wp.butt_corner(c, legs_[-1], int(n), name))
+        legs_.append(wp.butt_corner(c, legs_[-1], int(n), name, towards_ares=inside))
+    old = {str(d["name"]): d for d in cfg["wall"].get("legs") or []}
     c["wall"]["legs"] = [{"name": lg.name, "n0": lg.n0, "xyz_in_wall": [round(lg.x, 6), round(lg.y, 6), 0.0],
-                          "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(lg.theta), 9)]} for lg in legs_]
+                          "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(lg.theta), 9)],
+                          **{k: old[lg.name][k] for k in ("side", "dist") if k in old.get(lg.name, {})}}
+                         for lg in legs_]
     return c
 
 
@@ -148,15 +153,20 @@ def select_boards(sites: list, reach: list[set[int]], conflicts: set, centres: l
     return None
 
 
-def evaluate(cfg0: dict, table: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
-    """One candidate (module docstring). Never raises for an infeasible candidate: row["feasible"] = False + reason."""
+def evaluate(cfg0: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
+    """One candidate (module docstring). Never raises for an infeasible candidate: row["feasible"] = False + reason.
+    Every leg on the reach table of its side / distance (make_job.leg_side / leg_dist), ARES stops within
+    make_job.stop_limits (between the other legs when ARES works inside the corners)."""
     wp = mj.load_wallplan()
     cfg = with_legs(cfg0, n0s)
     legs_ = wp.legs(cfg)
     row: dict = {"n0": [int(n) for n in n0s], "course0": int(sum(n0s)), "feasible": False, "why": ""}
     margin = float(cfg["wall"].get("reach_margin_mm", 0.0))
     try:
-        stones, plans = wp.plan_legs(cfg, legs_, table, True, margin)
+        tables = {lg.name: mj.load_reach_table(cfg, mj.leg_dist(cfg, lg, ctx.dist), side=mj.leg_side(cfg, lg))[0]
+                  for lg in legs_}
+        limits = mj.stop_limits(cfg, legs_, ctx.dist)
+        stones, plans = wp.plan_legs(cfg, legs_, tables[legs_[0].name], True, margin, tables=tables, a_limits=limits)
     except (ValueError, RuntimeError) as e:
         row["why"] = f"plan: {e}"
         return row
@@ -168,7 +178,8 @@ def evaluate(cfg0: dict, table: dict, n0s, ctx: "mj._Ctx", route_all: bool = Tru
         for a, batch in plans[lg.name]:
             built = built + list(batch)
             stops.append({"leg": lg.name, "a": float(a), "n": len(batch), "built": built,
-                          "pose": mj.stop_pose(cfg, ctx.dist, a, T_legs[lg.name])})
+                          "pose": mj.stop_pose(cfg, mj.leg_dist(cfg, lg, ctx.dist), a, T_legs[lg.name],
+                                               mj.leg_side(cfg, lg))})
     row.update(stones=len(stones), half=sum(s.kind == "half" for s in stones),
                stops=[(s["leg"], s["a"], s["n"]) for s in stops], n_stops=len(stops))
     spec = board_specs(cfg)["W0"]
@@ -259,11 +270,10 @@ def rank_key(r: dict) -> tuple:
 def evaluate_all(cfg: dict, candidates, quiet: bool = False) -> list[dict]:
     """Evaluate every candidate (tuples of n0 per leg), ranked (rank_key)."""
     dist = float(cfg["wall"]["dist_nominal"])
-    table, _ = mj.load_reach_table(cfg, dist)
     ctx = mj._Ctx(cfg, dist, 2, mj.LOOK_MARGIN_MM)
     rows = []
     for n0s in candidates:
-        r = evaluate(cfg, table, n0s, ctx)
+        r = evaluate(cfg, n0s, ctx)
         rows.append(r)
         if not quiet:
             print(f"  {legs_label(r)}: {'ok ' if r['feasible'] else 'NO '} stops {r.get('n_stops', '-')}, "
@@ -572,14 +582,19 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
              f"{cfg['wall'].get('corner_gap_mm', 0):g} mm, ASSUMPTION): set the next leg's base blocks that far off. "
              "Half stones at both ends of every odd course make each leg a rectangle (no notch at a corner, no stone "
              "supported across legs).",
-             "- Wall frame = leg A frame; ARES works from the OUTSIDE of every leg (wall distance "
-             f"{m['wall_dist_mm']:.0f} mm to each leg centreline); the legs are built one after the other ("
-             + ", ".join(lg.name for lg in legs_) + ").", "",
-             "## Geometry", "", "| leg | stones in course 0 | length mm | frame in the wall frame (x, y mm, heading deg) |",
-             "|---|---|---|---|"]
+             "- Wall frame = leg A frame; ARES works " + ("INSIDE the corners (legs turn towards its side; it "
+             "stops only where it keeps the route clearance from the other legs and their plates)"
+             if cfg["wall"].get("ares_inside") else "from the OUTSIDE of every leg") + "; side and distance of "
+             "every leg below; the legs are built one after the other (" + ", ".join(lg.name for lg in legs_) + ").",
+             "",
+             "## Geometry", "", "| leg | stones in course 0 | length mm | frame in the wall frame (x, y mm, heading deg) "
+             "| side of ARES | ARES centre -> leg mm | stop window a mm |", "|---|---|---|---|---|---|---|"]
+    lim = {d["name"]: d.get("a_limits_mm") for d in m.get("legs", [])}
     for lg in legs_:
+        a_lim = lim.get(lg.name)
+        win = "-" if not a_lim else f"{a_lim[0]:.0f} .. {a_lim[1]:.0f}"
         lines.append(f"| {lg.name} | {lg.n0} | {wp.leg_length(cfg, lg.n0):.0f} | ({lg.x:.0f}, {lg.y:.0f}), "
-                     f"{math.degrees(lg.theta):.0f} |")
+                     f"{math.degrees(lg.theta):.0f} | {mj.leg_side(cfg, lg)} | {mj.leg_dist(cfg, lg):.0f} | {win} |")
     stones = [t for st in job.stops for t in st.stones]
     lines += ["", "Stones per leg and course (full + half; odd courses: half + (n-1) full + half):", "",
               "| leg | " + " | ".join(f"course {k}" for k in range(cfg["wall"]["courses"])) + " | total |",

@@ -105,10 +105,10 @@ def load_wallplan():
     return mod
 
 
-def wall_frame_in_ares(cfg: dict, dist: float) -> np.ndarray:
-    """Wall frame in the ARES frame for a wall centreline `dist` from the ARES centre - numpy copy of
-    robodk/rdk_common.py:122-133 wall_frame (that module imports RoboDK)."""
-    side = cfg["wall"]["side"]
+def wall_frame_in_ares(cfg: dict, dist: float, side: str | None = None) -> np.ndarray:
+    """Wall frame in the ARES frame for a wall centreline `dist` from the ARES centre on `side` of ARES (default
+    [wall] side) - numpy copy of robodk/rdk_common.py wall_frame (that module imports RoboDK)."""
+    side = side or cfg["wall"]["side"]
     if side == "right":
         return g.transl(0, -dist, 0)
     if side == "left":
@@ -269,11 +269,66 @@ def park_q(cfg: dict, T_ares_base: np.ndarray, T_flange_tcp: np.ndarray, layers:
 
 
 # ── build ─────────────────────────────────────────────────────────────────────
-def stop_pose(cfg: dict, dist: float, a: float, T_wall_leg: np.ndarray | None = None) -> Pose2D:
-    """Nominal ARES pose in the wall frame for a stop at leg position a: inv(wall_frame(dist) @ transl(-a, 0, 0))
-    in the leg frame (simulate.py:269, rdk_common.wall_frame), then T_wall_leg (identity for the straight wall)."""
-    T = g.inv(wall_frame_in_ares(cfg, dist) @ g.transl(-a, 0.0, 0.0))
+def stop_pose(cfg: dict, dist: float, a: float, T_wall_leg: np.ndarray | None = None, side: str | None = None) -> Pose2D:
+    """Nominal ARES pose in the wall frame for a stop at leg position a: inv(wall_frame(dist, side) @ transl(-a, 0, 0))
+    in the leg frame (simulate.py, rdk_common.wall_frame), then T_wall_leg (identity for the straight wall)."""
+    T = g.inv(wall_frame_in_ares(cfg, dist, side) @ g.transl(-a, 0.0, 0.0))
     return Pose2D.from_T(T if T_wall_leg is None else np.asarray(T_wall_leg, float) @ T)
+
+
+def leg_side(cfg: dict, lg) -> str:
+    """Side of ARES the leg is built on: [[wall.legs]] side, else [wall] side."""
+    return getattr(lg, "side", "") or str(cfg["wall"]["side"])
+
+
+def leg_dist(cfg: dict, lg, dist: float | None = None) -> float:
+    """ARES centre -> leg centreline at the leg's stops: [[wall.legs]] dist, else `dist` ([wall] dist_nominal)."""
+    d = getattr(lg, "dist", None)
+    return float(d) if d is not None else float(cfg["wall"]["dist_nominal"] if dist is None else dist)
+
+
+def stop_limits(cfg: dict, legs_: list, dist: float | None = None, step_mm: float = 20.0) -> dict:
+    """{leg: (a_min, a_max)}: leg positions where ARES at its stop keeps [routes] clearance_mm from every OTHER leg
+    including its plate band (leg footprint + [plates] block_width / 2 + plate_depth on that leg's ARES side - plates
+    may lie anywhere along it). Matters when ARES works inside corners (the C of 2026-10-06: between the other legs);
+    outside them the window is the whole scan (-2 m .. leg length + 2 m). Of the contiguous windows the one overlapping
+    the leg (0 .. length) most is taken (inside a C, B is also free beyond C - useless); ValueError if a leg has
+    none."""
+    wp = load_wallplan()
+    ares = floor.AresShape.from_config(cfg)
+    clr = float(cfg.get("routes", {}).get("clearance_mm", 0.0))
+    W = float(cfg["brick"]["width"])
+    pl = cfg.get("plates", {})
+    v_hi = float(pl.get("block_width", W)) / 2.0 + float(pl.get("plate_depth", 0.0))
+    T_legs = mconfig.leg_frames(cfg)
+    bands = {lg.name: [lg.to_wall(u, v) for u, v in ((0.0, -W / 2), (wp.leg_length(cfg, lg.n0), -W / 2),
+                                                     (wp.leg_length(cfg, lg.n0), v_hi), (0.0, v_hi))]
+             for lg in legs_}
+    out = {}
+    for lg in legs_:
+        side, d = leg_side(cfg, lg), leg_dist(cfg, lg, dist)
+        others = [b for n, b in bands.items() if n != lg.name]
+        ok = []
+        for a in np.arange(-2000.0, wp.leg_length(cfg, lg.n0) + 2000.0 + 1e-9, step_mm):
+            fp = ares.footprint(stop_pose(cfg, d, float(a), T_legs[lg.name], side))
+            ok.append((float(a), all(not floor.overlaps(fp, b) and floor.poly_dist(fp, b) >= clr - 1e-6
+                                     for b in others)))
+        runs, cur = [], None
+        for a, good in ok:
+            if good and cur is None:
+                cur = [a, a]
+            elif good:
+                cur[1] = a
+            elif cur is not None:
+                runs.append(tuple(cur))
+                cur = None
+        if cur is not None:
+            runs.append(tuple(cur))
+        if not runs:
+            raise ValueError(f"leg {lg.name}: no stop position keeps {clr:g} mm from the other legs and their plates")
+        L = wp.leg_length(cfg, lg.n0)                 # the window ARES can work the leg from: most overlap with it
+        out[lg.name] = max(runs, key=lambda r: (min(r[1], L) - max(r[0], 0.0), r[1] - r[0]))
+    return out
 
 
 class _Ctx:
@@ -652,15 +707,25 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
     if half_stones is None:
         half_stones = bool(cfg["wall"].get("half_stones", True))
     margin = float(cfg["wall"].get("reach_margin_mm", 0.0))
-    table, key = load_reach_table(cfg, dist, reach_table_path, allow_stale_reach)
-    stones, plans = wp.plan_legs(cfg, legs_, table, half_stones, margin)
+    sides = {lg.name: leg_side(cfg, lg) for lg in legs_}
+    dists = {lg.name: leg_dist(cfg, lg, dist) for lg in legs_}
+    tables, keys = {}, {}
+    for lg in legs_:                                # every leg on the reach table of its side and distance
+        tables[lg.name], keys[lg.name] = load_reach_table(cfg, dists[lg.name], reach_table_path, allow_stale_reach,
+                                                          sides[lg.name])
+    key = ", ".join(dict.fromkeys(keys.values()))
+    limits = stop_limits(cfg, legs_, dist)
+    stones, plans = wp.plan_legs(cfg, legs_, tables[legs_[0].name], half_stones, margin, tables=tables,
+                                 a_limits=limits)
     ctx = _Ctx(cfg, dist, max_looks, look_margin_mm)
     for prev, lg in zip(legs_, legs_[1:]):
-        exp = wp.butt_corner(cfg, prev, lg.n0, lg.name)
-        if abs(exp.x - lg.x) > 1e-6 or abs(exp.y - lg.y) > 1e-6 or abs(exp.theta - lg.theta) > 1e-9:
+        exps = [wp.butt_corner(cfg, prev, lg.n0, lg.name, towards_ares=t) for t in (False, True)]
+        if not any(abs(e.x - lg.x) <= 1e-6 and abs(e.y - lg.y) <= 1e-6 and abs(e.theta - lg.theta) <= 1e-9
+                   for e in exps):
             ctx.warnings.append(f"leg {lg.name} frame ({lg.x:.1f}, {lg.y:.1f}, {math.degrees(lg.theta):.1f} deg) is "
-                                f"not the butt corner of leg {prev.name} ({exp.x:.1f}, {exp.y:.1f}, "
-                                f"{math.degrees(exp.theta):.1f} deg)")
+                                f"not a butt corner of leg {prev.name} (away from ARES: ({exps[0].x:.1f}, "
+                                f"{exps[0].y:.1f}, {math.degrees(exps[0].theta):.1f} deg), towards ARES: "
+                                f"({exps[1].x:.1f}, {exps[1].y:.1f}, {math.degrees(exps[1].theta):.1f} deg))")
     T_legs = mconfig.leg_frames(cfg)
     by_name = {lg.name: lg for lg in legs_}
     stops: list[mjob.Stop] = []
@@ -669,7 +734,7 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
         T_wl = T_legs[lg.name]
         for a, batch in plans[lg.name]:
             k = len(stops)
-            ares = stop_pose(cfg, dist, a, T_wl)
+            ares = stop_pose(cfg, dists[lg.name], a, T_wl, sides[lg.name])
             T_base_wall = ctx.T_base_ares @ g.inv(ares.T)
             built += list(batch)
             looks = _wall_looks(ctx, k, a, ares, T_wl, lg.name, built, by_name)
@@ -684,8 +749,12 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
         raise ValueError("L floor/route check failed:\n  - " + "\n  - ".join(problems))
     legs_meta = [{"name": lg.name, "n0": lg.n0, "T_wall_leg": T_legs[lg.name]} for lg in legs_]
     n_half = sum(s.kind == "half" for s in stones)
-    extra = {"shape": str(cfg["wall"].get("shape") or "legs"), "legs": [{"name": lg.name, "n0": lg.n0, "plan_a_mm": [float(a) for a, _ in plans[lg.name]]}
-                                    for lg in legs_],
+    extra = {"shape": str(cfg["wall"].get("shape") or "legs"),
+             "legs": [{"name": lg.name, "n0": lg.n0, "side": sides[lg.name], "dist_mm": dists[lg.name],
+                       "a_limits_mm": [float(v) for v in limits[lg.name]],
+                       "plan_a_mm": [float(a) for a, _ in plans[lg.name]]} for lg in legs_],
+             "reach_tables": {lg.name: {"side": sides[lg.name], "dist_mm": dists[lg.name], "key": keys[lg.name]}
+                              for lg in legs_},
              "n_stones": len(stones), "n_half_stones": n_half, "half_stones": bool(half_stones),
              "reach_margin_mm": margin, "plates": [{"board": s.board, "leg": s.leg, "k": s.k, "u_mm": s.u,
                                                     "spare_block": s.spare} for s in sites],

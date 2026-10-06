@@ -584,3 +584,43 @@ def test_c_routes_and_floor(ccfg, cjob):
     p = ccfg["plates"]
     gap = ccfg["wall"]["dist_nominal"] - ccfg["ares"]["length"] / 2 - (p["block_width"] / 2 + p["plate_depth"])
     assert gap == pytest.approx(110.0)
+
+
+# ── legs per side of ARES, stop limits (inside C, 2026-10-06) ─────────────────────────────────────────────────────
+def _inside_c(cfg):
+    """A C with ARES inside (corners towards its side): A on ARES's right at 580 mm, B in front at 840, C on its left."""
+    wp = make_job.load_wallplan()
+    c = copy.deepcopy(cfg)
+    c["wall"]["ares_inside"] = True
+    legs = [wp.Leg("A", 10)]
+    for name, n in (("B", 7), ("C", 5)):
+        legs.append(wp.butt_corner(c, legs[-1], n, name, towards_ares=True))
+    sd = {"A": ("right", 580.0), "B": ("front", 840.0), "C": ("left", 580.0)}
+    c["wall"]["legs"] = [{"name": lg.name, "n0": lg.n0, "xyz_in_wall": [lg.x, lg.y, 0.0],
+                          "rpy_in_wall_deg": [0.0, 0.0, math.degrees(lg.theta)], "side": sd[lg.name][0],
+                          "dist": sd[lg.name][1]} for lg in legs]
+    return c
+
+
+def test_stop_limits_only_bind_inside_corners(lcfg):
+    wp = make_job.load_wallplan()
+    out = make_job.stop_limits(lcfg, wp.legs(lcfg))                           # the L: ARES outside the corner
+    for lg in wp.legs(lcfg):
+        lo, hi = out[lg.name]
+        assert lo <= -1000.0 and hi >= wp.leg_length(lcfg, lg.n0) + 1000.0, (lg.name, lo, hi)
+    ins = _inside_c(lcfg)
+    lim = make_job.stop_limits(ins, wp.legs(ins), 840.0)
+    assert lim["B"] == pytest.approx((460.0, 820.0))                          # between A's and C's plate bands
+    assert lim["A"][1] == pytest.approx(1160.0) and lim["C"][0] == pytest.approx(720.0)   # clear of B's plates
+
+
+def test_stop_poses_per_side_keep_the_heading_inside_the_c(lcfg):
+    wp = make_job.load_wallplan()
+    ins = _inside_c(lcfg)
+    T = config.leg_frames(ins)
+    for lg in wp.legs(ins):
+        d, side = make_job.leg_dist(ins, lg), make_job.leg_side(ins, lg)
+        p = make_job.stop_pose(ins, d, 500.0, T[lg.name], side)
+        assert p.theta_deg == pytest.approx(0.0, abs=1e-9)                    # ARES never turns inside the C
+        assert lg.from_wall(p.x_mm, p.y_mm) == pytest.approx((500.0, d))      # on the leg's ARES side, at its distance
+    assert (make_job.leg_side(lcfg, wp.legs(lcfg)[0]), make_job.leg_dist(lcfg, wp.legs(lcfg)[0])) == ("front", 740.0)
