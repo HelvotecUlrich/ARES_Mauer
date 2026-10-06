@@ -2,6 +2,7 @@
 
     py.exe tools/measure_target.py repeat --host IP [--n 10] [--boards calib,W0] [--settle-s 0,0.5,1,2 --move-mm 20]
     py.exe tools/measure_target.py poses --host IP --poses poses.json [--boards calib] [--report out.json]
+    py.exe tools/measure_target.py mount [--boards calib] [--move-mm 10] [--exposure-us 20000] [--yes]
 
 Chain: T_base_board = T_base_flange (RTDE at the exposure, mauer.capture) @ T_flange_cam (--handeye, default
 [vision] handeye_file; --nominal-mount = [camera.mount] PLACEHOLDER, planning/simulation only) @ T_cam_board (solvePnP
@@ -17,6 +18,16 @@ poses: look poses from a JSON file (format: tools/calib_handeye.py docstring; `c
   makes one around the deck calib board); the same board measured from every pose. The spread of T_base_board over
   the poses is THE validation of intrinsics + hand-eye (in-sample hand-eye consistency alone is not).
 
+mount: is the camera mounted as [camera.mount] says (2026-10-06, first table test, before any larger move)? A board
+  lies anywhere in view (flat on the table is best). Without motion (--move-mm 0): the board's distance and tilt with
+  the nominal mount. With --move-mm D (default 10): the TCP moves D mm along base +x and back, then base +y and back
+  (pure translations at 20 mm/s, so the pendant's TCP and payload do not matter - the block sets neither). The
+  board's apparent shift in the camera frame gives R_base_cam (Kabsch), with R_base_flange from the joint angles
+  (nominal UR5 DH, mauer.simworld.ur5_fk - PolyScope 3.3 streams no tcp_offset) -> R_flange_cam, compared with
+  [camera.mount]: which flange axis the image right / image down / optical axis point along. Translations only: the
+  camera position (150 mm off the axis) is left to the hand-eye calibration; an adapter turned on the flange shows up
+  as a rotation about the flange z axis.
+
 --ursim: URSim + mauer.simcam.SynthCamera rendering the calib board at its nominal deck pose with a ground-truth
 T_flange_cam = nominal @ --inject (see tools/calib_handeye.py); results are also compared with that ground truth.
 Real robot: --host required, typed confirmation before the first motion (--yes skips), refuses to move while
@@ -28,6 +39,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -259,6 +271,134 @@ def cmd_poses(args) -> int:
     return 0 if any(s["n"] >= 2 for s in report["boards"].values()) else 1
 
 
+# ── mount ─────────────────────────────────────────────────────────────────────
+MOUNT_V, MOUNT_A = 0.02, 0.2         # m/s, m/s² for the mount-check translations (slow, short)
+MOUNT_TOL_DEG = 5.0                  # nominal intrinsics + nominal DH: a correct mount lands well inside this
+
+
+def rotation_from_pairs(a_vecs, b_vecs) -> np.ndarray:
+    """Rotation R with R @ a_i ≈ b_i (Kabsch on unit vectors). Two pairs suffice: their cross product is the third."""
+    A = [np.asarray(v, float) / np.linalg.norm(v) for v in a_vecs]
+    B = [np.asarray(v, float) / np.linalg.norm(v) for v in b_vecs]
+    if len(A) == 2:
+        A.append(np.cross(A[0], A[1]) / np.linalg.norm(np.cross(A[0], A[1])))
+        B.append(np.cross(B[0], B[1]) / np.linalg.norm(np.cross(B[0], B[1])))
+    U, _, Vt = np.linalg.svd(sum(np.outer(b, a) for a, b in zip(A, B)))
+    return U @ np.diag([1.0, 1.0, np.sign(np.linalg.det(U @ Vt))]) @ Vt
+
+
+def axis_name(v) -> str:
+    """Nearest frame axis of direction v, e.g. '+y (3.1 deg off)'."""
+    v = np.asarray(v, float) / np.linalg.norm(v)
+    i = int(np.argmax(np.abs(v)))
+    return f"{'-' if v[i] < 0 else '+'}{'xyz'[i]} ({np.degrees(np.arccos(min(1.0, abs(v[i])))):.1f} deg off)"
+
+
+def mount_verdict(R_flange_cam: np.ndarray, R_nominal: np.ndarray, tol_deg: float = MOUNT_TOL_DEG) -> dict:
+    """Measured vs configured camera orientation in the flange frame: angle, axes, ok."""
+    dR = R_nominal.T @ R_flange_cam
+    ang = float(np.degrees(np.arccos(np.clip((np.trace(dR) - 1.0) / 2.0, -1.0, 1.0))))
+    return {"angle_deg": ang, "ok": ang <= tol_deg, "rpy_deg": list(g.xyz_rpy(g.make_T(R_flange_cam, np.zeros(3)))[1]),
+            "image_right": axis_name(R_flange_cam[:, 0]), "image_down": axis_name(R_flange_cam[:, 1]),
+            "optical_axis": axis_name(R_flange_cam[:, 2]),
+            "nominal": {k: axis_name(R_nominal[:, i]) for i, k in enumerate(("image_right", "image_down",
+                                                                              "optical_axis"))}}
+
+
+def grab_boards(rig: ch.Rig, specs: dict, intr, vcfg: dict, settle_s: float) -> dict:
+    """Wait for the arm to stand still (+ settle_s), one image, every board measured (vision.detect.measure)."""
+    from mauer.vision.detect import measure
+    rig.link.wait_until(lambda x: float(np.max(np.abs(x.actual_qd))) < 1e-3, 5.0)
+    time.sleep(settle_s)
+    return measure(rig.camera.grab().image, specs, intr, vcfg)
+
+
+def cmd_mount(args) -> int:
+    from mauer.simworld import ur5_fk
+    cfg = config.load(args.config)
+    specs = select_specs(cfg, args.boards)
+    X = config.T_flange_cam_nominal(cfg)
+    intr, intr_label = ch.load_intrinsics(args, cfg, args.ursim)
+    vcfg = cfg.get("vision", {})
+    settle = float(args.settle_s) if args.settle_s is not None else 0.5
+    xyz, rpy = g.xyz_rpy(X)
+    print(f"nominal T_flange_cam [camera.mount] xyz {np.round(xyz, 2).tolist()} mm, rpy {np.round(rpy, 2).tolist()} "
+          f"deg, intrinsics {intr_label}", flush=True)
+    rig = ch.open_rig(args, cfg)
+    report = {"kind": "mount", "move_mm": args.move_mm, "intrinsics": intr_label}
+    try:
+        if args.exposure_us:
+            print(f"exposure {rig.camera.set_exposure_us(args.exposure_us):.0f} us", flush=True)
+        st0 = rig.link.state()
+        T0, R_bf = st0.T_base_tcp_mm(), ur5_fk(st0.actual_q)[:3, :3]
+        seen0 = grab_boards(rig, specs, intr, vcfg, settle)
+        ok0 = {n: bp for n, bp in seen0.items() if bp.ok}
+        for n, bp in seen0.items():
+            if bp.n_corners:
+                print(f"{n}: {bp.n_corners} corners, RMS {bp.rms_px:.2f} px" + ("" if bp.ok else f" ({bp.reason})"),
+                      flush=True)
+        if not ok0:
+            print("no board measured - put a board in view (flat on the table), check focus/exposure", flush=True)
+            return 1
+        name = max(ok0, key=lambda n: ok0[n].n_corners)
+        T_cb = ok0[name].T_cam_board
+        normal = R_bf @ X[:3, :3] @ T_cb[:3, 2]
+        tilt = float(np.degrees(np.arccos(min(1.0, abs(normal[2])))))
+        print(f"using {name}: {np.linalg.norm(T_cb[:3, 3]):.0f} mm from the camera; board normal {tilt:.1f} deg from "
+              f"vertical with the nominal mount (about 0 for a board flat on the table)", flush=True)
+        report.update(board=name, distance_mm=float(np.linalg.norm(T_cb[:3, 3])), tilt_nominal_deg=tilt)
+        if args.move_mm <= 0.0:
+            return 0
+        if not ch.confirm_motion(args, f"4 moves of {args.move_mm:g} mm at {MOUNT_V * 1000:.0f} mm/s from the current "
+                                       "pose: base +x and back, base +y and back (pendant TCP and payload stay active)"):
+            print("not confirmed - nothing moved", flush=True)
+            return 1
+        d_base, d_cam, R_err = [], [], []
+        for k in (0, 1):
+            d = np.zeros(3)
+            d[k] = args.move_mm
+            for T, tag in ((g.transl(*d) @ T0, f"mount_+{'xy'[k]}"), (T0, f"mount_back_{'xy'[k]}")):
+                r = rig.link.run_block(script.movel(T, MOUNT_A, MOUNT_V), tag, args.timeout_s)
+                if not r.ok:
+                    print(f"{tag} failed: {r.error} - stopping", flush=True)
+                    return 1
+                if tag.startswith("mount_+"):
+                    st = rig.link.state()
+                    bp = grab_boards(rig, specs, intr, vcfg, settle).get(name)
+                    if bp is None or not bp.ok:
+                        print(f"{name} lost after base +{'xy'[k]} ({'not seen' if bp is None else bp.reason})",
+                              flush=True)
+                        return 1
+                    d_base.append(st.T_base_tcp_mm()[:3, 3] - T0[:3, 3])
+                    d_cam.append(T_cb[:3, 3] - bp.T_cam_board[:3, 3])      # the board moves against the camera
+                    R_err.append(g.pose_delta(bp.T_cam_board, T_cb)[1])
+        R_cam_base = rotation_from_pairs(d_base, d_cam)
+        R_fc = R_bf.T @ R_cam_base.T
+        v = mount_verdict(R_fc, X[:3, :3])
+        for k in (0, 1):
+            pred = X[:3, :3].T @ R_bf.T @ d_base[k]
+            ang = np.degrees(np.arccos(np.clip(pred @ d_cam[k] / np.linalg.norm(pred) / np.linalg.norm(d_cam[k]),
+                                               -1.0, 1.0)))
+            print(f"base +{'xy'[k]}: TCP moved {np.linalg.norm(d_base[k]):.2f} mm, board shift in the camera "
+                  f"{np.linalg.norm(d_cam[k]):.2f} mm, {ang:.1f} deg from the nominal-mount prediction; board turned "
+                  f"{R_err[k]:.2f} deg", flush=True)
+        print(f"measured R_flange_cam rpy {', '.join(f'{a:.1f}' for a in v['rpy_deg'])} deg -> "
+              f"{v['angle_deg']:.1f} deg from [camera.mount]", flush=True)
+        for k in ("image_right", "image_down", "optical_axis"):
+            print(f"  {k.replace('_', ' '):13s} along flange {v[k]:24s} (config: {v['nominal'][k]})", flush=True)
+        print("MOUNT OK: matches [camera.mount]" if v["ok"] else
+              f"MOUNT DIFFERS from [camera.mount] by {v['angle_deg']:.0f} deg - check before any larger move", flush=True)
+        report.update(verdict=v, d_base_mm=[list(map(float, x)) for x in d_base],
+                      d_cam_mm=[list(map(float, x)) for x in d_cam])
+        return 0 if v["ok"] else 3
+    except KeyboardInterrupt:
+        print(f"interrupted - abort: {rig.link.abort()}", flush=True)
+        return 130
+    finally:
+        rig.close()
+        write_report(args.report, report)
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -283,6 +423,14 @@ def build_parser() -> argparse.ArgumentParser:
                                                                       "each shot [mm] (settle-time experiment)")
         else:
             p.add_argument("--poses", required=True, help="poses JSON (calib_handeye.py plan --write)")
+    p = sub.add_parser("mount", help="is the camera mounted as [camera.mount] says? (two small translations)")
+    p.add_argument("--boards", default="all", help="comma-separated board names or 'all'")
+    p.add_argument("--intrinsics", default=None)
+    p.add_argument("--nominal-intrinsics", action="store_true")
+    p.add_argument("--report", default=None, help="write the results as JSON")
+    p.add_argument("--move-mm", type=float, default=10.0, help="translation along base x and y [mm]; 0 = no motion")
+    p.add_argument("--exposure-us", type=float, default=None, help="exposure for this check [us]")
+    ch.add_robot_args(p, "wait after the arm stops before each image [s] (default 0.5)")
     return ap
 
 
@@ -290,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("rtde").setLevel(logging.ERROR)
-    return {"repeat": cmd_repeat, "poses": cmd_poses}[args.cmd](args)
+    return {"repeat": cmd_repeat, "poses": cmd_poses, "mount": cmd_mount}[args.cmd](args)
 
 
 if __name__ == "__main__":
