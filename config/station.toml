@@ -154,8 +154,10 @@ lens = "IDS-12M23-C1228"    # CONFIRMED: Samuel 2026-10-02; 2/3" image circle, 1
                             # Ø29 × 47.6 mm, 90 g (IDS shop listing); chosen over IDS-8M118-C1220 (same 12 mm, 1/1.8")
 focal = 12.0                # CONFIRMED datasheet [mm] -> field of view 31.5° × 26.5° on this sensor
 lens_mod = 80.0             # CONFIRMED datasheet: minimal object distance [mm]
-working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm field, 0.073 mm/px; focus + iris fixed and
-                            # locked (F5.6–8), changing them = new hand-eye calibration
+working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm field, 0.073 mm/px. CONFIRMED 2026-10-06
+                            # (Samuel, table test): focus set on the calib board at ~320 mm from the lens front (ruler),
+                            # iris F5.6, both rings locked; reference frame data/cam_check/live/
+                            # live_2026-10-06_153031.png. Changing them = new intrinsics + hand-eye calibration
 power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max 600 mA (UR5 manual 1.9.4), camera
                             # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
 ip = "192.168.1.5"          # CONFIRMED 2026-10-06 (table test, Samuel): opened and grabbed at this IP. Collides with
@@ -171,7 +173,8 @@ packet_size = "auto"        # ASSUMPTION: "auto" keeps the size the IDS GenTL ne
 n_buffers = 3               # ASSUMPTION: acquisition buffers (software trigger, one frame at a time)
 load_default_userset = true # ASSUMPTION: load the camera user set "Default" on open (known state), then apply the above
 pixel_format = "Mono8"      # ASSUMPTION: 5.1 MB per frame, ~45 ms on GigE, enough for the marker work
-exposure_us = 5000.0        # PLACEHOLDER: set at the first test with the real light (the arm stands still)
+exposure_us = 76354.0       # CONFIRMED 2026-10-06 (Samuel, cam_check live): F5.6, lab light at the table, no pixel
+                            # saturated. Long: images only with the arm still; the light on ARES will differ
 gain = 1.0                  # PLACEHOLDER
 settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the image – Heini thesis needed 2 s for a
                             # vibrating mount; ARES sway on the sprung casters not measured yet
