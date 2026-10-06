@@ -207,11 +207,12 @@ def test_station_trip_moves_stones_into_the_magazine(rdk_fresh, cfg, tmp_path):
     assert len(sim.st) == 17 and sim.pose.delta(stop.ares)[0] < 1e-6       # ARES back at the stop
 
 
-# ── the C of the config (2026-10-06, wall distance 840 mm) ───────────────────────────────────────────────────────────
+# ── the C of the config (2026-10-06, ARES inside) ───────────────────────────────────────────────────────────────────
 def test_c_self_test_and_first_stones_of_leg_c(rdk_fresh):
-    """The C as configured: the collision self-test at 840 mm (ARES driven into the wall is reported), legs A and B
-    built without motion, the leg-C boards seen from the C stop and C's first stones next to B's inside face (the
-    second corner) placed with collision-checked motion."""
+    """The C as configured (ARES inside, A on its right and C on its left at 580 mm, B in front at 840 mm): the
+    collision self-test (ARES driven sideways into leg A is reported), legs A and B built without motion, the leg-C
+    boards seen from the C stop and C's first stones next to B (the second corner) placed with collision-checked
+    motion."""
     import simulate as S
     from make_job import build_nominal
     cfg = rc.load_config()

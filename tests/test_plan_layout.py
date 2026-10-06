@@ -1,5 +1,6 @@
 """tools/plan_layout.py for walls of any number of legs (the C of 2026-10-06 and the L of 2026-10-05): candidate
 parsing and the leg frames of with_legs (butt corners), no planning (the evaluation runs in --evaluate)."""
+import copy
 import importlib.util
 import math
 
@@ -26,7 +27,9 @@ def test_parse_legs():
 
 
 def test_with_legs_c_is_two_butt_corners():
-    cfg = config.load()
+    """Corners away from ARES's side (ARES outside the C) - the configured C has ARES inside (next test)."""
+    cfg = copy.deepcopy(config.load())
+    cfg["wall"]["ares_inside"] = False
     c = pl.with_legs(cfg, (10, 7, 5))
     legs = c["wall"]["legs"]
     assert [lg["name"] for lg in legs] == ["A", "B", "C"]
@@ -52,3 +55,15 @@ def test_with_legs_reproduces_the_l_and_shape_names():
         assert a["xyz_in_wall"] == pytest.approx(b["xyz_in_wall"], abs=0.005)
         assert math.isclose(a["rpy_in_wall_deg"][2], b["rpy_in_wall_deg"][2])
     assert pl.shape_name(lc) == "L wall"
+
+
+def test_with_legs_inside_c_turns_towards_ares_and_keeps_sides():
+    cfg = config.load()
+    assert cfg["wall"]["ares_inside"] is True
+    c = pl.with_legs(cfg, (10, 7, 5))
+    legs = c["wall"]["legs"]
+    assert [lg["rpy_in_wall_deg"][2] for lg in legs] == pytest.approx([0.0, 90.0, 180.0])     # C back above A
+    assert legs[1]["xyz_in_wall"][1] > 0 and legs[2]["xyz_in_wall"][1] > legs[1]["xyz_in_wall"][1]
+    assert [(lg["side"], lg["dist"]) for lg in legs] == [("right", 580.0), ("front", 840.0), ("left", 580.0)]
+    for a, b in zip(legs, cfg["wall"]["legs"]):                              # the config's C is exactly this
+        assert a["xyz_in_wall"] == pytest.approx(b["xyz_in_wall"], abs=0.005)

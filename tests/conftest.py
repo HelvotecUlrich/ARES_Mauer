@@ -42,6 +42,7 @@ def l_config():
     from mauer import config
     cfg = copy.deepcopy(config.load())
     cfg["wall"]["shape"] = "L"
+    cfg["wall"]["ares_inside"] = False                    # ARES worked outside the L's corner
     cfg["wall"]["dist_nominal"] = 740.0                   # the L's wall distance (the C: 840 mm)
     cfg["wall"]["legs"] = copy.deepcopy(L_LEGS)
     for t in cfg["targets"]:
