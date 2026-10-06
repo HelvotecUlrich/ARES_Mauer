@@ -186,6 +186,10 @@ settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the i
 # centre 17.526 - 12 = 5.5 mm behind it (thin lens, ASSUMPTION). Camera bottom face (4 x M3) screwed to the wall on +y
 # -> image down = flange +y (ASSUMPTION: sensor upright in the housing). The real value comes from the hand-eye
 # calibration (calib/handeye.json).
+# Orientation CONFIRMED 2026-10-06 (table test, tools/measure_target.py mount, two 10 mm base translations, nominal
+# intrinsics, report data/mount_check/mount_2026-10-06.json): image right = flange +x, image down = flange +y, optical
+# axis = flange +z, measured 3.4 deg from rpy_deg below (within the check's accuracy); calib board flat on the table
+# 0.9 deg from the nominal optical axis. The position (xyz) is not checked by it - hand-eye calibration.
 xyz = [-150.0, 0.0, 6.86]   # ASSUMPTION (design)
 rpy_deg = [0.0, 0.0, 0.0]   # ASSUMPTION (design)
 
