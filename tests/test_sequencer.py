@@ -273,7 +273,9 @@ def test_step_mode_confirms_every_motion(cfg, job10, tmp_path):
 
 # ── (v) real-run preflight ────────────────────────────────────────────────────
 def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
-    problems = preflight_real(cfg, job10, intrinsics_file=tmp_path / "none_i.json",
+    no_host = copy.deepcopy(cfg)
+    no_host["ur"]["host"] = ""                              # the config's host is set since 2026-10-06
+    problems = preflight_real(no_host, job10, intrinsics_file=tmp_path / "none_i.json",
                               handeye_file=tmp_path / "none_h.json")
     text = "\n".join(problems)
     for frag in ("[ur] host is empty", "[ur] payload_tool_kg <= 0", "[brick] mass_kg <= 0", "camera intrinsics missing",

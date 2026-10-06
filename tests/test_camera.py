@@ -723,7 +723,8 @@ def test_open_camera_files(tmp_path):
 def test_open_camera_ids_uses_config(fake_ids):
     f = fake_ids()
     cfg = config.load()
-    cfg["camera"]["serial"] = str(f.devices[0].serial)     # the real camera's serial is in the config
+    cfg["camera"]["serial"] = str(f.devices[0].serial)     # the real camera's serial and IP are in the config
+    cfg["camera"]["ip"] = ids.ip_str(f.devices[0].ip_int)
     cam = open_camera(cfg, "ids", verbose=False, search_install=False)
     try:
         assert isinstance(cam, ids.IdsCamera) and cam.is_open

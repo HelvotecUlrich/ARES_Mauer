@@ -6,6 +6,7 @@ Cameras: SynthCamera (rendered boards, clock = the world clock) and FileCamera (
 The full capture -> dataset -> solve loop of calib_handeye runs against a fake rig whose run_block "moves" instantly
 and rejects poses without a nominal UR5 IK solution like the controller's IK guard (error code 1).
 """
+import copy
 import logging
 import math
 import re
@@ -389,8 +390,10 @@ def test_plan_cli_and_refusals(cfg, tmp_path, capsys):
     assert not ds.exists() and "refusing to move the real robot" in capsys.readouterr().out
     assert mt.main(["poses", "--poses", str(out), "--host", "192.0.2.1", "--nominal-mount",
                     "--nominal-intrinsics"]) == 2
+    no_host = copy.deepcopy(cfg)
+    no_host["ur"]["host"] = ""                              # the config's host is set since 2026-10-06
     with pytest.raises(SystemExit, match="host"):
-        ch.resolve_host(ch.build_parser().parse_args(["verify"]), cfg)
+        ch.resolve_host(ch.build_parser().parse_args(["verify"]), no_host)
     assert ch.resolve_host(ch.build_parser().parse_args(["verify", "--ursim"]), cfg) == ch.URSIM_HOST
 
 

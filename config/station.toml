@@ -158,10 +158,9 @@ working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm fie
                             # locked (F5.6–8), changing them = new hand-eye calibration
 power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max 600 mA (UR5 manual 1.9.4), camera
                             # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
-ip = "192.168.50.10"        # PLACEHOLDER: persistent camera IP (set once with ids_ipconfig) in its own subnet on a
-                            # dedicated laptop NIC; must not collide with the ARES subnets 192.168.1/24, 192.168.200/24,
-                            # 169.254/16 (MA 10_robot/ipc_c6030/IP_CONFIG_erwan.md). As delivered the camera answers at
-                            # 192.168.0.1 (IDS peak enumeration 2026-10-05) -> not openable until the IP is set
+ip = "192.168.1.5"          # CONFIRMED 2026-10-06 (table test, Samuel): opened and grabbed at this IP. Collides with
+                            # the ARES subnet 192.168.1/24 (MA 10_robot/ipc_c6030/IP_CONFIG_erwan.md, also 192.168.200/24,
+                            # 169.254/16) -> move it to its own subnet (ids_ipconfig) before it goes on ARES
 serial = "4110073444"       # CONFIRMED: IDS peak 26.06.2 enumeration 2026-10-05, the only IDS camera attached (model
                             # string "GV-51FxCP-M", MAC 00:1B:A2:21:21:13) – check against the camera label
 cti_path = ""               # "" = GENICAM_GENTL64_PATH, then the IDS install folder; on this laptop (CONFIRMED
@@ -396,19 +395,22 @@ search_mm = 2500.0          # ASSUMPTION: search area around start and goal
 # UR5 CB3 link from the laptop (research 2026-10-05, tested against URSim CB3 3.15.8): RTDE (official UR client,
 # BSD-3, vendored in mauer/ur/rtde) streams the state at 125 Hz; one URScript `def` program per step over port 30002
 # with start/done markers in RTDE output registers; Dashboard Server for power, brakes and protective stops.
-host = ""                   # PLACEHOLDER: UR5 IP (PolyScope > Setup Robot > Network) – not known yet
+host = "192.168.56.101"     # CONFIRMED 2026-10-06 (table test, lab switch): Dashboard + RTDE answer. The lab's UR5
+                            # runs PolyScope 3.3.3.292: RTDE protocol v1 only (vendored client patched, see its
+                            # README), no tcp_offset field, output_int_register 24..47 do not exist
 dashboard_port = 29999      # CONFIRMED: UR Dashboard Server
 script_port = 30002         # CONFIRMED: secondary client interface (URScript)
 rtde_port = 30004           # CONFIRMED: RTDE
 rtde_hz = 125.0             # CONFIRMED: CB3 RTDE maximum frequency
-reg_started = 24            # CONFIRMED range: output_int_register 24..47 belongs to RTDE (0..23 fieldbus)
-reg_done = 25
-reg_error = 26              # ASSUMPTION: output_int_register for block error codes (0 none, 1 IK unreachable)
+reg_started = 20            # ASSUMPTION: 24..47 (reserved for RTDE since 3.9) are missing on PolyScope 3.3.3
+reg_done = 21               # (probe 2026-10-06); 0..23 are shared with the fieldbus there. 20..22 read 0 for 2 s on
+reg_error = 22              # 2026-10-06 (nothing writes them) - assumed free of fieldbus/PLC use. reg_error: block
+                            # error codes (0 none, 1 IK unreachable)
 contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
 abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
-do_grip_close = 1           # PLACEHOLDER: Gino's code pulses standard DO1 to close, DO0 to open; real wiring open
-do_grip_open = 0            # PLACEHOLDER
+do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel): the gripper switches on an edge of standard DO0 (open)
+do_grip_open = 0            # and DO1 (close; his message said "opens" for both, read as close = DO1 as in Gino's code)
 grip_pulse_s = 0.5          # PLACEHOLDER
 grip_wait_s = 1.0           # PLACEHOLDER: EHPS-20-A stroke time not looked up
 payload_tool_kg = 0.0       # PLACEHOLDER: gripper + adapter + camera + bracket; 0 = unknown -> real runs refuse to start

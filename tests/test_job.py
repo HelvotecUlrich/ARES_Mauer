@@ -232,7 +232,8 @@ def test_validate_station_stacks(job):
 def test_config_status_parser():
     st = mjob.config_status()
     assert st["[ares] steer_axis_x"]["status"] == "CONFIRMED"
-    assert st["[ur] host"]["status"] == "PLACEHOLDER"
+    assert st["[ur] host"]["status"] == "CONFIRMED"                         # lab UR5, 2026-10-06
+    assert st["[ur] payload_tool_kg"]["status"] == "PLACEHOLDER"
     assert st["[camera.mount] xyz"]["status"] == "ASSUMPTION"               # inline tag (design value 2026-10-05)
     assert st["[[targets]] W3.xyz"]["status"] == "PLACEHOLDER"              # from the [[targets]] block comment
     assert st["[[targets]] S0.xyz"]["status"] == "PLACEHOLDER"              # own inline tag

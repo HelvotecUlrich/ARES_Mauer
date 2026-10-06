@@ -28,6 +28,7 @@ import numpy as np
 from ..geometry import T_to_ur, transl, ur_str, ur_to_T
 
 # Output integer registers 24..47 belong to external RTDE clients (SM p.111 l.4613-4623; 0..23 = fieldbus/PLC).
+# PolyScope 3.3 (the lab's UR5) has only 0..23: [ur] reg_* = 20..22 there (probe 2026-10-06).
 REG_STARTED = 24        # [ur] reg_started: block id, first statement of a block
 REG_DONE = 25           # [ur] reg_done: block id, last statement (after is_steady)
 REG_ERROR = 26          # ASSUMPTION: error code register (0 = none), reset at the start of every block
