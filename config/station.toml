@@ -176,8 +176,10 @@ packet_size = "auto"        # ASSUMPTION: "auto" keeps the size the IDS GenTL ne
 n_buffers = 3               # ASSUMPTION: acquisition buffers (software trigger, one frame at a time)
 load_default_userset = true # ASSUMPTION: load the camera user set "Default" on open (known state), then apply the above
 pixel_format = "Mono8"      # ASSUMPTION: 5.1 MB per frame, ~45 ms on GigE, enough for the marker work
-exposure_us = 76354.0       # CONFIRMED 2026-10-06 (Samuel, cam_check live): F5.6, lab light at the table, no pixel
-                            # saturated. Long: images only with the arm still; the light on ARES will differ
+exposure_us = 60000.0       # CONFIRMED 2026-10-06 (exposure sweep, F5.6, lab light at the table, board filling the
+                            # image): 99.5 % percentile 221, 0 % saturated; 76354 us (set in cam_check live earlier
+                            # that day) saturated 19 % after the light changed. Images only with the arm still; the
+                            # light on ARES will differ. Exposure does not change the calibration (focus/iris do)
 gain = 1.0                  # PLACEHOLDER
 settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the image – Heini thesis needed 2 s for a
                             # vibrating mount; ARES sway on the sprung casters not measured yet
