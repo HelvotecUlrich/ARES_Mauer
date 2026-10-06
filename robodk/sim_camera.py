@@ -13,6 +13,12 @@ Pitfall (observed 2026-10-05): a textured object (board PNG via AddFile) that is
 first Cam2D camera was opened renders black in every camera - add all boards before opening a camera (the study
 and build_station.build do). Open cameras with RDK.Render(True); snapshots then also work with rendering off.
 
+Pitfall (probe 2026-10-06, RoboDK 6.0.0.26652): closing the camera WINDOW (its X) leaves the item valid, but every
+later Cam2D_Snapshot returns a 160 x 133 image; re-opening the item (Cam2D_Add(item, params, cam)) restores the full
+size. Minimising or resizing the window has no effect, the flag NO_TASKBAR shrinks every snapshot the same way. The
+camera window is therefore opened MINIMIZED (a 2472 x 2064 window covers the screen) and grab_bgr re-opens the
+camera once when a snapshot has the wrong size.
+
 The render is ideal: no blur, noise, distortion, vignetting or exposure effects - set_exposure_us / set_gain are
 only recorded in the frame meta. Use intrinsics() as the "calibrated" camera for simulated images.
 """
@@ -69,6 +75,7 @@ class SimCamera:
         self.exposure_us = float(cfg["camera"].get("exposure_us", 0.0))
         self.gain = float(cfg["camera"].get("gain", 1.0))
         self._flat = False
+        self._last_shape = None
         if hide is None:
             hide = []
             if attach_to.Name() == "Camera":
@@ -78,20 +85,21 @@ class SimCamera:
         self.hide = list(hide)
 
     # ── Camera protocol ──────────────────────────────────────────────────────
+    def _params(self, flat: bool) -> str:
+        return camera_params(self.cfg, True, flat, self.far_mm) + " MINIMIZED"
+
     def open(self) -> "SimCamera":
         if self.cam is None:
-            self.cam = self.RDK.Cam2D_Add(self.attach_to, camera_params(self.cfg, True, False, self.far_mm))
+            self.cam = self.RDK.Cam2D_Add(self.attach_to, self._params(False))
             if not self.cam.Valid():
                 raise RuntimeError("Cam2D_Add failed")
         else:                                   # re-open the same item (e.g. after Cam2D_Close(0) elsewhere)
-            self.RDK.Cam2D_Add(self.attach_to, camera_params(self.cfg, True, self._flat, self.far_mm), self.cam)
+            self.RDK.Cam2D_Add(self.attach_to, self._params(self._flat), self.cam)
         time.sleep(self.warmup_s)
         for _ in range(5):                      # first snapshot after Cam2D_Add is unreliable
-            try:
-                self.grab_bgr()
+            if self._snapshot() is not None:
                 break
-            except RuntimeError:
-                time.sleep(0.3)
+            time.sleep(0.3)
         return self
 
     def close(self) -> None:
@@ -145,14 +153,25 @@ class SimCamera:
         if self.cam is None:
             raise RuntimeError("camera not open")
         if flat != self._flat:
-            self.RDK.Cam2D_SetParams(camera_params(self.cfg, True, flat, self.far_mm), self.cam)
+            self.RDK.Cam2D_SetParams(self._params(flat), self.cam)
             self._flat = flat
 
     def grab_bgr(self) -> np.ndarray:
-        """Colour render (H, W, 3) BGR uint8 of the current station state."""
-        import cv2
+        """Colour render (H, W, 3) BGR uint8 of the current station state. A snapshot of the wrong size (camera
+        window closed by the user, see the module docstring) re-opens the camera once."""
         if self.cam is None:
             raise RuntimeError("camera not open")
+        img = self._snapshot()
+        if img is None:
+            self.open()                         # Cam2D_Add on the existing item + warm-up
+            img = self._snapshot()
+        if img is None:
+            raise RuntimeError(f"bad snapshot: {self._last_shape} (also after re-opening the camera)")
+        return img
+
+    def _snapshot(self) -> np.ndarray | None:
+        """One Cam2D snapshot as BGR, None if it is empty or not width x height (shape kept in _last_shape)."""
+        import cv2
         shown = [it for it in self.hide if it.Visible()]
         for it in shown:
             it.setVisible(False)
@@ -164,8 +183,9 @@ class SimCamera:
         img = None
         if isinstance(data, (bytes, bytearray)) and len(data) > 0:
             img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        self._last_shape = None if img is None else img.shape
         if img is None or img.shape[:2] != (self.height, self.width):
-            raise RuntimeError(f"bad snapshot: {None if img is None else img.shape}")
+            return None
         return img
 
     def _meta(self) -> dict:

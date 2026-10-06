@@ -105,6 +105,67 @@ def test_snapshot_shape_and_frame(rdk, cfg):
     f.Delete()
 
 
+def _windows(pid: int, prefix: str) -> list:
+    """Visible top-level windows of process pid whose title starts with prefix (Win32)."""
+    import ctypes
+    from ctypes import wintypes
+    u32 = ctypes.windll.user32
+    out = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cb(h, _):
+        p = wintypes.DWORD()
+        u32.GetWindowThreadProcessId(h, ctypes.byref(p))
+        if p.value == pid and u32.IsWindowVisible(h):
+            n = u32.GetWindowTextLengthW(h)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            u32.GetWindowTextW(h, buf, n + 1)
+            if buf.value.startswith(prefix):
+                out.append(h)
+        return True
+    u32.EnumWindows(cb, 0)
+    return out
+
+
+def _restore_and_close(rdk, title: str) -> None:
+    """What the user did on 2026-10-06: restore the camera window and close it with its X (Win32 messages)."""
+    import ctypes
+    import time
+    wins = _windows(rdk.NEW_INSTANCE.pid, title)
+    assert wins, f"camera window {title!r} not found"
+    for h in wins:
+        ctypes.windll.user32.ShowWindow(h, 9)                  # SW_RESTORE
+    time.sleep(1.0)
+    for h in wins:
+        ctypes.windll.user32.PostMessageW(h, 0x0010, 0, 0)     # WM_CLOSE
+    time.sleep(1.5)
+
+
+def test_snapshot_survives_a_closed_camera_window(rdk, cfg):
+    """A closed camera window made RoboDK return 160 x 133 snapshots (run 2026-10-06 aborted with 'bad snapshot:
+    (133, 160, 3)'). The window now opens MINIMIZED, where closing it does no harm; a camera opened the old way
+    (normal window) reproduces the failure and grab re-opens it."""
+    f = rdk.AddFrame("cam_frame_close")
+    f.setPose(g.to_robodk(g.transl(0, 0, 500) @ g.rotx(np.pi)))
+    with SimCamera(rdk, cfg, f) as cam:
+        _restore_and_close(rdk, "cam_frame_close - Size")
+        assert cam._snapshot() is not None                     # minimised window: closing it is harmless
+    f2 = rdk.AddFrame("cam_frame_close2")
+    f2.setPose(f.Pose())
+    cam = SimCamera(rdk, cfg, f2)
+    cam._params = lambda flat: rc.camera_params(cfg, True, flat, cam.far_mm)     # old: normal window
+    cam.open()
+    try:
+        _restore_and_close(rdk, "cam_frame_close2 - Size")
+        assert cam._snapshot() is None and cam._last_shape[:2] == (133, 160)    # the failure is reproduced
+        del cam._params                                         # re-open with the module's parameters
+        assert cam.grab().image.shape == (2064, 2472)
+    finally:
+        cam.close()
+    f.Delete()
+    f2.Delete()
+
+
 def test_board_png_pose_error_below_1mm(rdk, cfg):
     spec = ref_spec(cfg)
     T_w_board = g.transl(100.0, -50.0, 3.0) @ g.rotz(np.radians(20)) @ g.rotx(np.pi)   # face up, turned
