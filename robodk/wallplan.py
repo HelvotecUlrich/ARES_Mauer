@@ -71,12 +71,16 @@ class Stone:
 
 @dataclass(frozen=True)
 class Leg:
-    """A straight leg of the wall: n0 full stones in course 0, frame (x, y, theta) in the wall frame."""
+    """A straight leg of the wall: n0 full stones in course 0, frame (x, y, theta) in the wall frame. side / dist:
+    on which side of ARES the leg is built ("front", "left", "right", "rear") and at which distance ARES centre ->
+    leg centreline [mm]; "" / None = the [wall] side / dist_nominal of the config."""
     name: str
     n0: int
     x: float = 0.0
     y: float = 0.0
     theta: float = 0.0      # rad, heading of the leg x axis in the wall frame
+    side: str = ""
+    dist: float | None = None
 
     def to_wall(self, u: float, v: float) -> tuple[float, float]:
         c, s = math.cos(self.theta), math.sin(self.theta)
@@ -132,7 +136,11 @@ def legs(cfg: Mapping) -> list[Leg]:
         rpy = [float(v) for v in d.get("rpy_in_wall_deg", (0.0, 0.0, 0.0))]
         if abs(xyz[2]) > EPS or abs(rpy[0]) > EPS or abs(rpy[1]) > EPS:
             raise ValueError(f"leg {d.get('name')!r}: only floor-level legs rotated about z are supported")
-        out.append(Leg(str(d["name"]), int(d["n0"]), xyz[0], xyz[1], math.radians(rpy[2])))
+        side = str(d.get("side", ""))
+        if side not in ("", "front", "left", "right", "rear"):
+            raise ValueError(f"leg {d.get('name')!r}: side {side!r} not front / left / right / rear")
+        out.append(Leg(str(d["name"]), int(d["n0"]), xyz[0], xyz[1], math.radians(rpy[2]), side,
+                       None if d.get("dist") is None else float(d["dist"])))
     names = [lg.name for lg in out]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate leg names {names}")
@@ -149,14 +157,18 @@ def corner_gap(cfg: Mapping) -> float:
     return float(cfg.get("wall", {}).get("corner_gap_mm", 0.0))
 
 
-def butt_corner(cfg: Mapping, prev: Leg, n0: int, name: str) -> Leg:
-    """The next leg of an L: perpendicular at the far end of `prev`, on the side away from prev's ARES side (-y of
-    prev). prev runs through the corner (its course-0 end is flush with the body of the new leg's outer face), the new
-    leg starts at prev's inside face (vertical butt joint) - beyond prev's ribs and the corner gap: origin = prev
-    (length - width/2, -(width/2 + rib_mm + corner_gap_mm)), heading prev - 90 deg."""
+def butt_corner(cfg: Mapping, prev: Leg, n0: int, name: str, towards_ares: bool = False, side: str = "",
+                dist: float | None = None) -> Leg:
+    """The next leg: perpendicular at the far end of `prev`, on the side away from prev's ARES side (-y of prev; ARES
+    works OUTSIDE the corner - the L / C of 2026-10-05/06) or, towards_ares, on prev's ARES side (+y; ARES works
+    INSIDE the corner - the inside C of 2026-10-06). prev runs through the corner (its course-0 end is flush with the
+    body of the new leg's outer face), the new leg starts at the face of prev it meets (vertical butt joint) - beyond
+    prev's ribs and the corner gap: origin = prev (length - width/2, -+(width/2 + rib_mm + corner_gap_mm)), heading
+    prev -+ 90 deg. side / dist: see Leg."""
     W = float(cfg["brick"]["width"])
-    x, y = prev.to_wall(leg_length(cfg, prev.n0) - W / 2.0, -(W / 2.0 + rib(cfg) + corner_gap(cfg)))
-    return Leg(name, int(n0), x, y, _wrap(prev.theta - math.pi / 2.0))
+    sgn = 1.0 if towards_ares else -1.0
+    x, y = prev.to_wall(leg_length(cfg, prev.n0) - W / 2.0, sgn * (W / 2.0 + rib(cfg) + corner_gap(cfg)))
+    return Leg(name, int(n0), x, y, _wrap(prev.theta + sgn * math.pi / 2.0), side, dist)
 
 
 # ── layout ────────────────────────────────────────────────────────────────────
@@ -310,11 +322,13 @@ def sequence(cfg: dict, stones: list, reach: Callable[[int, float], bool], reach
 
 
 def sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, float], bool], lo: Mapping,
-                 hi: Mapping, grid: float, margin_mm: float = 0.0, max_stops: int = 50) -> list:
+                 hi: Mapping, grid: float, margin_mm: float = 0.0, max_stops: int = 50,
+                 a_lim: tuple[float, float] | None = None) -> list:
     """Plan of ONE leg: [(a_j, [Stone, ...]), ...] (a in the leg frame, multiples of `grid` so that full stones lie on
     reach-table grid points). First stop: the farthest position that leaves no stone behind the trailing reach edge;
     then as `sequence` (advance by whole pitches); a stop from which ALL remaining stones are reachable is put in the
-    middle of that window (never behind the previous stop). RuntimeError when stuck."""
+    middle of that window (never behind the previous stop). a_lim = (a_min, a_max): ARES may only stop there (e.g.
+    inside a C, between the other legs). RuntimeError when stuck."""
     if len({s.leg for s in stones}) > 1:
         raise ValueError("sequence_leg: stones of more than one leg")
     pitch_ = pitch(cfg)
@@ -322,9 +336,12 @@ def sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, fl
     placed: set = set()
     plan: list = []
     a_prev = None
+    lim_lo = -math.inf if a_lim is None else grid * math.ceil(a_lim[0] / grid - 1e-9)
+    lim_hi = math.inf if a_lim is None else grid * math.floor(a_lim[1] / grid + 1e-9)
     for _ in range(max_stops):
         open_ = [s for s in stones if s.key not in placed]
         a_min, a_max = _a_window(open_, lo, hi, grid, margin_mm)
+        a_min, a_max = max(a_min, lim_lo), min(a_max, lim_hi)
         if a_prev is not None:
             a_min = max(a_min, a_prev + grid)
         a = None
@@ -336,15 +353,15 @@ def sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, fl
                     break
         if a is None:
             if a_prev is None:
-                a = a_max                                      # farthest start that leaves nothing behind
+                a = min(max(a_max, lim_lo), lim_hi)            # farthest start that leaves nothing behind
             else:
                 m = 0
                 while all(math.floor((s.u - (a_prev + (m + 1) * pitch_) - margin_mm) / grid + 1e-6) * grid
                           >= lo[s.course] - EPS for s in open_):
                     m += 1
-                if m == 0:
+                a = min(a_prev + m * pitch_, lim_hi)
+                if m == 0 or a <= a_prev:
                     raise RuntimeError(f"leg {stones[0].leg}: stuck at a = {a_prev:.0f}: {len(open_)} stones left")
-                a = a_prev + m * pitch_
         batch = _fill_stop(cfg, stones, by_course, placed, reach, a)
         if not batch:
             raise RuntimeError(f"leg {stones[0].leg}: nothing placeable at a = {a:.0f} ({len(open_)} stones left)")
@@ -450,13 +467,18 @@ def check_plan_legs(cfg: Mapping, legs_: Sequence[Leg], stones: Sequence[Stone],
 
 
 def plan_legs(cfg: Mapping, legs_: Sequence[Leg], table: Mapping, half_stones: bool = True,
-              margin_mm: float = 0.0) -> tuple[list[Stone], dict[str, list]]:
-    """(stones, {leg: [(a, batch), ...]}) for every leg on the reach table; ValueError for an invalid plan."""
-    reach, lo, hi, grid = reach_fn(table, margin_mm=margin_mm)
+              margin_mm: float = 0.0, *, tables: Mapping[str, Mapping] | None = None,
+              a_limits: Mapping[str, tuple[float, float]] | None = None) -> tuple[list[Stone], dict[str, list]]:
+    """(stones, {leg: [(a, batch), ...]}) for every leg on the reach table - or on its own table in `tables` (legs
+    built on different sides of ARES) - with the stop limits `a_limits` {leg: (a_min, a_max)}; ValueError for an
+    invalid plan."""
     stones = layout_legs(cfg, legs_, half_stones)
-    plans = {lg.name: sequence_leg(cfg, [s for s in stones if s.leg == lg.name], reach, lo, hi, grid, margin_mm)
-             for lg in legs_}
+    plans = {}
+    for lg in legs_:
+        reach, lo, hi, grid = reach_fn((tables or {}).get(lg.name, table), margin_mm=margin_mm)
+        plans[lg.name] = sequence_leg(cfg, [s for s in stones if s.leg == lg.name], reach, lo, hi, grid, margin_mm,
+                                      a_lim=(a_limits or {}).get(lg.name))
     errors = check_plan_legs(cfg, legs_, stones, plans)
     if errors:
-        raise ValueError("invalid L plan: " + "; ".join(errors))
+        raise ValueError("invalid plan of the legs: " + "; ".join(errors))
     return stones, plans

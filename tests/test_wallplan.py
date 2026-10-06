@@ -154,3 +154,42 @@ def test_legs_from_config_and_validation(cfg):
     bad["half_brick"]["length"] = 120.0
     with pytest.raises(ValueError, match="bond offset"):
         wp.layout_leg(bad, legs[0])
+
+
+# ── legs built inside a corner (inside C, 2026-10-06) ─────────────────────────
+def test_butt_corner_towards_ares_mirrors_the_outside_corner(cfg):
+    A = wp.Leg("A", 10)
+    out, ins = wp.butt_corner(cfg, A, 7, "B"), wp.butt_corner(cfg, A, 7, "B", towards_ares=True, side="front", dist=840.0)
+    assert (ins.x, ins.y, math.degrees(ins.theta)) == pytest.approx((out.x, -out.y, -math.degrees(out.theta)))
+    assert ins.y == pytest.approx(cfg["brick"]["width"] / 2 + cfg["brick"]["rib_mm"] + cfg["wall"]["corner_gap_mm"])
+    assert (ins.side, ins.dist) == ("front", 840.0) and (out.side, out.dist) == ("", None)
+    C = wp.butt_corner(cfg, ins, 5, "C", towards_ares=True)
+    assert math.degrees(C.theta) == pytest.approx(180.0) and C.y > ins.y          # C runs back above A: a C
+    lg = [A, ins, C]
+    assert wp.check_legs(cfg, lg, wp.layout_legs(cfg, lg)) == []
+
+
+def test_stop_limits_keep_ares_between_the_other_legs(cfg):
+    """Leg B of the inside C on the front table at 840 mm: without limits the last stop is centred on the remaining
+    stones (a = 1280 - ARES would stand in leg C); with a_lim every stop lies in the window and every stone is placed."""
+    from mauer import reach_cache
+    table = reach_cache.get(cfg, 840.0, side="front")
+    B = wp.Leg("B", 7)
+    free = wp.plan_legs(cfg, [B], table, True, 20.0)[1]["B"]
+    assert max(a for a, _ in free) > 820.0
+    stones, plans = wp.plan_legs(cfg, [B], {}, True, 20.0, tables={"B": table}, a_limits={"B": (457.3, 820.0)})
+    assert all(460.0 <= a <= 820.0 for a, _ in plans["B"])
+    assert sorted(s.key for _, batch in plans["B"] for s in batch) == sorted(s.key for s in stones)
+    with pytest.raises(RuntimeError):                                           # no position reaches B's far end
+        wp.plan_legs(cfg, [B], table, True, 20.0, a_limits={"B": (0.0, 300.0)})
+
+
+def test_leg_side_and_distance_from_the_config(cfg):
+    import copy
+    c = copy.deepcopy(cfg)
+    c["wall"]["legs"][0]["side"], c["wall"]["legs"][0]["dist"] = "right", 580.0
+    lg = wp.legs(c)
+    assert (lg[0].side, lg[0].dist) == ("right", 580.0) and (lg[1].side, lg[1].dist) == ("", None)
+    c["wall"]["legs"][1]["side"] = "inside"
+    with pytest.raises(ValueError, match="side 'inside'"):
+        wp.legs(c)
