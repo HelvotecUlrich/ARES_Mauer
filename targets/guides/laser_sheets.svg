@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800mm" height="3100mm" viewBox="0 0 800 3100"><g fill="none" stroke-width="0.6">
+<rect x="0" y="0.0" width="800" height="600" stroke="green"/>
+<text x="4" y="12.0" font-size="10" fill="green">sheet 1</text>
+<polygon stroke="red" points="552.69,578.00 552.69,198.00 10.00,198.00 10.00,245.90 22.10,239.90 22.10,276.10 10.00,270.10 10.00,318.00 27.20,318.00 30.00,321.80 32.80,318.00 227.20,318.00 230.00,321.80 232.80,318.00 432.69,318.00 432.69,395.20 428.89,398.00 432.69,400.80 432.69,578.00 480.69,578.00 474.69,590.00 510.69,590.00 504.69,578.00"/>
+<circle cx="519.19" cy="548.25" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="548.25" r="10.00" stroke="red"/>
+<circle cx="519.19" cy="447.75" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="447.75" r="10.00" stroke="red"/>
+<circle cx="492.69" cy="558.00" r="4.15" stroke="red"/>
+<circle cx="492.69" cy="438.00" r="4.15" stroke="red"/>
+<circle cx="519.19" cy="348.25" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="348.25" r="10.00" stroke="red"/>
+<circle cx="519.19" cy="247.75" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="247.75" r="10.00" stroke="red"/>
+<circle cx="492.69" cy="358.00" r="4.15" stroke="red"/>
+<circle cx="492.69" cy="238.00" r="4.15" stroke="red"/>
+<circle cx="380.25" cy="231.50" r="10.00" stroke="red"/>
+<circle cx="380.25" cy="284.50" r="10.00" stroke="red"/>
+<circle cx="279.75" cy="231.50" r="10.00" stroke="red"/>
+<circle cx="279.75" cy="284.50" r="10.00" stroke="red"/>
+<circle cx="390.00" cy="258.00" r="4.15" stroke="red"/>
+<circle cx="270.00" cy="258.00" r="4.15" stroke="red"/>
+<circle cx="180.25" cy="231.50" r="10.00" stroke="red"/>
+<circle cx="180.25" cy="284.50" r="10.00" stroke="red"/>
+<circle cx="79.75" cy="231.50" r="10.00" stroke="red"/>
+<circle cx="79.75" cy="284.50" r="10.00" stroke="red"/>
+<circle cx="190.00" cy="258.00" r="4.15" stroke="red"/>
+<circle cx="70.00" cy="258.00" r="4.15" stroke="red"/>
+<text x="546.7" y="584.0" font-size="9" fill="blue">A8-B1</text>
+<polygon stroke="red" points="10.00,192.00 630.00,192.00 630.00,144.10 617.90,150.10 617.90,113.90 630.00,119.90 630.00,72.00 612.80,72.00 610.00,68.20 607.20,72.00 412.80,72.00 410.00,68.20 407.20,72.00 212.80,72.00 210.00,68.20 207.20,72.00 10.00,72.00"/>
+<circle cx="59.75" cy="158.50" r="10.00" stroke="red"/>
+<circle cx="59.75" cy="105.50" r="10.00" stroke="red"/>
+<circle cx="160.25" cy="158.50" r="10.00" stroke="red"/>
+<circle cx="160.25" cy="105.50" r="10.00" stroke="red"/>
+<circle cx="50.00" cy="132.00" r="4.15" stroke="red"/>
+<circle cx="170.00" cy="132.00" r="4.15" stroke="red"/>
+<circle cx="259.75" cy="158.50" r="10.00" stroke="red"/>
+<circle cx="259.75" cy="105.50" r="10.00" stroke="red"/>
+<circle cx="360.25" cy="158.50" r="10.00" stroke="red"/>
+<circle cx="360.25" cy="105.50" r="10.00" stroke="red"/>
+<circle cx="250.00" cy="132.00" r="4.15" stroke="red"/>
+<circle cx="370.00" cy="132.00" r="4.15" stroke="red"/>
+<circle cx="459.75" cy="158.50" r="10.00" stroke="red"/>
+<circle cx="459.75" cy="105.50" r="10.00" stroke="red"/>
+<circle cx="560.25" cy="158.50" r="10.00" stroke="red"/>
+<circle cx="560.25" cy="105.50" r="10.00" stroke="red"/>
+<circle cx="450.00" cy="132.00" r="4.15" stroke="red"/>
+<circle cx="570.00" cy="132.00" r="4.15" stroke="red"/>
+<text x="16.0" y="186.0" font-size="9" fill="blue">A0-A2</text>
+<rect x="0" y="620.0" width="800" height="600" stroke="green"/>
+<text x="4" y="632.0" font-size="10" fill="green">sheet 2</text>
+<polygon stroke="red" points="552.69,1198.00 552.69,818.00 10.00,818.00 10.00,865.90 22.10,859.90 22.10,896.10 10.00,890.10 10.00,938.00 27.20,938.00 30.00,941.80 32.80,938.00 227.20,938.00 230.00,941.80 232.80,938.00 432.69,938.00 432.69,1015.20 428.89,1018.00 432.69,1020.80 432.69,1198.00 480.69,1198.00 474.69,1210.00 510.69,1210.00 504.69,1198.00"/>
+<circle cx="519.19" cy="1168.25" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="1168.25" r="10.00" stroke="red"/>
+<circle cx="519.19" cy="1067.75" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="1067.75" r="10.00" stroke="red"/>
+<circle cx="492.69" cy="1178.00" r="4.15" stroke="red"/>
+<circle cx="492.69" cy="1058.00" r="4.15" stroke="red"/>
+<circle cx="519.19" cy="968.25" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="968.25" r="10.00" stroke="red"/>
+<circle cx="519.19" cy="867.75" r="10.00" stroke="red"/>
+<circle cx="466.19" cy="867.75" r="10.00" stroke="red"/>
+<circle cx="492.69" cy="978.00" r="4.15" stroke="red"/>
+<circle cx="492.69" cy="858.00" r="4.15" stroke="red"/>
+<circle cx="380.25" cy="851.50" r="10.00" stroke="red"/>
+<circle cx="380.25" cy="904.50" r="10.00" stroke="red"/>
+<circle cx="279.75" cy="851.50" r="10.00" stroke="red"/>
+<circle cx="279.75" cy="904.50" r="10.00" stroke="red"/>
+<circle cx="390.00" cy="878.00" r="4.15" stroke="red"/>
+<circle cx="270.00" cy="878.00" r="4.15" stroke="red"/>
+<circle cx="180.25" cy="851.50" r="10.00" stroke="red"/>
+<circle cx="180.25" cy="904.50" r="10.00" stroke="red"/>
+<circle cx="79.75" cy="851.50" r="10.00" stroke="red"/>
+<circle cx="79.75" cy="904.50" r="10.00" stroke="red"/>
+<circle cx="190.00" cy="878.00" r="4.15" stroke="red"/>
+<circle cx="70.00" cy="878.00" r="4.15" stroke="red"/>
+<text x="546.7" y="1204.0" font-size="9" fill="blue">B5-C1</text>
+<polygon stroke="red" points="22.00,812.00 622.00,812.00 622.00,764.10 609.90,770.10 609.90,733.90 622.00,739.90 622.00,692.00 604.80,692.00 602.00,688.20 599.20,692.00 404.80,692.00 402.00,688.20 399.20,692.00 204.80,692.00 202.00,688.20 199.20,692.00 22.00,692.00 22.00,740.00 10.00,734.00 10.00,770.00 22.00,764.00"/>
+<circle cx="51.75" cy="778.50" r="10.00" stroke="red"/>
+<circle cx="51.75" cy="725.50" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="778.50" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="725.50" r="10.00" stroke="red"/>
+<circle cx="42.00" cy="752.00" r="4.15" stroke="red"/>
+<circle cx="162.00" cy="752.00" r="4.15" stroke="red"/>
+<circle cx="251.75" cy="778.50" r="10.00" stroke="red"/>
+<circle cx="251.75" cy="725.50" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="778.50" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="725.50" r="10.00" stroke="red"/>
+<circle cx="242.00" cy="752.00" r="4.15" stroke="red"/>
+<circle cx="362.00" cy="752.00" r="4.15" stroke="red"/>
+<circle cx="451.75" cy="778.50" r="10.00" stroke="red"/>
+<circle cx="451.75" cy="725.50" r="10.00" stroke="red"/>
+<circle cx="552.25" cy="778.50" r="10.00" stroke="red"/>
+<circle cx="552.25" cy="725.50" r="10.00" stroke="red"/>
+<circle cx="442.00" cy="752.00" r="4.15" stroke="red"/>
+<circle cx="562.00" cy="752.00" r="4.15" stroke="red"/>
+<text x="16.0" y="806.0" font-size="9" fill="blue">A3-A5</text>
+<rect x="0" y="1240.0" width="800" height="600" stroke="green"/>
+<text x="4" y="1252.0" font-size="10" fill="green">sheet 3</text>
+<polygon stroke="red" points="10.00,1830.00 747.50,1830.00 747.50,1765.80 735.40,1771.80 735.40,1735.60 747.50,1741.60 747.50,1632.10 735.40,1638.10 735.40,1601.90 747.50,1607.90 747.50,1550.00 10.00,1550.00"/>
+<circle cx="80.00" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="80.00" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="58.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="102.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="184.75" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="184.75" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="285.25" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="285.25" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="175.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="295.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="389.75" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="389.75" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="490.25" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="490.25" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="380.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="500.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="594.75" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="594.75" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="695.25" cy="1646.50" r="10.00" stroke="red"/>
+<circle cx="695.25" cy="1593.50" r="10.00" stroke="red"/>
+<circle cx="585.00" cy="1620.00" r="4.15" stroke="red"/>
+<circle cx="705.00" cy="1620.00" r="4.15" stroke="red"/>
+<polygon stroke="red" points="177.20,1820.00 317.80,1820.00 317.80,1687.40 177.20,1687.40"/>
+<text x="16.0" y="1824.0" font-size="9" fill="blue">station1</text>
+<polygon stroke="red" points="22.00,1544.00 759.50,1544.00 759.50,1264.00 22.00,1264.00 22.00,1322.00 10.00,1316.00 10.00,1352.00 22.00,1346.00 22.00,1455.70 10.00,1449.70 10.00,1485.70 22.00,1479.70"/>
+<circle cx="74.25" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="74.25" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="174.75" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="174.75" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="64.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="184.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="279.25" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="279.25" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="379.75" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="379.75" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="269.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="389.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="484.25" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="484.25" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="584.75" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="584.75" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="474.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="594.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="689.50" cy="1360.50" r="10.00" stroke="red"/>
+<circle cx="689.50" cy="1307.50" r="10.00" stroke="red"/>
+<circle cx="667.50" cy="1334.00" r="4.15" stroke="red"/>
+<circle cx="711.50" cy="1334.00" r="4.15" stroke="red"/>
+<polygon stroke="red" points="451.70,1534.00 592.30,1534.00 592.30,1401.40 451.70,1401.40"/>
+<text x="16.0" y="1538.0" font-size="9" fill="blue">station2</text>
+<rect x="0" y="1860.0" width="800" height="600" stroke="green"/>
+<text x="4" y="1872.0" font-size="10" fill="green">sheet 4</text>
+<polygon stroke="red" points="22.00,2450.00 422.00,2450.00 422.00,2402.10 409.90,2408.10 409.90,2371.90 422.00,2377.90 422.00,2330.00 404.80,2330.00 402.00,2326.20 399.20,2330.00 204.80,2330.00 202.00,2326.20 199.20,2330.00 22.00,2330.00 22.00,2378.00 10.00,2372.00 10.00,2408.00 22.00,2402.00"/>
+<circle cx="51.75" cy="2416.50" r="10.00" stroke="red"/>
+<circle cx="51.75" cy="2363.50" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="2416.50" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="2363.50" r="10.00" stroke="red"/>
+<circle cx="42.00" cy="2390.00" r="4.15" stroke="red"/>
+<circle cx="162.00" cy="2390.00" r="4.15" stroke="red"/>
+<circle cx="251.75" cy="2416.50" r="10.00" stroke="red"/>
+<circle cx="251.75" cy="2363.50" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="2416.50" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="2363.50" r="10.00" stroke="red"/>
+<circle cx="242.00" cy="2390.00" r="4.15" stroke="red"/>
+<circle cx="362.00" cy="2390.00" r="4.15" stroke="red"/>
+<text x="16.0" y="2444.0" font-size="9" fill="blue">A6-A7</text>
+<polygon stroke="red" points="22.00,2320.20 622.00,2320.20 622.00,2272.30 609.90,2278.30 609.90,2242.10 622.00,2248.10 622.00,2200.20 604.80,2200.20 602.00,2196.40 599.20,2200.20 404.80,2200.20 402.00,2196.40 399.20,2200.20 204.80,2200.20 202.00,2196.40 199.20,2200.20 22.00,2200.20 22.00,2248.20 10.00,2242.20 10.00,2278.20 22.00,2272.20"/>
+<circle cx="51.75" cy="2286.70" r="10.00" stroke="red"/>
+<circle cx="51.75" cy="2233.70" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="2286.70" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="2233.70" r="10.00" stroke="red"/>
+<circle cx="42.00" cy="2260.20" r="4.15" stroke="red"/>
+<circle cx="162.00" cy="2260.20" r="4.15" stroke="red"/>
+<circle cx="251.75" cy="2286.70" r="10.00" stroke="red"/>
+<circle cx="251.75" cy="2233.70" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="2286.70" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="2233.70" r="10.00" stroke="red"/>
+<circle cx="242.00" cy="2260.20" r="4.15" stroke="red"/>
+<circle cx="362.00" cy="2260.20" r="4.15" stroke="red"/>
+<circle cx="451.75" cy="2286.70" r="10.00" stroke="red"/>
+<circle cx="451.75" cy="2233.70" r="10.00" stroke="red"/>
+<circle cx="552.25" cy="2286.70" r="10.00" stroke="red"/>
+<circle cx="552.25" cy="2233.70" r="10.00" stroke="red"/>
+<circle cx="442.00" cy="2260.20" r="4.15" stroke="red"/>
+<circle cx="562.00" cy="2260.20" r="4.15" stroke="red"/>
+<text x="16.0" y="2314.2" font-size="9" fill="blue">B2-B4</text>
+<polygon stroke="red" points="22.00,2190.40 602.00,2190.40 602.00,2070.40 404.80,2070.40 402.00,2066.60 399.20,2070.40 204.80,2070.40 202.00,2066.60 199.20,2070.40 22.00,2070.40 22.00,2118.40 10.00,2112.40 10.00,2148.40 22.00,2142.40"/>
+<circle cx="51.75" cy="2156.90" r="10.00" stroke="red"/>
+<circle cx="51.75" cy="2103.90" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="2156.90" r="10.00" stroke="red"/>
+<circle cx="152.25" cy="2103.90" r="10.00" stroke="red"/>
+<circle cx="42.00" cy="2130.40" r="4.15" stroke="red"/>
+<circle cx="162.00" cy="2130.40" r="4.15" stroke="red"/>
+<circle cx="251.75" cy="2156.90" r="10.00" stroke="red"/>
+<circle cx="251.75" cy="2103.90" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="2156.90" r="10.00" stroke="red"/>
+<circle cx="352.25" cy="2103.90" r="10.00" stroke="red"/>
+<circle cx="242.00" cy="2130.40" r="4.15" stroke="red"/>
+<circle cx="362.00" cy="2130.40" r="4.15" stroke="red"/>
+<circle cx="451.75" cy="2156.90" r="10.00" stroke="red"/>
+<circle cx="451.75" cy="2103.90" r="10.00" stroke="red"/>
+<circle cx="552.25" cy="2156.90" r="10.00" stroke="red"/>
+<circle cx="552.25" cy="2103.90" r="10.00" stroke="red"/>
+<circle cx="442.00" cy="2130.40" r="4.15" stroke="red"/>
+<circle cx="562.00" cy="2130.40" r="4.15" stroke="red"/>
+<text x="16.0" y="2184.4" font-size="9" fill="blue">C2-C4</text>
+<rect x="0" y="2480.0" width="800" height="600" stroke="green"/>
+<text x="4" y="2492.0" font-size="10" fill="green">sheet 5</text>
+<polygon stroke="red" points="22.00,3070.00 192.60,3070.00 192.60,2909.40 22.00,2909.40 22.00,2998.00 10.00,2992.00 10.00,3028.00 22.00,3022.00"/>
+<polygon stroke="red" points="37.00,3056.00 177.60,3056.00 177.60,2923.40 37.00,2923.40"/>
+<text x="16.0" y="3064.0" font-size="9" fill="blue">test2</text>
+<polygon stroke="red" points="198.60,3070.00 418.60,3070.00 418.60,3022.10 406.50,3028.10 406.50,2991.90 418.60,2997.90 418.60,2950.00 401.40,2950.00 398.60,2946.20 395.80,2950.00 198.60,2950.00"/>
+<circle cx="248.35" cy="3036.50" r="10.00" stroke="red"/>
+<circle cx="248.35" cy="2983.50" r="10.00" stroke="red"/>
+<circle cx="348.85" cy="3036.50" r="10.00" stroke="red"/>
+<circle cx="348.85" cy="2983.50" r="10.00" stroke="red"/>
+<circle cx="238.60" cy="3010.00" r="4.15" stroke="red"/>
+<circle cx="358.60" cy="3010.00" r="4.15" stroke="red"/>
+<text x="204.6" y="3064.0" font-size="9" fill="blue">test1</text>
+</g></svg>

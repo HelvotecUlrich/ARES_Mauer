@@ -67,8 +67,10 @@ mass_kg = 0.0               # UNKNOWN: like the full stone (CAD volume of the cu
 side = "front"              # Samuel 2026-10-02: wall on the short (front) edge of ARES, ARES moves sideways (+y)
 courses = 4                 # CONFIRMED: Samuel 2026-10-05 (4 stones high); was 3 (PLACEHOLDER)
 bond_offset = 0.5           # running bond, half a stone (100 mm) = pin spacing of the stone
-base_z = 20.0               # PLACEHOLDER: first course stands on a 20 mm base plate with sockets (the existing plates
-                            # are for the older 144 mm stone)
+base_z = 26.0               # ASSUMPTION (design 2026-10-06, [guides]): the first course stands on a 22 mm printed socket
+                            # block on the 4 mm MDF guide strip; the pin tips (23.5 mm) end 2.5 mm above the floor in
+                            # relief holes of the strip. The former 20 mm were impossible (the pins would stand on the
+                            # floor). In the reach-cache key -> reach tables recomputed in RoboDK
 dist_nominal = 840.0        # CONFIRMED: Samuel 2026-10-06, ARES farther from the wall (was 740 = reach study 2026-10-02, the plates
                             # then ended 10 mm before the ARES front). 840: ARES front 220 mm from the wall face, 110 mm
                             # from the board plates; top-course reach +-600 mm (+-660 at 740, RoboDK reach table); the C
@@ -336,17 +338,17 @@ rpy_deg = [180.0, 0.0, 0.0]
 name = "S0"
 parent = "station"
 first_id = 200
-xyz = [45.0, 128.0, 404.1]  # PLACEHOLDER: face up on its MDF plate on the table top (table_z 400 + [plates] mdf_t 4
-                            # + paper_t 0.1; the station frame lies at floor level - z was 3 = on the floor, look study
-                            # 2026-10-05), centre (85, 96) at the left table end, 765 mm left of the UR axis: the
-                            # camera sits 150 mm beside the flange axis, so the gripper must hang over free table, not
-                            # over a stack (board positions scanned with make_job's look search + mauer.armcheck)
+xyz = [197.5, 112.3, 4.1]  # ASSUMPTION (floor station 2026-10-06): face up on its plain MDF plate (140 x 132 mm) in a
+                            # window of the station MDF piece on the ARES side of the row: plate centre (237.5, 76.3) =
+                            # row centre -500 mm, board origin = plate centre + (-40, +36), z = [plates] mdf_t 4 + paper
+                            # 0.1. make_job's look search (mauer.armcheck, full station, ARES chassis) found looks for
+                            # S0 and S1 at every offset 150..650 mm; 500 -> 1000 mm baseline
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "S1"
 parent = "station"
 first_id = 210
-xyz = [1575.0, 128.0, 404.1]  # PLACEHOLDER: centre (1615, 96) at the right table end (baseline 1530 mm)
+xyz = [1197.5, 112.3, 4.1]  # ASSUMPTION: plate centre (1237.5, 76.3) = row centre +500 mm (see S0)
 rpy_deg = [180.0, 0.0, 0.0]
 
 [plates]
@@ -367,32 +369,71 @@ notch_depth = 4.0
 finger_hole_d = 20.0        # ASSUMPTION: lifting holes beside the board
 margin = 14.0               # ASSUMPTION: plain plates (station, calib): MDF margin around the paper quiet zone
 
+[guides]
+# Floor guides of the first course and of the pick-up station (design Samuel/Claude 2026-10-06; tools/make_guides.py ->
+# targets/guides/): per wall leg a laser-cut 4 mm MDF strip ([plates] mdf_t; Trotec 800 x 600 mm) centred on the wall
+# line, fixed with carpet tape. Per first-course stone a 3D-printed socket block (Bambu Lab X1E, height [wall] base_z -
+# mdf_t = 22 mm, four conical sockets through) sits on the strip, located by two pegs in laser-cut peg holes; the pin
+# tips end in relief holes of the strip. The strip stays solid (a through-pocket for the block would leave 5 mm rails).
+# The strip's ARES-side edge (leg v = +60 = the block face the existing board plates were cut for, [plates]
+# block_width) carries V-tabs at the stone joints (u = 200 k) for the plates' V-notches. Strips are cut into pieces
+# (<= segment_max, cut cut_offset after a stone joint so a V-tab stays whole) joined with dovetails; the last two
+# stones of a leg and the first two of the next form one L-piece across the corner (exact corner offset).
+strip_width = 120.0         # = [plates] block_width (plates rest against the edge at v = +60)
+segment_max = 760.0         # ASSUMPTION: longest piece along x on the 800 x 600 bed (20 mm margins)
+sheet = [800.0, 600.0]      # CONFIRMED: Trotec bed (Samuel 2026-10-06)
+sheet_margin = 10.0         # ASSUMPTION
+dovetail = [24.0, 12.0, 6.0]  # ASSUMPTION: dovetail joint neck width, depth, flare per side [mm]
+joint_clearance = 0.1       # ASSUMPTION: per side in the dovetail (laser kerf compensated by the cutter software)
+cut_offset = 20.0           # ASSUMPTION: piece joints 20 mm after a stone joint (the V-tab at the joint stays whole)
+corner_arm_stones = 2       # ASSUMPTION: stones per arm of a corner L-piece (2 + 2 fit 800 x 600)
+block_length = 160.0        # ASSUMPTION: socket block along the stone (pins +-50.25 + cone r 18.8 + 11 mm wall)
+block_width = 110.0         # ASSUMPTION: across (pins +-26.5 + 18.8 + 9.7 mm wall); the stone is 120 wide
+half_block_length = 60.0    # ASSUMPTION: socket block of a half stone (one pin pair, [half_brick] pin_across)
+peg_d = 8.0                 # ASSUMPTION: two pegs under every block (full: u +-peg_u, v 0; half: u +-half_peg_u)
+peg_len = 3.0               # ASSUMPTION: 1 mm shorter than the MDF is thick
+peg_hole_d = 8.3            # ASSUMPTION: laser-cut peg hole - cut the test strip first
+peg_u = 60.0                # ASSUMPTION: full block pegs at u +-60 on the centre line (clear of the cones)
+half_peg_u = 22.0           # ASSUMPTION: half block pegs at u +-22
+relief_d = 20.0             # ASSUMPTION: strip holes under the pins (the cone leaves the block at r 8.8; pin tip r 7.9)
+pin_along = 100.5           # CONFIRMED: stone CAD 2026-10-06, pin centres 100.54 mm apart along (y -49.72 / -150.26)
+pin_across = 53.0           # CONFIRMED: stone CAD, 53.06 mm across (x 33.54 / 86.60)
+pin_r_base = 18.55          # CONFIRMED: stone CAD cone fit, pin radius at the stone's underside (r 15.0 at 7.83 mm,
+pin_r_tip = 7.9             # 11.35 at 15.67 mm, 7.9 at the tip 23.5 mm below) -> half-angle 24.4 deg
+socket_clearance = 0.25     # ASSUMPTION: radial clearance of the printed cone - print the test block first
+socket_extra_depth = 1.0    # ASSUMPTION: socket 1 mm deeper than the pin (the stone sits on the block top)
+vtab = [5.6, 3.8]           # ASSUMPTION: V-tab width at the edge x height, 0.4 / 0.2 mm under the plates' notches
+                            # ([plates] notch_width 6 x notch_depth 4)
+window_clearance = 0.3      # ASSUMPTION: per side around the plain station plates in their windows
+
 [pickup_station]
-# Fixed pick-up station where ARES reloads its deck magazine when it is empty (Samuel 2026-10-02). Layout unknown –
-# everything here is a PLACEHOLDER so planning and simulation can run.
-# Station frame: origin at the front-left corner of the table top, x along the front edge, y away from ARES, z up.
-# Layout 2026-10-06 (Samuel: "put the stones on the loading dock, as many as fit" -> closer dock, stacks of 2): stone
-# positions from the nominal UR5 kinematics at the dock (pick + 150 mm approach in robodk/motion.py family; reach of
-# the stone centre, relative to the UR axis: row y 80 layer 1 +-660 / layer 2 +-530 mm, row y 300 +-460 / +-260 mm,
-# nothing at y 520), stacks at the magazine pitch (205 mm end to end, 220 mm across = room for the open jaws). 16 full
-# + 4 half stones: every trip refills the whole magazine (5 trips for the L instead of 19 with the 3 + 2 slots before).
-xyz_in_wall = [-1950.0, 1500.0, 0.0]   # PLACEHOLDER: station frame in the wall frame (z = floor level). Table front
-                                       # edge at wall y 1500 as before, the dock 140 mm closer: (-1100, 840) mm, 90 deg
-                                       # (a table front at y 1360 left no corridor between it and the leg-A plates)
-rpy_in_wall_deg = [0.0, 0.0, 0.0]      # PLACEHOLDER
-table_z = 400.0             # PLACEHOLDER: table top above the floor [mm]
-table_size = [1700.0, 400.0]  # PLACEHOLDER: table top x (along the front edge) x y [mm] from the station origin
-ares_xyz = [850.0, -660.0, 0.0]        # PLACEHOLDER: ARES base_link in the station frame when docked: ARES front
-                                       # (x 560) 100 mm from the table edge (was 240), UR axis at the table centre
-ares_rpy_deg = [0.0, 0.0, 90.0]        # PLACEHOLDER: ARES x (forward) towards the table (+y station)
-holder_z = 0.0              # PLACEHOLDER: stones stand directly on the table top (no holder)
-slots_xy = [[440, 80], [645, 80], [850, 80], [1055, 80], [1260, 80], [645, 300], [850, 300], [1055, 300]]
-                            # PLACEHOLDER: full-stone stack centres in the station frame [mm], stone length along x;
-                            # row 0 front face 18 mm behind the table edge (over the ribs)
-slot_layers = 2             # PLACEHOLDER: full stones stacked 2 high (pins in the sockets of the stone below)
-half_slots_xy = [[285, 80], [1415, 80], [490, 300], [1210, 300]]  # PLACEHOLDER: half-stone stack centres [mm] at
-                            # the row ends, 5 mm from the full stones (outside the layer-2 reach)
-half_slot_layers = 1        # PLACEHOLDER: single half stones (layer 2 out of reach at these positions)
+# Pick-up station ON THE FLOOR (Samuel 2026-10-06: "it's gonna be on the ground"; layout chosen 2026-10-06: one row in
+# front of ARES like a short wall leg). Stones on socket blocks ([guides]) in one laser-cut MDF piece; stacks 2 high
+# (pins in the sockets of the stone below). Reach from the front reach table at the wall distance 840 mm: layer 1 =
+# course 0 +-760 mm, layer 2 = course 1 +-740 mm (minus the 20 mm reach margin) along the row from the UR axis.
+# 6 full stacks at 205 mm pitch (5 mm gaps; the jaws open across the stone, not between the stacks) +-102.5 / 307.5 /
+# 512.5 mm and a half-stone stack at each end at +-667.5 mm: 12 full + 4 half stones per trip. The existing plain
+# S0 / S1 plates (140 x 132 mm) drop into closed windows (y 10..142.6, a 10 mm web in front) of the same MDF piece
+# on the ARES side of the row.
+# Station frame: origin at the front-left corner of the station area (ARES side = the windows' front edge), x along
+# the row, y away from ARES, z up from the floor.
+xyz_in_wall = [-1837.5, 1470.0, 0.0]  # ASSUMPTION: dock where the table station had it, (-1100, 840) in the wall
+                                      # frame, ARES facing +y; the row centre line 840 mm in front of base_link
+rpy_in_wall_deg = [0.0, 0.0, 0.0]     # ASSUMPTION
+table_z = 0.0               # no table: the stones stand on socket blocks on the floor (the "table" slab of the models
+                            # lies under the floor); table_size is the station area ARES must keep clear of
+table_size = [1475.0, 280.0]  # station area = the MDF piece: windows y 10..142.6, blocks y 155..265, stones to y
+                            # 271.7; x: stones +-717.5 around the centre + 20 mm
+row_y = 210.0               # stone row centre line in the station frame (windows to 142.6 + web 12.4 + block 55)
+holder_z = 26.0             # = [wall] base_z: stones stand on the socket blocks
+ares_xyz = [737.5, -630.0, 0.0]       # ARES base_link at the dock: row centre line - 840 mm; ARES front (x 560) 70 mm
+                                      # before the station area
+ares_rpy_deg = [0.0, 0.0, 90.0]       # ARES x (forward) towards the row (+y station)
+slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [1045.0, 210.0], [1250.0, 210.0]]
+                            # full-stone stack centres (station x 737.5 -+512.5 / 307.5 / 102.5), length along x
+slot_layers = 2
+half_slots_xy = [[70.0, 210.0], [1405.0, 210.0]]   # half-stone stacks at 737.5 -+667.5
+half_slot_layers = 2
 
 [routes]
 # ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in

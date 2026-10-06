@@ -66,7 +66,7 @@ def test_place_pose_convention(job):
         assert not t.flip
         assert np.allclose(t.T_wall_tcp, g.transl(t.u_mm, 0.0, t.z_top_mm) @ g.rotx(math.pi), atol=1e-12)
     tops = sorted({t.z_top_mm for t in job.stones()})
-    assert tops == pytest.approx([140.0, 260.0, 380.0, 500.0])     # base 20 + k * 120 + 120 ([wall], [brick])
+    assert tops == pytest.approx([146.0, 266.0, 386.0, 506.0])     # base 26 + k * 120 + 120 ([wall], [brick])
     assert all(t.kind == "full" and t.leg is None and t.key == (t.course, t.index) for t in job.stones())
 
 
@@ -215,7 +215,8 @@ def test_station_stacks(job, cfg):
         st.take(sid)
         taken.append(sid)
     assert len(taken) == sum(s.kind == "full" for s in stn.slots)
-    assert all(stn.slot(i).layer == 2 for i in taken[:8]) and all(stn.slot(i).layer == 1 for i in taken[8:])
+    n_top = len({stn.slot(i).stack_id for i in taken})                       # one top stone per full stack first
+    assert all(stn.slot(i).layer == 2 for i in taken[:n_top]) and all(stn.slot(i).layer == 1 for i in taken[n_top:])
 
 
 def test_validate_station_stacks(job):
@@ -237,7 +238,7 @@ def test_config_status_parser():
     assert st["[ur] payload_cog_mm"]["status"] == "PLACEHOLDER"
     assert st["[camera.mount] xyz"]["status"] == "ASSUMPTION"               # inline tag (design value 2026-10-05)
     assert st["[[targets]] W3.xyz"]["status"] == "PLACEHOLDER"              # from the [[targets]] block comment
-    assert st["[[targets]] S0.xyz"]["status"] == "PLACEHOLDER"              # own inline tag
+    assert st["[[targets]] S0.xyz"]["status"] == "ASSUMPTION"               # own inline tag (floor station)
     assert st["[brick] mass_kg"]["status"] == "ASSUMPTION"
 
 
