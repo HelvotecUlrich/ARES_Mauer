@@ -108,15 +108,20 @@ def test_station_and_park(job, cfg):
     st = job.station
     ps = cfg["pickup_station"]
     assert np.allclose(st.T_wall_station, g.pose_xyz_rpy(ps["xyz_in_wall"], ps["rpy_in_wall_deg"]))
-    assert (st.dock.x_mm, st.dock.y_mm, st.dock.theta_deg) == pytest.approx((400.0, -800.0, 90.0))
-    n_half = ps["half_slot_rows"] * ps["half_slot_cols"]
-    assert len(st.slots) == ps["slot_rows"] * ps["slot_cols"] + n_half
-    assert sum(s.kind == "half" for s in st.slots) == n_half and all(s.ik_ok for s in st.slots if s.kind == "half")
-    assert 0 < len(st.take_order) < len(st.slots)            # PLACEHOLDER layout: most slots out of kinematic reach
+    assert (st.dock.x_mm, st.dock.y_mm, st.dock.theta_deg) == pytest.approx((*ps["ares_xyz"][:2], ps["ares_rpy_deg"][2]))
+    n_full = len(ps["slots_xy"]) * ps["slot_layers"]
+    n_half = len(ps["half_slots_xy"]) * ps["half_slot_layers"]
+    assert len(st.slots) == n_full + n_half and sum(s.kind == "half" for s in st.slots) == n_half
+    # the PLACEHOLDER layout of 2026-10-06 was laid out from the kinematic reach at the dock: every holder is usable
+    assert sorted(st.take_order) == sorted(s.id for s in st.slots) and all(s.ik_ok for s in st.slots)
+    assert not any("station slot" in w for w in job.meta["warnings"])
     for s in st.slots:
         h = cfg["brick"]["height"] if s.kind == "full" else cfg["half_brick"]["height"]
-        assert s.T_station_tcp[2, 3] == pytest.approx(ps["table_z"] + h)
-    assert any("station slots without a kinematic IK" in w for w in job.meta["warnings"])
+        assert s.T_station_tcp[2, 3] == pytest.approx(ps["table_z"] + ps["holder_z"] + s.layer * h)
+        x, y = (ps["slots_xy"] if s.kind == "full" else ps["half_slots_xy"])[int(s.stack_id[1:])]
+        assert s.T_station_tcp[:2, 3] == pytest.approx([x, y]) and s.id == f"{s.stack_id}l{s.layer}"
+    layers = [st.slot(i).layer for i in st.take_order]
+    assert layers == sorted(layers, reverse=True)            # emptied top layer first
     T_park = ur5_fk(job.park_q_rad)
     assert T_park[2, 2] == pytest.approx(-1.0, abs=1e-6)     # tool down
     expected = "[ur] park_q_deg" if "park_q_deg" in cfg["ur"] else "simulate.py"
@@ -190,6 +195,38 @@ def test_slot_state_respects_stacking(job):
     assert not mag.can_fill("r1y0l2")
     st = mjob.SlotState.station(job.station)
     assert len(st) == len(job.station.take_order) and st.next_take() == job.station.take_order[0]
+
+
+def test_station_stacks(job, cfg):
+    """Stacked station holders: a stone can only be taken when nothing lies on it, the next stone of a type is the
+    first takeable one in take order."""
+    stn = job.station
+    st = mjob.SlotState.station(stn)
+    low, top = stn.slot("s00l1"), stn.slot("s00l2")
+    assert low.stack_id == top.stack_id == "s00" and (low.layer, top.layer) == (1, 2)
+    assert top.T_station_tcp[2, 3] - low.T_station_tcp[2, 3] == pytest.approx(cfg["brick"]["height"])
+    assert not st.can_take("s00l1") and st.can_take("s00l2")
+    with pytest.raises(ValueError):
+        st.take("s00l1")
+    taken = []
+    while st.next_take(kind="full"):
+        sid = st.next_take(kind="full")
+        assert all(o not in st.filled for o in st.stack if st.stack[o] == st.stack[sid] and st.layer[o] > st.layer[sid])
+        st.take(sid)
+        taken.append(sid)
+    assert len(taken) == sum(s.kind == "full" for s in stn.slots)
+    assert all(stn.slot(i).layer == 2 for i in taken[:8]) and all(stn.slot(i).layer == 1 for i in taken[8:])
+
+
+def test_validate_station_stacks(job):
+    bad = copy.deepcopy(job)
+    bad.station.slot("s01l2").layer = 3                                       # gap in stack s01
+    bad.station.slot("s02l2").kind = "half"                                   # a half stone on a full one
+    bad.station.take_order.remove("s03l1")                                    # s03l2 would float
+    text = "\n".join(mjob.validate(bad))
+    for frag in ("station stack s01: layers [1, 3]", "station stack s02: mixed stone types",
+                 "station slot s03l2: in take_order but the slot(s) below it are not (['s03l1'])"):
+        assert frag in text, frag
 
 
 def test_config_status_parser():
@@ -416,10 +453,20 @@ def test_l_round_trip_and_v1_still_loads(ljob, job, tmp_path):
     d["magazine"].pop("initial_kinds")
     d.pop("legs")
     for s in d["station"]["slots"]:
-        s.pop("kind")
+        for k in ("kind", "layer", "stack"):
+            s.pop(k)
     v1 = mjob.from_dict(d)
     assert v1.version == 1 and mjob.validate(v1) == [] and all(t.kind == "full" for t in v1.stones())
     assert all(not s.route for s in v1.stops) and mjob.to_dict(v1) == d
+    assert all(s.layer == 1 and s.stack_id == s.id for s in v1.station.slots)   # v1: single holders
+    # a v2 file written before the stacked station (no layer / stack) loads as single holders too
+    d2 = mjob.to_dict(ljob)
+    for s in d2["station"]["slots"]:
+        s.pop("layer"), s.pop("stack")
+    old = mjob.from_dict(d2)
+    assert all(s.layer == 1 and s.stack_id == s.id for s in old.station.slots)
+    st = mjob.SlotState.station(old.station)
+    assert all(st.can_take(i) for i in old.station.take_order)
 
 
 def test_l_validation_catches_bad_routes(ljob):
@@ -460,21 +507,23 @@ def test_l_magazine_types_follow_the_stones(ljob):
 def test_reload_plan_unit(ljob):
     mag = mjob.SlotState.magazine(ljob.magazine, filled=[], kinds={})
     st = mjob.SlotState.station(ljob.station)
-    up = ["half", "full", "full", "half", "full", "full", "full"]
+    n_half = st.count("half")
+    up = ["half", "full", "full"] + ["half"] * n_half + ["full"]
     plan = mjob.reload_plan(mag, st, up)
-    # station: 3 full + 2 half -> the batch ends before the 4th full stone (5 of the 7)
-    assert [k for *_, k in plan] == ["full", "half", "full", "full", "half"]       # fill order (bottom first)
-    assert len(plan) == 5
+    # the station holds n_half half stones -> the batch ends before the (n_half + 1)-th half stone
+    n = 3 + n_half - 1
+    assert len(plan) == n and sorted(k for *_, k in plan) == sorted(up[:n])
+    assert [mid for _, mid, _ in plan] == mag.fill_order[:n]                  # fill order (bottom first)
     for ssid, mid, kind in plan:
         assert ljob.station.slot(ssid).kind == kind
-        st.take(ssid)
+        st.take(ssid)                                                        # raises if a stone lies on it
         mag.fill(mid, kind)
     got = []
-    for k in up[:5]:
+    for k in up[:n]:
         sid = mag.next_take(kind=k)
         assert sid == mag.next_take()                                        # the first takeable slot holds it
         got.append(mag.take(sid))
-    assert got == up[:5]
+    assert got == up[:n]
     with pytest.raises(ValueError):
         mjob.reload_plan(mjob.SlotState.magazine(ljob.magazine), st, up)    # magazine not empty
 

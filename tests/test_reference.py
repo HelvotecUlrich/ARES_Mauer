@@ -10,8 +10,8 @@ import pytest
 
 from mauer import config
 from mauer import geometry as g
-from mauer.reference import (PARENTS, Pose2D, after_rotation, after_translation, ares_pose, fit_frame, placements,
-                             relative_move, T_base_parent_from, T_wall_ares, tilt_deg, wrap_angle)
+from mauer.reference import (PARENTS, Pose2D, after_rotation, after_translation, ares_pose, board_centre, fit_frame,
+                             placements, relative_move, T_base_parent_from, T_wall_ares, tilt_deg, wrap_angle)
 from mauer.vision.targets import board_specs, corners_obj
 
 
@@ -137,7 +137,8 @@ def test_station_frame_from_both_station_boards(pl, specs):
     obs = {n: T_base_station @ _pl(pl, n).T_parent_board for n in ("S0", "S1")}
     fit = fit_frame(obs, pl, specs, "station")
     assert np.allclose(fit.T_base_parent, T_base_station, atol=1e-9)
-    assert fit.baseline_mm == pytest.approx(600.0, abs=1e-6)
+    c0, c1 = (board_centre(specs[n], _pl(pl, n).T_parent_board) for n in ("S0", "S1"))
+    assert fit.baseline_mm == pytest.approx(float(np.linalg.norm(c1 - c0)), abs=1e-6) == pytest.approx(1020.0)
 
 
 def test_ares_pose_in_the_wall_frame(cfg, T_base_wall):

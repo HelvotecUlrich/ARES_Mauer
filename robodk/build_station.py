@@ -209,12 +209,10 @@ def T_station_ares(cfg: dict) -> Mat:
 
 
 def table_extent(cfg: dict) -> tuple:
-    """(x_max, y_max) of the modelled table top in the station frame: from the origin (front-left corner) to half a
-    slot pitch beyond the last slot (derived from the PLACEHOLDER slot grid, ASSUMPTION)."""
-    p = cfg["pickup_station"]
-    x_max = p["slot_origin"][0] + (p["slot_cols"] - 0.5) * p["slot_pitch_x"]
-    y_max = p["slot_origin"][1] + (p["slot_rows"] - 0.5) * p["slot_pitch_y"]
-    return x_max, y_max
+    """(x_max, y_max) of the modelled table top in the station frame, from the origin (front-left corner):
+    mauer.floor.station_table_extent ([pickup_station] table_size, PLACEHOLDER) - the same table the routes avoid."""
+    from mauer.floor import station_table_extent
+    return station_table_extent(cfg)
 
 
 def add_pickup_station(RDK, cfg: dict, f_wall):

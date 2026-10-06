@@ -32,14 +32,15 @@ joints and via points):
   y -205 / 0 / 205 mm, 3 layers; pick pose transl(x, y, deck + layer H) @ rotz(pi/2) @ rotx(pi), simulate.py:106-108,
   deck = [ares] deck_top_z + [deck] holder_z) unless [deck] magazine_* keys exist; emptied top layer first
   (simulate.py:132-149), filled bottom first; slots without a kinematic IK solution (pick or approach pose) dropped;
-- pick-up station from [pickup_station]: station frame in the wall frame, docking pose, slot grid (stone length along
-  the station x axis, TCP = stone top at table_z + [pickup_station] holder_z (default 0) + stone height), look poses
-  for the station boards at the nominal dock; unreachable slots dropped (warning);
+- pick-up station from [pickup_station]: station frame in the wall frame, docking pose, stacked holders at the
+  slots_xy / half_slots_xy positions (stone length along the station x axis, TCP = stone top at table_z +
+  [pickup_station] holder_z (default 0) + layer x stone height), look poses for the station boards at the nominal
+  dock; unreachable slots and the slots stacked on them dropped (warning), emptied top layer first;
 - park pose: [ur] park_q_deg if present, else the IK of the compact pose robodk/simulate.py:280 starts from (TCP
   300 mm ahead of the UR base at the transfer height over a full magazine, simulate.py:114-117, tool down, seed
   [0, -100, 52, -42, -90, 0] deg) - not collision-checked here;
 - stone types: full / half ([half_brick], PLACEHOLDER); the magazine is planned per type (mauer.job.reload_plan,
-  the same rule as the sequencer) and the station has half-stone holders ([pickup_station] half_slot_*);
+  the same rule as the sequencer) and the station has half-stone holders ([pickup_station] half_slots_xy);
 - provenance: config sha256 and every PLACEHOLDER/ASSUMPTION/UNKNOWN config key it depends on.
 """
 from __future__ import annotations
@@ -391,34 +392,41 @@ def _magazine(ctx: _Ctx) -> mjob.Magazine:
 
 
 def _station(ctx: _Ctx) -> mjob.Station:
-    """Station frame, dock, full-stone slot grid and the half-stone holders ([pickup_station] half_slot_*,
-    PLACEHOLDER), look poses for the station boards at the nominal dock."""
+    """Station frame, dock, the stacked holders for full and half stones ([pickup_station] slots_xy / slot_layers,
+    half_slots_xy / half_slot_layers, PLACEHOLDER), look poses for the station boards at the nominal dock. Slots
+    without a kinematic IK solution (pick or approach) are dropped, and with them every slot stacked on them; the
+    station is emptied top layer first (like the magazine)."""
     cfg = ctx.cfg
     ps = cfg["pickup_station"]
     T_wall_station = g.pose_xyz_rpy(ps["xyz_in_wall"], ps["rpy_in_wall_deg"])
     dock = Pose2D.from_T(g.pose_xyz_rpy(ps["ares_xyz"], ps["ares_rpy_deg"]))
     T_base_station = ctx.T_base_ares @ g.inv(dock.T)
-    st_slots = []
-    grids = [("s", "full", ctx.H, ps["slot_origin"], int(ps["slot_rows"]), int(ps["slot_cols"]), ps["slot_pitch_x"],
-              ps["slot_pitch_y"])]
-    if int(ps.get("half_slot_cols", 0)) > 0:
+    st_slots: list[mjob.StationSlot] = []
+    groups = [("s", "full", ctx.H, ps["slots_xy"], int(ps.get("slot_layers", 1)))]
+    if ps.get("half_slots_xy"):
         hh = float(cfg.get("half_brick", {}).get("height", ctx.H))
-        grids.append(("h", "half", hh, ps["half_slot_origin"], int(ps["half_slot_rows"]), int(ps["half_slot_cols"]),
-                      ps["half_slot_pitch_x"], ps["half_slot_pitch_y"]))
-    for prefix, kind, height, (ox, oy), rows, cols, px, py in grids:
-        z_top = float(ps["table_z"]) + float(ps.get("holder_z", 0.0)) + height
-        for r in range(rows):
-            for c in range(cols):
-                T = g.transl(ox + c * px, oy + r * py, z_top) @ g.rotx(math.pi)
+        groups.append(("h", "half", hh, ps["half_slots_xy"], int(ps.get("half_slot_layers", 1))))
+    z0 = float(ps["table_z"]) + float(ps.get("holder_z", 0.0))
+    for prefix, kind, height, xys, layers in groups:
+        for i, (x, y) in enumerate(xys):
+            stack = f"{prefix}{i:02d}"
+            for lay in range(1, layers + 1):
+                T = g.transl(float(x), float(y), z0 + lay * height) @ g.rotx(math.pi)
                 T_bf = T_base_station @ T @ g.inv(ctx.T_flange_tcp)
                 q = ik_near(T_bf, ctx.q_park)
                 ok = q is not None and ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is not None
-                st_slots.append(mjob.StationSlot(f"{prefix}{r}{c}", T, None if q is None else q.tolist(), bool(ok),
-                                                 kind))
-    st_take = [s.id for s in st_slots if s.ik_ok]
-    if len(st_take) < len(st_slots):
+                st_slots.append(mjob.StationSlot(f"{stack}l{lay}", T, None if q is None else q.tolist(), bool(ok),
+                                                 kind, lay, stack))
+    usable = [s for s in st_slots if s.ik_ok]
+    if len(usable) < len(st_slots):
         ctx.warnings.append(f"station slots without a kinematic IK solution at the nominal dock (not used): "
                             f"{[s.id for s in st_slots if not s.ik_ok]} - [pickup_station] layout is a PLACEHOLDER")
+    for s in list(usable):                        # a stone cannot lie on an unusable (empty) holder
+        if any(not o.ik_ok for o in st_slots if o.stack_id == s.stack_id and o.layer < s.layer):
+            usable.remove(s)
+            ctx.warnings.append(f"station slot {s.id} dropped: a slot below it is unusable")
+    st_take = [s.id for s in sorted(usable, key=lambda s: (-s.layer, float(np.sum(np.abs(np.asarray(s.qnear_rad)
+                                                                                         - ctx.q_park))), s.id))]
     if not st_take:
         ctx.warnings.append("no station slot reachable: reloads impossible with this [pickup_station] layout")
     R_pref = preferred_flange_R(T_base_station[:3, :3], ctx.T_flange_tcp)

@@ -520,15 +520,25 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
 
 
 # ── obstacles from the config ─────────────────────────────────────────────────
-def station_table_poly(cfg: Mapping, T_wall_station) -> list[Pt]:
-    """Pick-up station table top in the wall frame: station frame x 0 .. half a slot pitch beyond the last slot, y
-    likewise (robodk/build_station.py table_extent, PLACEHOLDER layout), the half-stone slots included."""
+def station_table_extent(cfg: Mapping) -> tuple[float, float]:
+    """(x_max, y_max) of the pick-up station table top in the station frame (origin = front-left corner):
+    [pickup_station] table_size (PLACEHOLDER); without it 50 mm around the stone holders (slots_xy, half_slots_xy,
+    stone length along the station x axis). Shared by robodk/build_station.py and the floor model."""
     p = cfg["pickup_station"]
-    x_max = p["slot_origin"][0] + (p["slot_cols"] - 0.5) * p["slot_pitch_x"]
-    y_max = p["slot_origin"][1] + (p["slot_rows"] - 0.5) * p["slot_pitch_y"]
-    if p.get("half_slot_cols"):
-        x_max = max(x_max, p["half_slot_origin"][0] + (p["half_slot_cols"] - 0.5) * p["half_slot_pitch_x"])
-        y_max = max(y_max, p["half_slot_origin"][1] + (p["half_slot_rows"] - 0.5) * p["half_slot_pitch_y"])
+    if "table_size" in p:
+        return float(p["table_size"][0]), float(p["table_size"][1])
+    b, h = cfg["brick"], cfg.get("half_brick", cfg["brick"])
+    ext = [(x + b["length"] / 2, y + b["width"] / 2) for x, y in p.get("slots_xy", [])]
+    ext += [(x + h["length"] / 2, y + h["width"] / 2) for x, y in p.get("half_slots_xy", [])]
+    if not ext:
+        raise KeyError("[pickup_station]: neither table_size nor slots_xy / half_slots_xy")
+    return max(e[0] for e in ext) + 50.0, max(e[1] for e in ext) + 50.0
+
+
+def station_table_poly(cfg: Mapping, T_wall_station) -> list[Pt]:
+    """Pick-up station table top in the wall frame: station frame x 0 .. x_max, y 0 .. y_max
+    (station_table_extent, PLACEHOLDER layout)."""
+    x_max, y_max = station_table_extent(cfg)
     T = T_wall_station
     th = math.atan2(T[1][0], T[0][0])
     return transform(box_poly(0.0, 0.0, x_max, y_max), T[0][3], T[1][3], th)

@@ -125,7 +125,8 @@ arrival standoff. A planning filter, not RoboDK's collision check.
 ### `mauer.job` v2
 Adds `legs`, per stop `leg`, `route` (from the previous stop), `route_to_station` / `route_from_station` (wall-frame
 Pose2D lists), per stone `leg` / `kind` ("full" | "half") / `length_mm` (key `(leg, course, index)`), station slot
-`kind`, magazine `initial_kinds`; version-1 files still load (defaults: no legs, full stones, direct moves).
+`kind` / `layer` / `stack` (stacked holders, emptied from the top like the magazine), magazine `initial_kinds`;
+version-1 files still load (defaults: no legs, full stones, direct moves, single station holders).
 `SlotState` tracks the stone type per slot; `reload_plan` / `reload_short` are the shared reload rule.
 
 ### `mauer.sequencer`

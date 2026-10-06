@@ -291,13 +291,15 @@ rpy_deg = [180.0, 0.0, 0.0]
 name = "S0"
 parent = "station"
 first_id = 200
-xyz = [100.0, 100.0, 3.0]   # PLACEHOLDER: face up on the station table
+xyz = [100.0, 332.0, 404.1] # PLACEHOLDER: face up on its MDF plate on the table top (table_z 400 + [plates] mdf_t 4
+                            # + paper_t 0.1; the station frame lies at floor level - z was 3 = on the floor, look study
+                            # 2026-10-05), centre (140, 300) beside the half stone of row 1, 510 mm left of the UR axis
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "S1"
 parent = "station"
 first_id = 210
-xyz = [700.0, 100.0, 3.0]   # PLACEHOLDER
+xyz = [1120.0, 332.0, 404.1]  # PLACEHOLDER: centre (1160, 300), 510 mm right of the UR axis (baseline 1020 mm)
 rpy_deg = [180.0, 0.0, 0.0]
 
 [plates]
@@ -322,22 +324,28 @@ margin = 14.0               # ASSUMPTION: plain plates (station, calib): MDF mar
 # Fixed pick-up station where ARES reloads its deck magazine when it is empty (Samuel 2026-10-02). Layout unknown –
 # everything here is a PLACEHOLDER so planning and simulation can run.
 # Station frame: origin at the front-left corner of the table top, x along the front edge, y away from ARES, z up.
-xyz_in_wall = [-1500.0, 1500.0, 0.0]   # PLACEHOLDER: station frame in the wall frame (z = floor level)
+# Layout 2026-10-06 (Samuel: "put the stones on the loading dock, as many as fit" -> closer dock, stacks of 2): stone
+# positions from the nominal UR5 kinematics at the dock (pick + 150 mm approach in robodk/motion.py family; reach of
+# the stone centre, relative to the UR axis: row y 80 layer 1 +-660 / layer 2 +-530 mm, row y 300 +-460 / +-260 mm,
+# nothing at y 520), stacks at the magazine pitch (205 mm end to end, 220 mm across = room for the open jaws). 16 full
+# + 4 half stones: every trip refills the whole magazine (5 trips for the L instead of 19 with the 3 + 2 slots before).
+xyz_in_wall = [-1750.0, 1500.0, 0.0]   # PLACEHOLDER: station frame in the wall frame (z = floor level). Table front
+                                       # edge at wall y 1500 as before, the dock 140 mm closer: (-1100, 840) mm, 90 deg
+                                       # (a table front at y 1360 left no corridor between it and the leg-A plates)
 rpy_in_wall_deg = [0.0, 0.0, 0.0]      # PLACEHOLDER
 table_z = 400.0             # PLACEHOLDER: table top above the floor [mm]
-ares_xyz = [400.0, -800.0, 0.0]        # PLACEHOLDER: ARES base_link in the station frame when docked
+table_size = [1300.0, 400.0]  # PLACEHOLDER: table top x (along the front edge) x y [mm] from the station origin
+ares_xyz = [650.0, -660.0, 0.0]        # PLACEHOLDER: ARES base_link in the station frame when docked: ARES front
+                                       # (x 560) 100 mm from the table edge (was 240), UR axis at the table centre
 ares_rpy_deg = [0.0, 0.0, 90.0]        # PLACEHOLDER: ARES x (forward) towards the table (+y station)
-slot_rows = 2               # PLACEHOLDER: stones standing upright in a holder grid on the table
-slot_cols = 6
-slot_pitch_x = 260.0        # PLACEHOLDER: along x (stone length 200 + jaw clearance)
-slot_pitch_y = 200.0        # PLACEHOLDER: along y (stone width 120 + jaw clearance)
-slot_origin = [150.0, 250.0]  # PLACEHOLDER: centre of slot (0, 0) in the station frame [mm]
-holder_z = 0.0              # PLACEHOLDER: stones stand directly on the table top
-half_slot_rows = 1          # PLACEHOLDER: half-stone holders on the table, a row in front of the full-stone slots
-half_slot_cols = 2          # between the station boards S0 (x 100-180) and S1 (x 700-780), within kinematic reach of
-half_slot_pitch_x = 260.0   # the nominal dock (the full-stone slots beyond x 670 / y 250 are not)
-half_slot_pitch_y = 200.0   # PLACEHOLDER
-half_slot_origin = [280.0, 70.0]  # PLACEHOLDER: centre of half slot (0, 0) in the station frame [mm]
+holder_z = 0.0              # PLACEHOLDER: stones stand directly on the table top (no holder)
+slots_xy = [[240, 80], [445, 80], [650, 80], [855, 80], [1060, 80], [445, 300], [650, 300], [855, 300]]
+                            # PLACEHOLDER: full-stone stack centres in the station frame [mm], stone length along x;
+                            # row 0 front face 18 mm behind the table edge (over the ribs)
+slot_layers = 2             # PLACEHOLDER: full stones stacked 2 high (pins in the sockets of the stone below)
+half_slots_xy = [[85, 80], [1215, 80], [290, 300], [1010, 300]]   # PLACEHOLDER: half-stone stack centres [mm] at
+                            # the row ends, 5 mm from the full stones (outside the layer-2 reach)
+half_slot_layers = 1        # PLACEHOLDER: single half stones (layer 2 out of reach at these positions)
 
 [routes]
 # ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in

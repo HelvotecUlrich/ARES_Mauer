@@ -46,8 +46,9 @@ JSON layout (format "ares-mauer-job", version 2; version 1 = the same without th
   "station": {"T_wall_station": 4x4,                # nominal station frame in the wall frame
               "dock": {"x_mm", "y_mm", "theta_rad"},   # ARES pose in the STATION frame when docked
               "boards": ["S0", "S1"],
-              "slots": [{"id": "s00", "T_station_tcp": 4x4, "qnear_rad": [6] | null, "ik_ok": ...,
-                         "kind": "full" | "half"}],        # v2
+              "slots": [{"id": "s00l1", "T_station_tcp": 4x4, "qnear_rad": [6] | null, "ik_ok": ...,
+                         "kind": "full" | "half",          # v2
+                         "layer": 1, "stack": "s00"}],     # v2: stacked holders (missing = layer 1, own stack)
               "take_order": [ids], "looks": [look, ...]},   # looks: base frame at the nominal dock pose
   "meta": {"wall_dist_mm", "length_stones", "look_source": "nominal" | "planner",
            "reach_check": "none" | "kinematic" | "robodk", "warnings": [...], ...}
@@ -56,7 +57,8 @@ JSON layout (format "ares-mauer-job", version 2; version 1 = the same without th
 
 Magazine stacking: slots of one `stack` lie on top of each other (layer 1 = lowest). A slot can only be emptied when
 no filled slot lies above it and only be filled when the slot below holds a stone (`SlotState`); robodk/simulate.py
-empties the magazine layer by layer, highest first (simulate.py:122-149). Every deck slot holds either stone type
+empties the magazine layer by layer, highest first (simulate.py:122-149). Station holders stack the same way (v2
+`layer` / `stack`, one stone type per stack; a v1 file or a slot without them = layer 1 in its own stack). Every deck slot holds either stone type
 (full / half); `SlotState` tracks the type per filled slot and `reload_plan` fills the empty magazine with the types
 of the next stones in the order they will be taken (shared by tools/make_job.py and the sequencer).
 
@@ -188,6 +190,12 @@ class StationSlot:
     qnear_rad: list[float] | None = None
     ik_ok: bool | None = None
     kind: str = "full"                     # v2: stone type this holder takes
+    layer: int = 1                         # v2: 1 = on the table, n = on the stone of layer n - 1 of the same stack
+    stack: str = ""                        # v2: holder position the layers share ("" = a stack of its own)
+
+    @property
+    def stack_id(self) -> str:
+        return self.stack or self.id
 
 
 @dataclass
@@ -329,7 +337,8 @@ def to_dict(job: Job) -> dict:
         "station": {"T_wall_station": _m(job.station.T_wall_station), "dock": job.station.dock.to_dict(),
                     "boards": list(job.station.boards),
                     "slots": [{"id": s.id, "T_station_tcp": _m(s.T_station_tcp), "qnear_rad": _q(s.qnear_rad),
-                               "ik_ok": s.ik_ok, **({"kind": s.kind} if v2 else {})} for s in job.station.slots],
+                               "ik_ok": s.ik_ok, **({"kind": s.kind, "layer": int(s.layer), "stack": s.stack_id}
+                                                    if v2 else {})} for s in job.station.slots],
                     "take_order": list(job.station.take_order),
                     "looks": [_look_to(lk) for lk in job.station.looks]},
         "meta": _jsonable(job.meta),
@@ -369,7 +378,8 @@ def from_dict(d: Mapping) -> Job:
         st = d["station"]
         station = Station(_T(st["T_wall_station"]), Pose2D.from_dict(st["dock"]), [str(b) for b in st["boards"]],
                           [StationSlot(str(s["id"]), _T(s["T_station_tcp"]), _q(s.get("qnear_rad")), s.get("ik_ok"),
-                                       str(s.get("kind", "full"))) for s in st["slots"]],
+                                       str(s.get("kind", "full")), int(s.get("layer", 1)), str(s.get("stack") or ""))
+                           for s in st["slots"]],
                           [str(i) for i in st["take_order"]], [_look_from(lk) for lk in st["looks"]])
         legs = [{"name": str(lg["name"]), "n0": int(lg["n0"]), "T_wall_leg": _T(lg["T_wall_leg"])}
                 for lg in d.get("legs") or []]
@@ -566,6 +576,20 @@ def validate(job: Job, boards: Iterable[str] | None = None) -> list[str]:
         if s.kind not in KINDS:
             p.append(f"station slot {s.id}: kind {s.kind!r} not in {KINDS}")
     p += _order_problems(stn.take_order, st_ids, "station take_order")
+    st_stacks: dict[str, list[StationSlot]] = {}
+    for s in stn.slots:
+        st_stacks.setdefault(s.stack_id, []).append(s)
+    usable = set(stn.take_order)
+    for k, ss in st_stacks.items():
+        layers = sorted(s.layer for s in ss)
+        if layers != list(range(1, len(layers) + 1)):
+            p.append(f"station stack {k}: layers {layers} must be 1..n without gaps or repeats")
+        if len({s.kind for s in ss}) > 1:
+            p.append(f"station stack {k}: mixed stone types {sorted({s.kind for s in ss})}")
+        for s in ss:
+            below = [o.id for o in ss if o.layer < s.layer and o.id not in usable]
+            if s.id in usable and below:
+                p.append(f"station slot {s.id}: in take_order but the slot(s) below it are not ({below})")
     for lk in stn.looks:
         p += _look_problems(lk, f"station look {lk.name}")
         if not set(lk.boards) <= set(stn.boards):
@@ -610,8 +634,8 @@ def _route_problems(route: Sequence[Pose2D], start: Pose2D | None, end: Pose2D, 
 
 # ── slot bookkeeping (shared by tools/make_job.py, the sequencer and the simulation) ─────────────────────────────
 class SlotState:
-    """Which slots hold a stone, and of which type ("full" / "half"). Stacked slots (magazine) can only be emptied
-    from the top and filled from the bottom; station slots are single (one stack each) and take one type each.
+    """Which slots hold a stone, and of which type ("full" / "half"). Stacked slots (magazine, station holders with
+    layers) can only be emptied from the top and filled from the bottom; station slots take one type each.
     take()/fill() raise ValueError for an impossible action."""
 
     def __init__(self, ids_layers: Mapping[str, tuple[str, int]], take_order: Sequence[str],
@@ -636,8 +660,9 @@ class SlotState:
 
     @classmethod
     def station(cls, st: Station, filled: Iterable[str] | None = None) -> "SlotState":
+        """Station holders: one stone type per slot, stacked like the magazine when the job has layers (v2)."""
         fixed = {s.id: s.kind for s in st.slots}
-        return cls({s.id: (s.id, 1) for s in st.slots}, st.take_order, list(reversed(st.take_order)),
+        return cls({s.id: (s.stack_id, s.layer) for s in st.slots}, st.take_order, list(reversed(st.take_order)),
                    st.take_order if filled is None else filled, fixed, fixed)
 
     def copy(self) -> "SlotState":

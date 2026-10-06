@@ -486,8 +486,22 @@ def _decline_once(match):
 LEG_CHANGE_LEGS = ["stop 0 -> stop 1 leg 0", "stop 0 -> stop 1 leg 1", "stop 0 -> stop 1 leg 2",
                    "stop 0 -> stop 1 leg 3", "stop 0 -> stop 1 last leg"]
 STATION_LEGS = ["stop 1 -> station leg 0", "stop 1 -> station leg 1", "stop 1 -> station leg 2",
-                "stop 1 -> station last leg", "station -> stop 1 leg 0", "station -> stop 1 leg 1",
-                "station -> stop 1 leg 2", "station -> stop 1 leg 3", "station -> stop 1 last leg"]
+                "stop 1 -> station leg 3", "stop 1 -> station last leg", "station -> stop 1 leg 0",
+                "station -> stop 1 leg 1", "station -> stop 1 leg 2", "station -> stop 1 last leg"]
+
+
+def _leg_names(why: str, route) -> list[str]:
+    """Move names of mauer.sequencer._follow_route: leg 0 .. leg n-3, then the last leg."""
+    return [f"{why} leg {i}" for i in range(len(route) - 2)] + [f"{why} last leg"]
+
+
+def test_route_leg_lists_match_the_job(ljob):
+    """The parametrised leg lists below follow the routes of the short L job (they change with the config)."""
+    job = short_l_job(ljob, n_a=1, n_b=2, fill=1)
+    b = job.stops[1]
+    assert LEG_CHANGE_LEGS == _leg_names("stop 0 -> stop 1", b.route)
+    assert STATION_LEGS == (_leg_names("stop 1 -> station", b.route_to_station)
+                            + _leg_names("station -> stop 1", b.route_from_station))
 
 
 @pytest.mark.parametrize("leg", LEG_CHANGE_LEGS + STATION_LEGS)
