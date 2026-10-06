@@ -249,9 +249,9 @@ def test_make_job_cli(tmp_path, capsys):
 
 def test_stale_reach_table_is_refused(cfg, tmp_path):
     t = tmp_path / "reach.json"
-    data = json.loads((REPO / "results" / "reach_table.json").read_text())
-    data["key"] = "000000000000"
-    t.write_text(json.dumps(data))
+    from mauer import reach_cache
+    table = reach_cache.get(cfg, cfg["wall"]["dist_nominal"])
+    t.write_text(json.dumps({"key": "000000000000", "dist": cfg["wall"]["dist_nominal"], "table": table}))   # v1
     with pytest.raises(ValueError, match="another configuration"):
         make_job.build_nominal(cfg, 6, reach_table_path=t)
     assert make_job.build_nominal(cfg, 6, reach_table_path=t, allow_stale_reach=True).n_stones == 18

@@ -58,7 +58,6 @@ at the nominal stop and dock), the operator's refills of the station (stones app
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import sys
@@ -101,23 +100,19 @@ DIFF_MIN = 40                                         # grey-level change that c
 
 
 def reach_table(RDK, cfg: dict, dist: float) -> dict:
-    """{course: {u_rel: ok}} for the wall at `dist`, cached by the relevant configuration."""
-    brick = {k: v for k, v in cfg["brick"].items() if k != "rib_mm"}     # rib_mm: L corner only, not the reach
-    key_src = json.dumps(["family-v2", cfg["ur5"], cfg["tool"], brick, cfg["wall"]["base_z"], cfg["wall"]["courses"],
-                          cfg["study"]["approach"], dist], sort_keys=True)
-    key = hashlib.sha1(key_src.encode()).hexdigest()[:12]
-    path = REPO / "results" / "reach_table.json"
-    if path.exists():
-        data = json.loads(path.read_text())
-        if data.get("key") == key:
-            return {int(k): {float(u): v for u, v in d.items()} for k, d in data["table"].items()}
+    """{course: {u_rel: ok}} for the wall at `dist`, cached per configuration key and distance (mauer.reach_cache,
+    results/reach_table.json; tables of other distances are kept)."""
+    from mauer import reach_cache
+    table = reach_cache.get(cfg, dist)
+    if table is not None:
+        return table
     print("computing reach table (about 1 min) ...", flush=True)
     chk = Checker(RDK, cfg, True)
     us = frange(-1000.0, 1000.0, 20.0)
     table = {k: {u: chk.check_both(place_pose(cfg, u, dist, course_top_z(cfg, k)))[0] for u in us}
              for k in range(cfg["wall"]["courses"])}
     chk.close()
-    path.write_text(json.dumps({"key": key, "dist": dist, "table": table}))
+    reach_cache.store(cfg, dist, table)
     return table
 
 

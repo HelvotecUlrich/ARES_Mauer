@@ -38,8 +38,6 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
-import hashlib
-import json
 import math
 import pickle
 import re
@@ -151,19 +149,9 @@ def T_ares_wall(cfg: dict, dist: float, a: float) -> np.ndarray:
 
 # ── plan (offline) ────────────────────────────────────────────────────────────
 def reach_table_cached(cfg: dict, dist: float) -> dict | None:
-    """simulate.py's reach table from results/reach_table.json if its cache key matches the config (same key
-    construction as simulate.reach_table), else None."""
-    brick = {k: v for k, v in cfg["brick"].items() if k != "rib_mm"}     # rib_mm: L corner only, not the reach
-    key_src = json.dumps(["family-v2", cfg["ur5"], cfg["tool"], brick, cfg["wall"]["base_z"],
-                          cfg["wall"]["courses"], cfg["study"]["approach"], dist], sort_keys=True)
-    key = hashlib.sha1(key_src.encode()).hexdigest()[:12]
-    path = RESULTS / "reach_table.json"
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text())
-    if data.get("key") != key:
-        return None
-    return {int(k): {float(u): v for u, v in d.items()} for k, d in data["table"].items()}
+    """simulate.py's reach table for cfg at dist from the cache (mauer.reach_cache, same key), else None."""
+    from mauer import reach_cache
+    return reach_cache.get(cfg, dist)
 
 
 def make_plan(cfg: dict, length: int, dist: float, table: dict) -> tuple[list, list]:

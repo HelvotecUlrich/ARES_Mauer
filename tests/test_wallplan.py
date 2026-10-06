@@ -29,9 +29,8 @@ def cfg():
 
 @pytest.fixture(scope="module")
 def table(cfg):
-    import json
-    data = json.loads((REPO / "results" / "reach_table.json").read_text())
-    return {int(k): {float(u): v for u, v in d.items()} for k, d in data["table"].items()}
+    from mauer import reach_cache
+    return reach_cache.get(cfg, cfg["wall"]["dist_nominal"])
 
 
 @pytest.fixture(scope="module")
@@ -95,8 +94,7 @@ def test_l_plan_every_stone_once_supports_and_no_cross_leg(cfg, lplan):
     # stones never overlap across legs and nothing is supported by the other leg
     assert wp.check_legs(cfg, legs, stones) == []
     # reach margin: every stone reachable with ARES 20 mm off the stop in both directions
-    reach, *_ = wp.reach_fn({int(k): v for k, v in __import__("json").loads(
-        (REPO / "results" / "reach_table.json").read_text())["table"].items()})
+    reach, *_ = wp.reach_fn(__import__("mauer.reach_cache", fromlist=["get"]).get(cfg, cfg["wall"]["dist_nominal"]))
     for lg in legs:
         for a, batch in plans[lg.name]:
             for s in batch:

@@ -16,6 +16,7 @@ def straight_config():
     cfg = copy.deepcopy(config.load())
     cfg["wall"].pop("legs", None)
     cfg["wall"]["shape"] = "straight"
+    cfg["wall"]["dist_nominal"] = 740.0                   # the straight wall's distance (reach study 2026-10-02)
     for t in cfg["targets"]:
         if t["parent"] == "wall":
             i = int(t["name"][1:])
@@ -34,13 +35,14 @@ L_BOARDS = {"W0": ("A", 60.0), "W1": ("A", 460.0), "W2": ("A", 860.0), "W3": ("A
 
 
 def l_config():
-    """The station config with the L wall of 2026-10-05 (L_LEGS, L_BOARDS) - for the tests of the L behaviour (job v2
-    routes, leg change, half stones), independent of the wall shape in config/station.toml."""
+    """The station config with the L wall of 2026-10-05 (L_LEGS, L_BOARDS, wall distance 740 mm) - for the tests of
+    the L behaviour (job v2 routes, leg change, half stones), independent of the wall in config/station.toml."""
     import copy
 
     from mauer import config
     cfg = copy.deepcopy(config.load())
     cfg["wall"]["shape"] = "L"
+    cfg["wall"]["dist_nominal"] = 740.0                   # the L's wall distance (the C: 840 mm)
     cfg["wall"]["legs"] = copy.deepcopy(L_LEGS)
     for t in cfg["targets"]:
         if t["parent"] == "wall":
