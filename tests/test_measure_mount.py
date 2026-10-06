@@ -228,6 +228,11 @@ def test_orbit_relative_to_the_start_and_solve(monkeypatch, tmp_path, capsys):
     assert ch.main(["solve", str(ds), "--nominal-intrinsics", "--out", str(he)]) == 0
     dt, dr = g.pose_delta(handeye.load(he).T_flange_cam, X_true)
     assert dt < 1.0 and dr < 0.1, (dt, dr)
+    import handeye_solve                                       # --check: validate the saved calibration, no solve
+    capsys.readouterr()
+    assert handeye_solve.main([str(ds), "--nominal-intrinsics", "--check", str(he)]) == 0
+    out = capsys.readouterr().out
+    assert float(re.search(r"mean of this dataset vs the calibration board pose: ([0-9.]+) mm", out).group(1)) < 0.5
 
 
 def test_orbit_views_are_small_and_snake():

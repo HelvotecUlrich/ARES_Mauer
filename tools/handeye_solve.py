@@ -2,6 +2,7 @@
 
     py.exe tools/handeye_solve.py data/he_2026-10-06 [--intrinsics calib/camera_intrinsics.json]
                                   [--holdout-every 5] [--method PARK] [--out calib/handeye.json] [--force]
+    py.exe tools/handeye_solve.py data/he_2026-10-06d --check calib/handeye.json      # validate, writes nothing
 
 Per sample: board pose by ChArUco detection (IPPE + LM refine, the [vision] checks) with the calibrated intrinsics,
 T_base_flange from the dataset (RTDE at the exposure). Samples without a robot pose, with the arm moving
@@ -11,6 +12,11 @@ consistency does not reveal a poor calibration, held-out poses do). Prints all f
 disagreement, the in-sample spread of the board in the base frame, the motion statistics, the hold-out check and
 warnings; writes calib/handeye.json (refuses to overwrite without --force; --dry-run writes nothing).
 --nominal-intrinsics uses the ideal pinhole from [camera] (RoboDK simulated camera only).
+
+--check CALIB: no calibration - every usable sample of the dataset is measured with an existing T_flange_cam and
+compared with the board pose stored in CALIB (handeye.holdout_check: base-frame deviation and reprojection) and with
+the dataset's own mean board pose (spread). Views from another start pose than the calibration's, board untouched =
+an independent validation (2026-10-06: did the camera adapter's contact with wrist 1 move the camera?).
 """
 from __future__ import annotations
 
@@ -57,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="output JSON (default [vision] handeye_file)")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output file")
     ap.add_argument("--dry-run", action="store_true", help="solve and print, write nothing")
+    ap.add_argument("--check", default=None, help="validate this existing calibration JSON on the dataset instead "
+                                                  "of solving (writes nothing)")
     args = ap.parse_args(argv)
 
     cfg = config.load(args.config)
@@ -64,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     holdout_every = int(vcfg.get("holdout_every", 5) if args.holdout_every is None else args.holdout_every)
     max_qd = float(vcfg.get("max_qd_rad_s", 0.01) if args.max_qd is None else args.max_qd)
     out = config.repo_path(args.out or vcfg.get("handeye_file", "calib/handeye.json"))
-    if out.exists() and not (args.force or args.dry_run):
+    if out.exists() and not (args.force or args.dry_run or args.check):
         print(f"refusing to overwrite {out} (use --force)", flush=True)
         return 2
     ds = Dataset.load(args.dataset)
@@ -105,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
               flush=True)
         used.append((name, T_bf, pose.T_cam_board))
 
+    if args.check:
+        return check(args.check, used, spec, intr)
     k = max(holdout_every, 0)
     hold = [u for i, u in enumerate(used) if k > 0 and i % k == k - 1]
     cal = [u for i, u in enumerate(used) if not (k > 0 and i % k == k - 1)]
@@ -129,6 +139,30 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     handeye.save(res, out, holdout=ho, dataset=_rel(ds.path), intrinsics_file=intr_file)
     print(f"written {out}", flush=True)
+    return 0
+
+
+def check(calib_path: str, used: list, spec, intr) -> int:
+    """--check: the dataset's samples measured with an existing calibration (see the module docstring)."""
+    res = handeye.load(config.repo_path(calib_path))
+    if not used:
+        print("no usable samples", flush=True)
+        return 1
+    ho = handeye.holdout_check(res, [u[1] for u in used], [u[2] for u in used], spec, intr)
+    Ts = handeye.board_in_base([u[1] for u in used], res.T_flange_cam, [u[2] for u in used])
+    sp = g.spread(Ts)
+    off = g.pose_delta(res.T_base_board, sp["mean"])
+    print(f"check of {calib_path} on {len(used)} samples:", flush=True)
+    print(f"  vs its calibration board pose: pos rms {ho['pos_rms_mm']:.3f} / max {ho['pos_max_mm']:.3f} mm, ang rms "
+          f"{ho['ang_rms_deg']:.4f} / max {ho['ang_max_deg']:.4f} deg"
+          + (f", reprojection rms {ho['reproj_rms_px']:.2f} / max {ho['reproj_max_px']:.2f} px"
+             if "reproj_rms_px" in ho else ""), flush=True)
+    print(f"  mean of this dataset vs the calibration board pose: {off[0]:.3f} mm / {off[1]:.4f} deg (board untouched "
+          "-> calibration error from other views)", flush=True)
+    print(f"  spread around this dataset's own mean: pos rms {sp['pos_rms_mm']:.3f} / max {sp['pos_max_mm']:.3f} mm, "
+          f"ang rms {sp['ang_rms_deg']:.4f} / max {sp['ang_max_deg']:.4f} deg", flush=True)
+    for (name, _, _), dp, da in zip(used, ho["per_sample_pos_mm"], ho["per_sample_ang_deg"]):
+        print(f"  {name}: {dp:.3f} mm / {da:.4f} deg from the calibration board pose", flush=True)
     return 0
 
 
