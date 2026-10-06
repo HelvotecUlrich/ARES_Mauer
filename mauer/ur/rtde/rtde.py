@@ -123,7 +123,10 @@ class RTDE(object):
         except (socket.timeout, socket.error):
             self.__sock = None
             raise
-        if not self.negotiate_protocol_version():
+        # ARES_Mauer change (2026-10-06): fall back to protocol version 1 - PolyScope 3.3 (the lab's UR5) only speaks
+        # v1 (fixed 125 Hz output, no recipe ids); the official client raised here.
+        if not self.negotiate_protocol_version(Protocol.VERSION_2) and \
+                not self.negotiate_protocol_version(Protocol.VERSION_1):
             raise RTDEException("Unable to negotiate protocol version")
 
     def disconnect(self):
@@ -251,7 +254,11 @@ class RTDE(object):
 
     def send_output_setup(self, variables, types=[], frequency=125):
         cmd = Command.RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS
-        payload = struct.pack(">d", frequency)
+        # ARES_Mauer change (2026-10-06): protocol v1 has no frequency field (fixed 125 Hz output)
+        if self.__protocolVersion >= Protocol.VERSION_2:
+            payload = struct.pack(">d", frequency)
+        else:
+            payload = b""
         payload = payload + (",".join(variables).encode("utf-8"))
         result = self.__sendAndReceive(cmd, payload)
         if len(types) != 0 and not self.__list_equals(result.types, types):
@@ -440,7 +447,7 @@ class RTDE(object):
                             self.__warning_counter.clear()
 
                         if binary:
-                            return packet[1:]
+                            return packet[1:] if self.__protocolVersion >= Protocol.VERSION_2 else packet
 
                         return data
                     else:
@@ -496,7 +503,7 @@ class RTDE(object):
                 data = self.__on_packet(packet_header.command, packet)
                 if packet_header.command == command:
                     if binary:
-                        return packet[1:]
+                        return packet[1:] if self.__protocolVersion >= Protocol.VERSION_2 else packet
 
                     return data
                 else:
@@ -545,14 +552,15 @@ class RTDE(object):
         if len(payload) < 1:
             _log.error("RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS: No payload")
             return None
-        output_config = serialize.DataConfig.unpack_recipe(payload)
+        # ARES_Mauer change (2026-10-06): protocol v1 replies carry no recipe id
+        output_config = serialize.DataConfig.unpack_recipe(payload, self.__protocolVersion >= Protocol.VERSION_2)
         return output_config
 
     def __unpack_setup_inputs_package(self, payload):
         if len(payload) < 1:
             _log.error("RTDE_CONTROL_PACKAGE_SETUP_INPUTS: No payload")
             return None
-        input_config = serialize.DataConfig.unpack_recipe(payload)
+        input_config = serialize.DataConfig.unpack_recipe(payload, self.__protocolVersion >= Protocol.VERSION_2)
         return input_config
 
     def __unpack_start_package(self, payload):

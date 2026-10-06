@@ -156,14 +156,16 @@ class DataObject(object):
         return l
 
     @staticmethod
-    def unpack(data, names, types):
+    def unpack(data, names, types, has_id=True):
+        # ARES_Mauer change (2026-10-06): has_id=False for RTDE protocol v1 data packages (no recipe id)
         if len(names) != len(types):
             raise ValueError("List sizes are not identical.")
         obj = DataObject()
         offset = 0
-        obj.recipe_id = data[0]
+        obj.recipe_id = data[0] if has_id else None
+        values = data[1:] if has_id else data
         for i in range(len(names)):
-            obj.__dict__[names[i]] = unpack_field(data[1:], offset, types[i])
+            obj.__dict__[names[i]] = unpack_field(values, offset, types[i])
             offset += get_item_size(types[i])
         return obj
 
@@ -180,16 +182,21 @@ class DataConfig(object):
     __slots__ = ["id", "names", "types", "fmt"]
 
     @staticmethod
-    def unpack_recipe(buf):
+    def unpack_recipe(buf, has_id=True):
+        # ARES_Mauer change (2026-10-06): has_id=False for RTDE protocol v1 setup replies (no recipe id): id None,
+        # no id byte in fmt
         rmd = DataConfig()
         python_version = sys.version_info
-        if python_version.major == 2:
+        if not has_id:
+            rmd.id = None
+            rmd.types = buf.decode("utf-8").split(",")
+        elif python_version.major == 2:
             rmd.id = struct.unpack_from(">B", buf)[0]
             rmd.types = buf.decode("utf-8")[1:].split(",")
         else:
             rmd.id = buf[0]
             rmd.types = buf[1:].decode("utf-8").split(",")
-        rmd.fmt = ">B"
+        rmd.fmt = ">B" if has_id else ">"
         for i in rmd.types:
             if i == "IN_USE":
                 raise ValueError("An input parameter is already in use.")
@@ -206,4 +213,4 @@ class DataConfig(object):
 
     def unpack(self, data):
         li = struct.unpack_from(self.fmt, data)
-        return DataObject.unpack(li, self.names, self.types)
+        return DataObject.unpack(li, self.names, self.types, self.id is not None)

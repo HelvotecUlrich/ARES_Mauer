@@ -3,7 +3,8 @@
 The fake speaks the real wire protocols, so the vendored RTDE client, the persistent 30002 socket with its drain
 thread and the Dashboard client run unchanged:
 - RTDE (port 0 = ephemeral): protocol/version handshake, output recipe ('NOT_FOUND' for fields marked missing),
-  data packages at ~125 Hz.
+  data packages at ~125 Hz. protocol=1 speaks RTDE protocol version 1 only, like PolyScope 3.3 (the lab's UR5,
+  2026-10-06): no output frequency in the setup request, no recipe id in the setup reply and the data packages.
 - 30002: collects `def ... end` programs; a minimal interpreter executes write_output_integer_register, sleep,
   set_tcp, set_standard_digital_out, halt and the test directive '# FAKE_PSTOP' (protective stop); a line with
   unbalanced brackets = compile error (never runs). A new program interrupts the running one. It also streams junk
@@ -32,8 +33,9 @@ TYPES = {"timestamp": "DOUBLE", "actual_q": "VECTOR6D", "actual_qd": "VECTOR6D",
 
 
 class FakeUR:
-    def __init__(self, missing=(), regs=None):
+    def __init__(self, missing=(), regs=None, protocol=2, version=(3, 15, 8, 0)):
         self.t0 = time.time()
+        self.protocol, self.version = protocol, tuple(version)
         self.lock = threading.Lock()
         self.stop_ev = threading.Event()
         self.missing = set(missing)
@@ -99,7 +101,7 @@ class FakeUR:
     def _rtde_conn(self, conn):
         self.rtde_conns.append(conn)
         conn.settimeout(0.004)
-        buf, recipe, streaming, t_next = b"", None, False, 0.0
+        buf, recipe, streaming, t_next, proto = b"", None, False, 0.0, 1
 
         def send(cmd, payload=b""):
             conn.sendall(struct.pack(">HB", 3 + len(payload), cmd) + payload)
@@ -119,14 +121,17 @@ class FakeUR:
                         break
                     payload, buf = buf[3:size], buf[size:]
                     if cmd == ord("V"):
-                        send(cmd, b"\x01")
+                        want = struct.unpack(">H", payload)[0]
+                        if want <= self.protocol:
+                            proto = want
+                        send(cmd, b"\x01" if want <= self.protocol else b"\x00")
                     elif cmd == ord("v"):
-                        send(cmd, struct.pack(">IIII", 3, 15, 8, 0))
+                        send(cmd, struct.pack(">IIII", *self.version))
                     elif cmd == ord("O"):
-                        names = payload[8:].decode().split(",")
+                        names = (payload[8:] if proto >= 2 else payload).decode().split(",")
                         types = [self.type_of(n) for n in names]
                         recipe = None if "NOT_FOUND" in types else (names, types)
-                        send(cmd, bytes([1]) + ",".join(types).encode())
+                        send(cmd, (bytes([1]) if proto >= 2 else b"") + ",".join(types).encode())
                     elif cmd == ord("S"):
                         streaming = recipe is not None
                         send(cmd, b"\x01" if streaming else b"\x00")
@@ -141,8 +146,9 @@ class FakeUR:
                         for n, t in zip(names, types):
                             v = self.value(n)
                             vals += list(v) if t == "VECTOR6D" else [v]
-                    fmt = ">B" + "".join(WIRE[t] for t in types)
-                    send(ord("U"), struct.pack(fmt, 1, *vals))
+                    rid = [1] if proto >= 2 else []
+                    fmt = ">" + "B" * len(rid) + "".join(WIRE[t] for t in types)
+                    send(ord("U"), struct.pack(fmt, *rid, *vals))
         except OSError:
             pass
         conn.close()
@@ -413,6 +419,22 @@ def test_missing_required_field_raises():
     try:
         with pytest.raises(URLinkError, match="runtime_state"):
             make_link(f)
+    finally:
+        f.close()
+
+
+def test_rtde_protocol_v1_polyscope_3_3():
+    """PolyScope 3.3.3 (the lab's UR5, 2026-10-06) refuses RTDE protocol v2; the client falls back to v1 (no output
+    frequency, no recipe ids). Before the fix every field came back MISSING ('Unknown data type: OT_FOUND')."""
+    f = FakeUR(regs={24: 41, 25: 40}, protocol=1, version=(3, 3, 3, 292))
+    try:
+        with make_link(f) as ur:
+            assert ur.controller_version == (3, 3, 3, 292) and ur.missing_fields == []
+            assert ur.wait_until(lambda x: x.reg_started == 41, 2.0) is not None
+            st = ur.state()
+            assert np.allclose(st.actual_q, f.q) and st.robot_mode == 7 and st.reg_done == 40
+            assert g.pose_delta(st.T_base_tcp_mm(), g.ur_to_T(f.tcp_pose))[0] < 1e-6
+            assert ur.run_block("", "v1_block", timeout_s=2.0).ok
     finally:
         f.close()
 

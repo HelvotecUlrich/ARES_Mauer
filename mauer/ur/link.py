@@ -198,7 +198,7 @@ def _open_rtde(host: str, port: int, fields: dict[str, str], frequency: float) -
     """Connected, started RTDE connection with the given output recipe. Raises ValueError if a field is unknown
     to the controller (client: 'Unknown data type: NOT_FOUND') or claimed elsewhere (IN_USE)."""
     con = RTDE(host, port)
-    con.connect()   # vendored client: 1 s socket timeout, negotiates protocol v2
+    con.connect()   # vendored client: 1 s socket timeout, negotiates protocol v2, else v1 (PolyScope 3.3)
     try:
         version = con.get_controller_version()
         if not con.send_output_setup(list(fields), list(fields.values()), frequency=frequency):
