@@ -21,8 +21,13 @@ L wall (config [wall] shape "L", [[wall.legs]]; default when legs exist) - runs 
     boards and the pick-up table);
   - stones: the target is the job's T_wall_tcp (T_wall_leg @ transl(u, 0, z_top) @ rotx(pi)), i.e. placed from the
     stone's leg frame; full stones with the CAD mesh, half stones with cad/stone_half_placeholder.stl
-    (robodk/make_half_stone.py, PLACEHOLDER); the magazine holds both types in the job's slots, refilled by the job's
-    reload plan (station trip: routes checked, the station picks themselves are not simulated);
+    (robodk/make_half_stone.py, PLACEHOLDER); the magazine holds both types in the job's slots;
+  - station trips (the job's reload plan, mauer.job.reload_plan / reload_short as in the sequencer): the pick-up
+    station starts full (every usable holder of the job, stacks of 2, PLACEHOLDER layout) and the operator tops it up
+    before a trip when it would bring fewer stones than a full one; ARES drives the route to the dock, the station
+    boards are checked and the planned looks executed like at the wall, then every planned stone is moved station
+    holder -> magazine slot with collision-checked motion (top layer first), the arm parks and ARES drives back;
+    --no-trips refills the magazine without driving or picking (fast check of the wall alone);
   - every motion is planned and collision-checked with motion.Planner (MoveJ_Test 1 deg / MoveL_Test 2 mm) exactly
     as for the straight wall; the camera body and the adapter plate (objects on the tool) are switched on against
     every stone (RoboDK does not check tool objects against static objects by default);
@@ -35,8 +40,9 @@ L wall (config [wall] shape "L", [[wall.legs]]; default when legs exist) - runs 
     IK in motion.family(), collision-free (arm, gripper, camera, adapter), a collision-free transfer from the current
     (parked) pose, unoccluded (render with and without the occluders: < 0.2 % changed pixels on the board) and all
     ChArUco corners detected (mauer.vision.detect); the planned looks are executed on arrival and after each trip;
-  - images results/l_top.png, l_corner.png, l_legB_stop.png, l_camera_view.png; station saved as
-    robodk/ARES_UR5_Mauer_L.rdk (never robodk/ARES_UR5_Mauer.rdk); report results/l_wall_sim.md.
+  - images results/l_top.png, l_corner.png, l_legB_stop.png, l_camera_view.png, l_station.png (ARES at the dock on
+    the first trip, station full); station saved as robodk/ARES_UR5_Mauer_L.rdk (never robodk/ARES_UR5_Mauer.rdk);
+    report results/l_wall_sim.md.
 
 Usage (Windows Python):
     py.exe robodk/simulate.py                       # the L of the config (full run, ~1 h)
@@ -45,7 +51,8 @@ Usage (Windows Python):
     py.exe robodk/simulate.py --from-stop 2         # L: stops before 2 built without motion, simulate from stop 2
 
 Not simulated: dynamics, jaw motion, tipping, pin engagement forces, ARES drive error (the RoboDK ARES stands exactly
-at the nominal stop), the station picks, the floor plates (only the printed boards are objects).
+at the nominal stop and dock), the operator's refills of the station (stones appear in the holders), the floor plates
+(only the printed boards are objects).
 """
 from __future__ import annotations
 
@@ -405,8 +412,10 @@ def interpolate(a, b, step_mm: float = 100.0, step_deg: float = 5.0) -> list:
 
 
 def magazine_events(job) -> tuple[list, dict]:
-    """(initial fill [(slot, kind)] bottom first, {global stone index: [(slot, kind), ...] refilled before it}) -
-    the reload rule of tools/make_job.py plan_slots / the sequencer (mauer.job.reload_plan, reload_short)."""
+    """(initial magazine fill [(slot, kind)] bottom first, {global stone index: reload before it}) with a reload =
+    {"pairs": [(station slot, magazine slot, kind), ...] in fill order, "refill": the operator tops the station up
+    first} - the reload rule of tools/make_job.py plan_slots / the sequencer (mauer.job.reload_plan, reload_short);
+    the station starts full."""
     from mauer import job as mjob
     mag = mjob.SlotState.magazine(job.magazine)
     init = sorted(mag.filled, key=lambda s: (mag.layer[s], s))
@@ -418,13 +427,14 @@ def magazine_events(job) -> tuple[list, dict]:
     events = {}
     for j, t in enumerate(stones):
         if mag.empty():
-            if mjob.reload_short(st, full_station, mag, kinds[j:]):
+            refill = mjob.reload_short(st, full_station, mag, kinds[j:])
+            if refill:
                 st = full_station.copy()
             pairs = mjob.reload_plan(mag, st, kinds[j:])
             for ssid, mid, kind in pairs:
                 st.take(ssid)
                 mag.fill(mid, kind)
-            events[j] = [(mid, kind) for _, mid, kind in pairs]
+            events[j] = {"pairs": pairs, "refill": refill}
         sid = t.slot or mag.next_take(kind=t.kind)
         if sid is None or not mag.can_take(sid) or mag.kinds.get(sid) != t.kind:
             raise RuntimeError(f"job slot plan inconsistent at stone {t.label}: slot {sid}")
@@ -436,7 +446,8 @@ def pair_label(item, link: int) -> str:
     name = item.Name()
     if item.Type() == ITEM_TYPE_ROBOT:
         return f"{name} link {link}"
-    for pre, lab in (("Stone_wall_", "wall stone "), ("Stone_mag_", "magazine stone "), ("Board_", "board ")):
+    for pre, lab in (("Stone_wall_", "wall stone "), ("Stone_mag_", "magazine stone "),
+                     ("Stone_station_", "station stone "), ("Board_", "board ")):
         if name.startswith(pre):
             rest = name[len(pre):]
             return lab + (rest.rsplit("_", 1)[0] if pre != "Board_" else rest)
@@ -467,11 +478,21 @@ class LSim(Sim):
         self.T_fc = g.to_robodk(self.T_fc_np)
         self.specs = board_specs(cfg)
         self.wall_boards = {p.name: p.T_parent_board for p in placements(cfg) if p.parent == "wall"}
+        self.T_ws_np = np.asarray(job.station.T_wall_station, float)
+        self.station_boards = {p.name: self.T_ws_np @ p.T_parent_board for p in placements(cfg)
+                               if p.parent == "station"}
+        self.board_T = {**self.wall_boards, **self.station_boards}          # wall frame
         self.intr = nominal(cfg)
         self.K = self.intr.K
         self.Wimg, self.Himg = int(cfg["camera"]["res_x"]), int(cfg["camera"]["res_y"])
         self.slot_T = {s.id: g.to_robodk(s.T_ares_tcp) for s in job.magazine.slots}
         self.mag: dict = {}                 # slot -> (item, kind)
+        self.f_station = it.get("f_station")
+        self.st_slot_T = {s.id: g.to_robodk(s.T_station_tcp) for s in job.station.slots}    # station frame
+        self.st: dict = {}                  # station holder -> (item, kind)
+        self.st_boxes: dict = {}            # station holder -> (lo, hi) solid box in the wall frame
+        self.transfer_log: list = []        # station -> magazine moves
+        self.trip_log: list = []
         self.wall_items: dict = {}          # stone key -> item
         self.wall_boxes: dict = {}          # stone key -> (lo, hi) solid box in the wall frame
         self.pose = None                    # ARES Pose2D in the wall frame
@@ -497,7 +518,8 @@ class LSim(Sim):
         self.pose = p
 
     def statics(self) -> list:
-        return list(self.wall_items.values()) + list(self.boards.values()) + ([self.table] if self.table else [])
+        return (list(self.wall_items.values()) + list(self.boards.values()) + ([self.table] if self.table else [])
+                + [m[0] for m in self.st.values()])
 
     def route_pairs(self, on: bool) -> None:
         """ARES chassis and magazine stones against the built wall, the boards and the table - only while ARES
@@ -527,6 +549,39 @@ class LSim(Sim):
         set_static(self.RDK, st, stones_in_station(self.RDK), self.ares)
         self.cam_pairs([st], True)
         self.mag[sid] = (st, kind)
+
+    def table_pairs(self, stones: list, on: bool) -> None:
+        """Stones against the pick-up table: off while they stand on it (contact by design), on while held."""
+        if self.table is None or not stones:
+            return
+        n = len(stones)
+        self.RDK.setCollisionActivePairList([COLLISION_ON if on else COLLISION_OFF] * n, stones, [self.table] * n,
+                                            [0] * n, [0] * n)
+
+    def fill_station(self, sids) -> None:
+        """The operator puts stones into the given station holders (no motion), bottom layer first."""
+        np, g = self.np, self.g
+        stn = self.job.station
+        for sid in sorted(sids, key=lambda i: (stn.slot(i).layer, i)):
+            if sid in self.st:
+                continue
+            slot = stn.slot(sid)
+            st = self.new_stone(self.f_station, self.st_slot_T[sid] * rotx(PI) * T_tc_cad(self.cfg, slot.kind),
+                                f"station_{sid}", slot.kind)
+            set_static(self.RDK, st, stones_in_station(self.RDK), self.ares)
+            self.table_pairs([st], False)
+            self.cam_pairs([st], True)
+            self.st[sid] = (st, slot.kind)
+            L, W, H = stone_dims(self.cfg, slot.kind)
+            c = np.array([[x, y, z] for x in (-L / 2, L / 2) for y in (-W / 2, W / 2) for z in (0.0, H)])
+            p = g.apply(self.T_ws_np @ slot.T_station_tcp, c)              # TCP z points into the stone
+            self.st_boxes[sid] = (p.min(0), p.max(0))
+
+    def station_safe_z(self) -> float:
+        """Transfer height at the dock: a held stone (incl. pins) 60 mm over the magazine as it is and over the
+        highest station holder (the station frame lies at floor level like the ARES frame)."""
+        top = max(T.Pos()[2] for T in self.st_slot_T.values())
+        return max(self.safe_z(), top + self.H + self.cfg["brick"]["pin_length"] + 60.0)
 
     def wall_pose(self, task):
         """CAD-frame pose (wall frame) of a placed stone of the job."""
@@ -696,6 +751,80 @@ class LSim(Sim):
             print(f"   PARK FAILED: {e}", flush=True)
             self.robot.setJoints(self.j_home)
 
+    # ── station -> magazine ──────────────────────────────────────────────────
+    def transfer(self, ssid: str, mid: str, kind: str) -> dict:
+        """One stone station holder -> magazine slot with collision-checked motion (as lay(), ARES at the dock)."""
+        P, r = self.planner, self.robot
+        rec = {"station_slot": ssid, "slot": mid, "kind": kind, "ok": False}
+        st, k_ = self.st[ssid]
+        if k_ != kind:
+            raise RuntimeError(f"station holder {ssid} holds a {k_} stone, the reload plan needs {kind}")
+        t_m = time.time()
+        pick = invH(self.f_ares.Pose()) * self.f_wall.Pose() * self.g.to_robodk(self.T_ws_np) * self.st_slot_T[ssid]
+        P.z_safe = self.station_safe_z()
+        res = P.plan_to(r.Joints().list(), pick)
+        if not res:
+            self.park_safe(full=True)
+            res = P.plan_to(r.Joints().list(), pick)
+        if not res:
+            return self.transfer_fail(rec, "pick at the station", pick, r.Joints().list())
+        moves, j_t, pose = res
+        self.go(moves)
+        del self.st[ssid]
+        self.st_boxes.pop(ssid, None)
+        self.cam_pairs([st], False)
+        set_held(self.RDK, st, stones_in_station(self.RDK), self.ares, r, self.tool)
+        self.table_pairs([st], True)
+        self.RDK.Update()                                  # fresh absolute poses before re-parenting (see put_in_wall)
+        st.setParentStatic(self.tool)                                         # grip
+        ret = P.plan_retreat(j_t, pose)
+        if not ret:
+            return self.transfer_fail(rec, "retreat from the station", None, None, held=st)
+        self.go(ret[0])
+        place = self.slot_T[mid]
+        P.z_safe = self.station_safe_z()
+        res = P.plan_to(r.Joints().list(), place)
+        if not res:
+            self.park_safe(full=True)
+            res = P.plan_to(r.Joints().list(), place)
+        if not res:
+            return self.transfer_fail(rec, "place in the magazine", place, r.Joints().list(), held=st)
+        moves, j_t, pose = res
+        self.go(moves)
+        self.RDK.Update()
+        st.setParentStatic(self.f_ares)                                       # release on the deck
+        st.setName(st.Name().replace("Stone_station_", "Stone_mag_").replace(ssid, mid))
+        set_static(self.RDK, st, stones_in_station(self.RDK), self.ares)
+        self.cam_pairs([st], True)
+        self.mag[mid] = (st, kind)
+        ret = P.plan_retreat(j_t, pose)
+        if not ret:
+            self.arm_pairs(st, True)
+            return self.transfer_fail(rec, "retreat from the magazine", None, None)
+        self.go(ret[0])
+        self.arm_pairs(st, True)                                              # jaws clear of the stone now
+        rec["ok"] = True
+        self.motion_s += time.time() - t_m
+        return rec
+
+    def transfer_fail(self, rec: dict, phase: str, target, j_from, held=None) -> dict:
+        """Diagnose a failed transfer; the run goes on with the planned magazine: the stone is put into its magazine
+        slot without motion (red), the arm back to the home pose."""
+        cat, why = (self.diagnose(target, j_from) if target is not None
+                    else ("collision", "retreat blocked: " + self.diag_retreat()))
+        rec.update(ok=False, phase=phase, category=cat, why=why)
+        print(f"   FAILED station {rec['station_slot']} -> magazine {rec['slot']} ({phase}): {cat}: {why}", flush=True)
+        for item in [held] + ([self.st.pop(rec["station_slot"])[0]] if rec["station_slot"] in self.st else []):
+            if item is not None and item.Valid():
+                item.Delete()
+        self.st_boxes.pop(rec["station_slot"], None)
+        if rec["slot"] not in self.mag:
+            self.fill_slot(rec["slot"], rec["kind"])
+            self.mag[rec["slot"]][0].setColor(FAILED)
+        self.robot.setJoints(self.j_home)
+        rec["teleported"] = True
+        return rec
+
     # ── routes ───────────────────────────────────────────────────────────────
     def drive_route(self, route: list, what: str, animate: bool) -> dict:
         """Move ARES along the waypoints (wall frame); every sample checked for collisions (route_pairs on)."""
@@ -723,6 +852,37 @@ class LSim(Sim):
             print(f"   ROUTE {what}: {len(rec['hits'])} colliding samples, e.g. {rec['hits'][0]}", flush=True)
         self.route_log.append(rec)
         return rec
+
+    def station_trip(self, k: int, n: int, stop, ev: dict, animate: bool, image: Path | None = None) -> dict:
+        """Reload n from stop k like mauer.sequencer._reload: (operator top-up), route to the dock, station looks
+        (planned ones executed), the planned stones station -> magazine, park, route back. ARES ends at the end of
+        route_from_station (the stop); the caller re-checks the wall looks."""
+        trip = {"trip": n, "stop": k, "refill": 0, "planned": len(ev["pairs"]), "moved": 0, "looks": {}}
+        if ev["refill"]:
+            missing = [sid for sid in self.job.station.take_order if sid not in self.st]
+            self.fill_station(missing)
+            trip["refill"] = len(missing)
+            print(f"   operator tops up the station: {len(missing)} stones", flush=True)
+        self.drive_route(stop.route_to_station, f"stop {k} -> station (trip {n})", animate=animate)
+        self.set_ares(self.job.station.dock_in_wall)
+        self.RDK.Render(False)
+        planned = {lk.boards[0]: lk for lk in self.job.station.looks}
+        res = self.looks(k, f"station trip {n}", sorted(self.station_boards), planned, execute=True)
+        trip["looks"] = {b: bool(r["ok"]) for b, r in res.items()}
+        if image is not None:
+            trip["image"] = station_image(self, image, n)
+        for ssid, mid, kind in ev["pairs"]:
+            rec = self.transfer(ssid, mid, kind)
+            rec.update(trip=n, stop=k)
+            self.transfer_log.append(rec)
+            if rec["ok"]:
+                trip["moved"] += 1
+                print(f"   station {ssid:6s} -> magazine {mid}  ({kind}, collision tests so far: "
+                      f"{self.planner.tests}, {(time.time() - self.t0) / 60:.1f} min)", flush=True)
+        self.park_safe(full=True)
+        self.drive_route(stop.route_from_station, f"station -> stop {k} (trip {n})", animate=animate)
+        self.trip_log.append(trip)
+        return trip
 
     # ── looks ────────────────────────────────────────────────────────────────
     def open_camera(self) -> None:
@@ -770,7 +930,7 @@ class LSim(Sim):
         boxes = [((-self.cfg["ares"]["length"] / 2, -self.cfg["ares"]["width"] / 2, 0.0),
                   (self.cfg["ares"]["length"] / 2, self.cfg["ares"]["width"] / 2, self.cfg["ares"]["deck_top_z"]))]
         T_aw = g.inv(self.pose_T_np())
-        for lo, hi in self.wall_boxes.values():                                 # wall frame
+        for lo, hi in list(self.wall_boxes.values()) + list(self.st_boxes.values()):        # wall frame
             corners = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
             p = g.apply(T_aw, corners)
             boxes.append((tuple(p.min(0)), tuple(p.max(0))))
@@ -793,7 +953,8 @@ class LSim(Sim):
         np, g = self.np, self.g
         img = self.cam.grab_bgr()
         hide = [it for it in ([self.robot, self.tool, self.ares] + self.cams + list(self.wall_items.values())
-                              + [m[0] for m in self.mag.values()] + ([self.table] if self.table else []))
+                              + [m[0] for m in self.mag.values()] + [m[0] for m in self.st.values()]
+                              + ([self.table] if self.table else []))
                 if it.Visible()]
         for it in hide:
             it.setVisible(False)
@@ -839,7 +1000,7 @@ class LSim(Sim):
         """First valid look pose for board `name` at the current ARES pose and wall state (see module docstring)."""
         np, g, P = self.np, self.g, self.planner
         T_aw = g.inv(self.pose_T_np())
-        T_ab_ = T_aw @ self.wall_boards[name]
+        T_ab_ = T_aw @ self.board_T[name]
         cands = []
         if look is not None and look.T_base_flange is not None:
             cands.append(("job", self.T_ab_np @ np.asarray(look.T_base_flange, float) @ self.T_fc_np))
@@ -1032,6 +1193,30 @@ def static_findings(cfg: dict) -> dict:
 
 
 # ── images ────────────────────────────────────────────────────────────────────
+def station_image(sim: LSim, path: Path, trip: int) -> str | None:
+    """ARES at the dock next to the loaded pick-up station, seen from the front right of the table. The snapshot
+    closes every camera window, so the flange camera is re-opened afterwards."""
+    import cv2
+    from mauer.floor import station_table_extent
+    np, g = sim.np, sim.g
+    x_max, y_max = station_table_extent(sim.cfg)
+    z_tab = float(sim.cfg["pickup_station"]["table_z"])
+    w = lambda x, y, z: [float(c) for c in g.apply(sim.T_ws_np, np.array([[x, y, z]]))[0]]   # noqa: E731
+    T_v = look_at(w(x_max + 1100.0, -1500.0, 1900.0), w(x_max / 2, -420.0, z_tab))
+    ok, _ = snapshot_pinhole(sim.RDK, path, T_v, (1600, 1000), 55.0)
+    sim.open_camera()
+    if not ok:
+        return None
+    img = cv2.imread(str(path))
+    n_full = sum(1 for k, _ in sim.st.values() if k == "full")
+    cv2.rectangle(img, (0, 0), (img.shape[1], 44), (255, 255, 255), -1)
+    cv2.putText(img, f"pick-up station, trip {trip}: ARES at the dock, {len(sim.st)} stones on the table ({n_full} full "
+                f"in stacks of 2, {len(sim.st) - n_full} half; PLACEHOLDER layout), boards S0 / S1", (14, 29),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (20, 20, 20), 2, cv2.LINE_AA)
+    cv2.imwrite(str(path), img)
+    return path.name
+
+
 def l_images(sim: LSim, look_shot: dict | None, res_dir: Path) -> list:
     """results/l_top.png, l_corner.png, l_legB_stop.png, l_camera_view.png."""
     import cv2
@@ -1159,6 +1344,16 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
     hits = sum(len(r["hits"]) for r in sim.route_log)
     w(f"- Routes: {len(sim.route_log)} ARES moves (leg change, {info['reloads']} station trips there and back) "
       f"sampled in 3D, {hits} colliding samples.")
+    if sim.trip_log:
+        moved = sum(t["moved"] for t in sim.trip_log)
+        planned_ = sum(t["planned"] for t in sim.trip_log)
+        seen = sum(all(t["looks"].get(lk.boards[0], False) for lk in job.station.looks) for t in sim.trip_log)
+        w(f"- Station trips: {len(sim.trip_log)} ({sum(1 for t in sim.trip_log if t['refill'])} operator top-ups "
+          f"of the station before a trip), {moved} of {planned_} stones moved station -> magazine with "
+          f"collision-checked motion; both planned station boards seen at {seen} of {len(sim.trip_log)} arrivals.")
+    elif info["reloads"]:
+        w(f"- Station trips: not simulated (--no-trips): the magazine was refilled {info['reloads']} times without "
+          "driving or picking.")
     w("")
     w("## Inputs")
     w("")
@@ -1166,6 +1361,14 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
       f"key `{job.meta.get('reach_table', {}).get('key')}`), {len(job.stops)} stops, {job.n_stones} stones "
       f"({sum(t.kind == 'half' for t in stones)} half), magazine {job.magazine.capacity} slots, "
       f"{info['reloads']} reloads; plan = `results/l_wall_plan.md`.")
+    stn = job.station
+    used = [stn.slot(i) for i in stn.take_order]
+    w(f"- Pick-up station (`[pickup_station]`, PLACEHOLDER): {len(used)} usable holders - "
+      f"{sum(s.kind == 'full' for s in used)} full stones in stacks of up to {max(s.layer for s in used)}, "
+      f"{sum(s.kind == 'half' for s in used)} half stones; dock {stn.dock_in_wall.describe()} (wall frame), ARES "
+      f"front {cfg['pickup_station']['ares_xyz'][1] * -1 - cfg['ares']['length'] / 2:.0f} mm from the table; boards "
+      f"{', '.join(stn.boards)} on the table top. The station starts full; the operator tops it up before a trip "
+      "when it would bring fewer stones than a full one (`mauer.job.reload_short`, as in the sequencer).")
     for lg in job.legs:
         T = lg["T_wall_leg"]
         w(f"- Leg {lg['name']}: {lg['n0']} stones in course 0, frame ({T[0][3]:.0f}, {T[1][3]:.0f}) mm, "
@@ -1184,8 +1387,9 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
       f"with all occluders hidden <= {OCCL_MAX * 100:.1f} % changed board pixels) and all 12 ChArUco corners "
       "detected; ideal pinhole render (RoboDK Cam2D), no blur/noise.")
     w("- Not simulated: dynamics, jaw motion, pin engagement, tipping; ARES drive error (ARES stands exactly at the "
-      "nominal stop, the routes are driven exactly); the station picks (the magazine is refilled at the dock without "
-      "motion); the floor plates (only the printed boards are objects); camera blur, noise, lighting.")
+      "nominal stop and dock, the routes are driven exactly); the operator's top-ups of the station (the stones "
+      "appear in the holders); the floor plates (only the printed boards are objects); camera blur, noise, "
+      "lighting.")
     w("")
     w("Depends on (non-CONFIRMED config values, from the job):")
     w("")
@@ -1224,6 +1428,22 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
         w("")
     w(f"Collision tests: {sim.planner.tests}; motion planning + execution {sim.motion_s / 60:.1f} min.")
     w("")
+    if sim.trip_log:
+        w("## Station trips (ARES at the dock, collision-checked station -> magazine moves)")
+        w("")
+        w("Per trip: the operator's top-up (stones put into empty holders before the trip), the station boards at the "
+          "dock (planned looks executed), the stones moved from the station holders (top layer first) into the "
+          "magazine slots of the job's reload plan.")
+        w("")
+        w("| trip | from stop | operator top-up | station boards seen | stones moved | failed |")
+        w("|---|---|---|---|---|---|")
+        for t in sim.trip_log:
+            fl = [r for r in sim.transfer_log if r.get("trip") == t["trip"] and not r["ok"]]
+            w(f"| {t['trip']} | {t['stop']} | {t['refill'] or '-'} | "
+              f"{', '.join(b for b, ok in sorted(t['looks'].items()) if ok) or '-'} | {t['moved']} / {t['planned']} | "
+              + ("; ".join(f"{r['station_slot']} -> {r['slot']} ({r['phase']}: {r['category']})" for r in fl) or "-")
+              + " |")
+        w("")
     w("## ARES routes (3D check, 100 mm / 5 deg samples, parked arm, magazine as loaded)")
     w("")
     w("| route | waypoints | samples | colliding samples | pairs |")
@@ -1235,9 +1455,10 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
     w("## Boards seen per stop (RoboDK look check)")
     w("")
     w("Planned = the job's two looks per stop (longest baseline). arrival = wall of the earlier stops, magazine full "
-      "(all 8 boards checked); after trip n = re-measurement after the n-th station trip of that stop (the planned "
-      "boards only, executed); complete = the stop's stones placed (all 8 boards; worst case, the sequencer does not "
-      "look there). Source job = the job's look pose, grid = first valid pose of the search grid.")
+      "(all 8 boards checked); station trip n = the station boards with ARES at the dock (planned looks executed); "
+      "after trip n = re-measurement after the n-th station trip of that stop (the planned boards only, executed); "
+      "complete = the stop's stones placed (all 8 boards; worst case, the sequencer does not look there). Source "
+      "job = the job's look pose, grid = first valid pose of the search grid.")
     w("")
     w("| stop | leg | state | planned boards ok | all boards seen (source, d mm / tilt deg) | not seen (reason) |")
     w("|---|---|---|---|---|---|")
@@ -1292,9 +1513,20 @@ def magazine_before(job, initial: list, events: dict, j_stop: int) -> list:
     content = dict(initial)
     for j, t in enumerate(job.stones()[:j_stop]):
         if j in events:
-            content = dict(events[j])
+            content = {mid: kind for _, mid, kind in events[j]["pairs"]}
         content.pop(t.slot, None)
     return sorted(content.items(), key=lambda kv: (kv[0][-1], kv[0]))       # bottom layer first (id ends in l<n>)
+
+
+def station_before(job, events: dict, j_stop: int) -> list:
+    """Filled station holders before the stone with global index j_stop (replay; the station starts full)."""
+    full = list(job.station.take_order)
+    filled = set(full)
+    for j in sorted(e for e in events if e < j_stop):
+        if events[j]["refill"]:
+            filled = set(full)
+        filled -= {ssid for ssid, _, _ in events[j]["pairs"]}
+    return [s for s in full if s in filled]
 
 
 def run_l(args, cfg: dict, RDK, it: dict) -> int:
@@ -1323,6 +1555,8 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
         sim.prebuild(st.stones)                       # earlier stops: built without motion
     for sid, kind in magazine_before(job, initial, events, first[start]):
         sim.fill_slot(sid, kind)
+    if args.trips:
+        sim.fill_station(station_before(job, events, first[start]))          # the operator filled it before the run
     sim.open_camera()
     RDK.Render(False)
     RDK.setSimulationSpeed(args.speed)
@@ -1351,16 +1585,18 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
                 if gidx in events and gidx > 0:
                     n_trip += 1
                     reloads += 1
-                    print(f"   magazine empty -> station trip {reloads} (refill {len(events[gidx])} stones, "
-                          f"{sum(kd == 'half' for _, kd in events[gidx])} half)", flush=True)
+                    ev = events[gidx]
+                    print(f"   magazine empty -> station trip {reloads} ({len(ev['pairs'])} stones, "
+                          f"{sum(kd == 'half' for *_, kd in ev['pairs'])} half)", flush=True)
                     sim.park_safe(full=True)
                     here = sim.pose
                     if args.trips:
-                        sim.drive_route(st.route_to_station, f"stop {k} -> station (trip {reloads})", animate=False)
-                    for sid, kind in events[gidx]:
-                        sim.fill_slot(sid, kind)
-                    if args.trips:
-                        sim.drive_route(st.route_from_station, f"station -> stop {k} (trip {reloads})", animate=False)
+                        image = (REPO / "results" / "l_station.png"
+                                 if not args.no_images and not sim.trip_log else None)
+                        sim.station_trip(k, reloads, st, ev, animate=args.animate, image=image)
+                    else:
+                        for _, sid, kind in ev["pairs"]:                     # --no-trips: refilled without motion
+                            sim.fill_slot(sid, kind)
                     sim.set_ares(here)
                     RDK.Render(False)
                     sim.looks(k, f"after trip {n_trip}", sorted(planned), planned, execute=True)
@@ -1391,10 +1627,10 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     finally:
         RDK.Render(True)
         RDK.setSimulationSpeed(1)
-    images = []
+    images = [t["image"] for t in sim.trip_log if t.get("image")]
     if not args.no_images:
         try:
-            images = l_images(sim, look_shot, REPO / "results")
+            images += l_images(sim, look_shot, REPO / "results")
         except Exception as e:  # noqa: BLE001
             import traceback
             traceback.print_exc()
@@ -1409,13 +1645,16 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
         print(f"wrote {args.report or L_REPORT}", flush=True)
     if args.json:
         Path(args.json).write_text(json.dumps({"stones": sim.stone_log, "routes": sim.route_log,
-                                               "looks": sim.look_log, "info": info}, default=str, indent=1),
+                                               "looks": sim.look_log, "trips": sim.trip_log,
+                                               "transfers": sim.transfer_log, "info": info}, default=str, indent=1),
                                    encoding="utf-8")
     n_ok = sum(r["ok"] for r in sim.stone_log)
+    n_tr = sum(r["ok"] for r in sim.transfer_log)
     print(f"done: {n_ok}/{len(sim.stone_log)} stones placed with collision-checked motion "
-          f"({job.n_stones} planned), {sim.planner.tests} collision tests, {(time.time() - t_start) / 60:.1f} min",
-          flush=True)
-    return 0 if n_ok == job.n_stones else 2
+          f"({job.n_stones} planned), {n_tr}/{len(sim.transfer_log)} moved station -> magazine in "
+          f"{len(sim.trip_log)} station trips, {sim.planner.tests} collision tests, "
+          f"{(time.time() - t_start) / 60:.1f} min", flush=True)
+    return 0 if n_ok == job.n_stones and n_tr == len(sim.transfer_log) else 2
 
 
 def problems_of(sim: LSim, info: dict) -> list:
@@ -1426,6 +1665,10 @@ def problems_of(sim: LSim, info: dict) -> list:
         rs = [r for r in fails if r["category"] == cat]
         out.append(f"{cat}: {len(rs)} stone(s) ({', '.join(r['label'] for r in rs[:12])}"
                    + (", ..." if len(rs) > 12 else "") + ") - see the failure table.")
+    for r in sim.transfer_log:
+        if not r["ok"]:
+            out.append(f"station trip {r['trip']}: station holder {r['station_slot']} -> magazine {r['slot']} failed "
+                       f"({r['phase']}): {r['category']}: {r['why']} (stone put into the magazine without motion).")
     for r in sim.route_log:
         if r["hits"]:
             out.append(f"route {r['what']}: {len(r['hits'])} colliding samples "
@@ -1489,9 +1732,9 @@ def main(argv: list | None = None) -> int:
     ap.add_argument("--keep-open", action="store_true", help="leave the own RoboDK instance open at the end")
     ap.add_argument("--from-stop", type=int, default=0, help="L: build the earlier stops without motion")
     ap.add_argument("--max-stones", type=int, default=0, help="L: stop after N simulated stones (debug)")
-    ap.add_argument("--animate", action="store_true", help="L: animate the ARES moves between stops")
+    ap.add_argument("--animate", action="store_true", help="L: animate the ARES moves (stops and station trips)")
     ap.add_argument("--no-trips", dest="trips", action="store_false",
-                    help="L: do not check the station routes of the reload trips")
+                    help="L: no station trips - the magazine is refilled without driving or picking")
     ap.add_argument("--no-images", action="store_true")
     ap.add_argument("--no-report", action="store_true")
     ap.add_argument("--report", type=Path, default=None, help=f"L report (default {L_REPORT.relative_to(REPO)})")

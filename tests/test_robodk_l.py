@@ -1,5 +1,6 @@
-"""RoboDK model of the L wall: half stone mesh, the nominal L in build_station, and a short collision-checked run of
-leg B's first stones next to the finished leg A (robodk/simulate.py LSim).
+"""RoboDK model of the L wall: half stone mesh, the nominal L in build_station, a short collision-checked run of
+leg B's first stones next to the finished leg A and a station trip with stones moved station -> magazine
+(robodk/simulate.py LSim).
 
 Opt-in like tests/test_robodk_camera.py (they start a separate RoboDK instance on port 20596 and close it at the end;
 the user's RoboDK is never touched):
@@ -37,7 +38,8 @@ import mauer.geometry as g  # noqa: E402
 import rdk_common as rc  # noqa: E402
 import wallplan  # noqa: E402
 
-PORT = 20596                      # not the simulation (20599), not test_robodk_camera (20598), not the user's (2050x)
+PORT = 20596                      # not the simulation (20599), not test_robodk_camera (20598), not the user's (2050x);
+                                  # the station-trip test uses PORT - 1
 
 
 @pytest.fixture(scope="module")
@@ -84,7 +86,8 @@ def test_build_station_draws_the_l_with_leg_boards(rdk, cfg):
     rib = 1.69
     assert bb["min"][0] == pytest.approx(0.0, abs=0.01)
     assert bb["max"][0] == pytest.approx(2400.0 + rib, abs=0.05)          # leg B's outer ribs
-    assert bb["min"][1] == pytest.approx(-60.0 - 1200.0, abs=0.01)        # leg B's far end
+    B = next(lg for lg in cfg["wall"]["legs"] if lg["name"] == "B")
+    assert bb["min"][1] == pytest.approx(B["xyz_in_wall"][1] - B["n0"] * 200.0, abs=0.01)   # leg B's far end
     assert bb["max"][1] == pytest.approx(60.0 + rib, abs=0.05)            # leg A's ARES-side ribs
     assert bb["max"][2] == pytest.approx(500.0, abs=0.01)                 # 4 courses on the 20 mm base
     from mauer.reference import placements
@@ -131,9 +134,72 @@ def test_leg_b_first_stones_collision_checked_and_boards_seen(rdk, cfg):
     assert len(seen) >= 2, seen
     # leg B's first stones (corner stones of courses 0 and 1, next to leg A's end) with collision-checked motion
     if first in events:
-        for sid, kind in events[first]:
+        for _, sid, kind in events[first]["pairs"]:
             sim.fill_slot(sid, kind)
     for t in stop.stones[:4]:
         rec = sim.lay(t)
         assert rec["ok"], rec
     assert {t.label for t in stop.stones[:4]} >= {"Bc0i0", "Bc1i0h"}
+
+
+# ── station trip: stones station -> magazine ─────────────────────────────────
+@pytest.fixture()
+def rdk_fresh():
+    """An instance of its own: textured boards added after the first camera of an instance render black
+    (robodk/sim_camera.py), and the leg-B test above already opened one in the module instance."""
+    RDK = rc.connect(new_instance=True, port=PORT - 1)
+    yield RDK
+    rc.close_instance(RDK)
+
+
+def test_station_trip_moves_stones_into_the_magazine(rdk_fresh, cfg):
+    """The first reload of the job, shortened: route to the dock, station boards seen, a top-layer stone, the stone
+    below it and a half stone moved station -> magazine with collision-checked motion, route back - no colliding
+    route sample, every stone exactly in its magazine slot."""
+    import simulate as S
+    from make_job import build_nominal
+
+    class Args:
+        dist = float(cfg["wall"]["dist_nominal"])
+
+    rdk = rdk_fresh
+    it = bs.build(rdk, cfg)
+    job = build_nominal(cfg)
+    sim = S.LSim(rdk, cfg, it, job, Args())
+    sim.setup()
+    rdk.Render(False)
+    sim.planner.z_safe = sim.safe_z(full=True)
+    sim.j_home = sim.planner.compact(0.0, [0, -100, 52, -42, -90, 0])
+    sim.robot.setJoints(sim.j_home)
+    sim.fill_station(job.station.take_order)
+    assert len(sim.st) == len(job.station.take_order) == 20
+    rdk.Update()
+    assert sim.pairs() == []                                   # stones rest on the table and on each other
+    initial, events = S.magazine_events(job)
+    j1 = min(events)
+    k = next(st.index for st in job.stops if j1 < sum(len(s.stones) for s in job.stops[:st.index + 1]))
+    assert S.magazine_before(job, initial, events, j1) == []   # the magazine is empty before the first trip
+    pairs = events[j1]["pairs"]
+    top = pairs[0][0]
+    assert job.station.slot(top).layer == 2
+    below = top[:-1] + "1"
+    half = next(sid for sid in job.station.take_order if job.station.slot(sid).kind == "half")
+    ev = {"pairs": [(top, pairs[0][1], "full"), (below, pairs[1][1], "full"), (half, pairs[2][1], "half")],
+          "refill": False}
+    stop = job.stops[k]
+    sim.set_ares(stop.ares)
+    sim.open_camera()
+    rdk.Render(False)
+    trip = sim.station_trip(k, 1, stop, ev, animate=False)
+    assert trip["moved"] == 3, sim.transfer_log
+    assert trip["looks"] == {"S0": True, "S1": True}
+    st_looks = [e for e in sim.look_log if e["state"] == "station trip 1"]
+    assert st_looks and all(r["source"] == "job" for r in st_looks[0]["res"].values())   # the job's own looks
+    assert [r["hits"] for r in sim.route_log] == [[], []]
+    for ssid, mid, kind in ev["pairs"]:
+        assert ssid not in sim.st and sim.mag[mid][1] == kind
+        item = sim.mag[mid][0]
+        assert item.Parent().Name() == "ARES base_link" and item.Name().startswith(f"Stone_mag_{mid}_")
+        want = g.from_robodk(sim.slot_T[mid] * rc.rotx(np.pi) * rc.T_tc_cad(cfg, kind))
+        assert np.allclose(g.from_robodk(item.Pose()), want, atol=1e-3), mid
+    assert len(sim.st) == 17 and sim.pose.delta(stop.ares)[0] < 1e-6       # ARES back at the stop
