@@ -157,7 +157,8 @@ def test_snapshot_survives_a_closed_camera_window(rdk, cfg):
     cam.open()
     try:
         _restore_and_close(rdk, "cam_frame_close2 - Size")
-        assert cam._snapshot() is None and cam._last_shape[:2] == (133, 160)    # the failure is reproduced
+        assert cam._snapshot() is None                         # the failure is reproduced: a shrunken snapshot
+        assert cam._last_shape is not None and cam._last_shape[:2] != (2064, 2472)  # (160 x 133 / 144 x 120 seen)
         del cam._params                                         # re-open with the module's parameters
         assert cam.grab().image.shape == (2064, 2472)
     finally:
