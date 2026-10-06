@@ -190,6 +190,11 @@ settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the i
 # intrinsics, report data/mount_check/mount_2026-10-06.json): image right = flange +x, image down = flange +y, optical
 # axis = flange +z, measured 3.4 deg from rpy_deg below (within the check's accuracy); calib board flat on the table
 # 0.9 deg from the nominal optical axis. The position (xyz) is not checked by it - hand-eye calibration.
+# Hand-eye 2026-10-06 (calib/handeye.json, tools/calib_handeye.py orbit, run 2, 25 views): xyz (-149.5, 3.0, 46.2) mm,
+# rpy (-1.14, 0.46, -0.42) deg; hold-out 0.85 mm / 0.48 deg rms. Run 3 (same views again): 0.05 mm / 0.006 deg from
+# run 2 (noise negligible). Run 1 (other views, before the camera adapter touched wrist 1): 3.0 mm / 0.4 deg off with
+# the same intrinsics - a shift by the contact or a pose-set dependent systematic error; open (needs a run from
+# another start pose). z = 46 vs 6.9 here: the design's thin-lens guess of the projection centre, not a mount error.
 xyz = [-150.0, 0.0, 6.86]   # ASSUMPTION (design)
 rpy_deg = [0.0, 0.0, 0.0]   # ASSUMPTION (design)
 
