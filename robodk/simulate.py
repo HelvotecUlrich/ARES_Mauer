@@ -1384,21 +1384,27 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
       f"{info['reloads']} reloads; plan = `results/l_wall_plan.md`.")
     stn = job.station
     used = [stn.slot(i) for i in stn.take_order]
-    w(f"- Pick-up station (`[pickup_station]`, PLACEHOLDER): {len(used)} usable holders - "
+    on_floor = float(cfg["pickup_station"]["table_z"]) <= 0.0
+    where = "station area (floor)" if on_floor else "table"
+    w(f"- Pick-up station (`[pickup_station]`, {'on the floor' if on_floor else 'table'}): {len(used)} usable holders - "
       f"{sum(s.kind == 'full' for s in used)} full stones in stacks of up to {max(s.layer for s in used)}, "
       f"{sum(s.kind == 'half' for s in used)} half stones; dock {stn.dock_in_wall.describe()} (wall frame), ARES "
-      f"front {cfg['pickup_station']['ares_xyz'][1] * -1 - cfg['ares']['length'] / 2:.0f} mm from the table; boards "
-      f"{', '.join(stn.boards)} on the table top. The station starts full; the operator tops it up before a trip "
-      "when it would bring fewer stones than a full one (`mauer.job.reload_short`, as in the sequencer).")
+      f"front {cfg['pickup_station']['ares_xyz'][1] * -1 - cfg['ares']['length'] / 2:.0f} mm from the {where}; boards "
+      f"{', '.join(stn.boards)} {'in their windows on the floor' if on_floor else 'on the table top'}. The station "
+      "starts full; the operator tops it up before a trip when it would bring fewer stones than a full one "
+      "(`mauer.job.reload_short`, as in the sequencer).")
     for lg in job.legs:
         T = lg["T_wall_leg"]
         ml = next((d for d in job.meta.get("legs", []) if d.get("name") == lg["name"]), {})
         w(f"- Leg {lg['name']}: {lg['n0']} stones in course 0, frame ({T[0][3]:.0f}, {T[1][3]:.0f}) mm, "
           f"{math.degrees(math.atan2(T[1][0], T[0][0])):.0f} deg in the wall frame"
           + (f"; built on ARES's {ml['side']} side at {ml['dist_mm']:.0f} mm" if ml.get("side") else "") + ".")
-    w("- Stones: full = `cad/stone_full_2026-10-01.stl` (CAD); half = `cad/stone_half_placeholder.stl` "
-      "(`robodk/make_half_stone.py`: full stone clipped to 100 mm, PLACEHOLDER). Collision models 1 mm shorter per "
-      "end face and 0.9 mm narrower per ribbed face (clearance for the 0 mm head joints, as before).")
+    b_ = cfg["brick"]
+    w(f"- Stones: full = `{b_['mesh']}`" + (f" (`{b_['mesh_cad']}` turned PINS UP)" if b_.get("pins_up") else " (CAD)")
+      + "; half = `cad/stone_half_placeholder.stl` (`robodk/make_half_stone.py`: full stone clipped to 100 mm, "
+      f"PLACEHOLDER); course pitch {b_['height'] + b_.get('bed_joint', 0.0):.0f} mm (bed joint "
+      f"{b_.get('bed_joint', 0.0):g} mm). Collision models 1 mm shorter per end face and 0.9 mm narrower per ribbed "
+      "face (clearance for the 0 mm head joints, as before).")
     w("- Motion: `motion.Planner` (IK in `motion.family()`, vertical approach 150 mm, MoveJ_Test 1 deg / MoveL_Test "
       "2 mm against ARES, magazine, wall, boards, table and the arm itself; the last 60 mm of a descent and the first "
       "60 mm of a retreat are contact phases and not tested). Camera body and adapter plate are checked against "

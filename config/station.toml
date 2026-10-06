@@ -389,7 +389,8 @@ margin = 14.0               # ASSUMPTION: plain plates (station, calib): MDF mar
 # joints (u = 200 k) for the plates' V-notches. Strips are cut into pieces (<= segment_max, cut cut_offset after a
 # stone joint so a V-tab stays whole) joined with dovetails; the last two stones of a leg and the first two of the
 # next form one L-piece across the corner (exact corner offset).
-strip_width = 120.0         # = [plates] block_width (plates rest against the edge at v = +60); = stone width
+strip_width = 120.0         # ASSUMPTION: = [plates] block_width (plates rest against the edge at v = +60) = stone
+                            # width
 segment_max = 760.0         # ASSUMPTION: longest piece along x on the 800 x 600 bed (20 mm margins)
 sheet = [800.0, 600.0]      # CONFIRMED: Trotec bed (Samuel 2026-10-06)
 sheet_margin = 10.0         # ASSUMPTION
@@ -402,9 +403,9 @@ pin_across = 51.428         # CONFIRMED: STEP, 51.428 mm across (x 34.286 / 85.7
 socket_r_mouth = 18.0       # CONFIRMED: STEP, socket radius at the stone face
 socket_r_bottom = 7.508     # CONFIRMED: STEP, socket radius at its bottom
 socket_depth = 22.5         # CONFIRMED: STEP
-locator_h = 21.5            # Samuel 2026-10-06: almost the socket depth (22.5) - 1 mm, so the stone still stands on
-                            # the MDF: the tip (r 7.7) self-centres a stone placed up to ~10 mm off (r 18.0 mouth),
-                            # the final fit is the same socket_clearance
+locator_h = 21.5            # ASSUMPTION (design, Samuel 2026-10-06): socket depth 22.5 - 1 mm, so the stone still
+                            # stands on the MDF: the tip (r 7.7) self-centres a stone placed up to ~10 mm off (r 18.0
+                            # mouth), the final fit is the same socket_clearance
 socket_clearance = 0.25     # ASSUMPTION: radial clearance of the printed cone in the socket - print the test first
 peg_d = 8.0                 # ASSUMPTION: peg under every locating cone
 peg_len = 3.0               # ASSUMPTION: 1 mm shorter than the MDF is thick
@@ -428,20 +429,23 @@ window_clearance = 0.3      # ASSUMPTION: per side around the plain station plat
 xyz_in_wall = [-1837.5, 1470.0, 0.0]  # ASSUMPTION: dock where the table station had it, (-1100, 840) in the wall
                                       # frame, ARES facing +y; the row centre line 840 mm in front of base_link
 rpy_in_wall_deg = [0.0, 0.0, 0.0]     # ASSUMPTION
-table_z = 0.0               # no table: the stones stand on socket blocks on the floor (the "table" slab of the models
-                            # lies under the floor); table_size is the station area ARES must keep clear of
-table_size = [1475.0, 280.0]  # station area = the MDF piece: windows y 10..142.6, stones y 148.3..271.7; x: stones
-                            # +-717.5 around the centre + 20 mm
-row_y = 210.0               # stone row centre line in the station frame (windows to 142.6 + web 5.7 + stone 61.7)
-holder_z = 4.0              # = [wall] base_z: the stones stand on the 4 mm MDF piece
-ares_xyz = [737.5, -630.0, 0.0]       # ARES base_link at the dock: row centre line - 840 mm; ARES front (x 560) 70 mm
-                                      # before the station area
-ares_rpy_deg = [0.0, 0.0, 90.0]       # ARES x (forward) towards the row (+y station)
+table_z = 0.0               # ASSUMPTION (floor station 2026-10-06): no table, the stones stand on the MDF piece on the
+                            # floor (the "table" slab of the models lies under the floor); table_size is the station
+                            # area ARES must keep clear of
+table_size = [1475.0, 280.0]  # ASSUMPTION: station area = the MDF piece: windows y 10..142.6, stones y 148.3..271.7;
+                            # x: stones +-717.5 around the centre + 20 mm
+row_y = 210.0               # ASSUMPTION: stone row centre line in the station frame (windows to 142.6 + web 5.7 +
+                            # stone 61.7)
+holder_z = 4.0              # ASSUMPTION: = [wall] base_z, the stones stand on the 4 mm MDF piece
+ares_xyz = [737.5, -630.0, 0.0]       # ASSUMPTION: ARES base_link at the dock: row centre line - 840 mm; ARES front
+                                      # (x 560) 70 mm before the station area
+ares_rpy_deg = [0.0, 0.0, 90.0]       # ASSUMPTION: ARES x (forward) towards the row (+y station)
 slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [1045.0, 210.0], [1250.0, 210.0]]
-                            # full-stone stack centres (station x 737.5 -+512.5 / 307.5 / 102.5), length along x
-slot_layers = 2
-half_slots_xy = [[70.0, 210.0], [1405.0, 210.0]]   # half-stone stacks at 737.5 -+667.5
-half_slot_layers = 2
+                            # ASSUMPTION: full-stone stack centres (station x 737.5 -+512.5 / 307.5 / 102.5),
+                            # length along x
+slot_layers = 2             # ASSUMPTION: stacks of 2 (layer 2 inside the course-1 reach +-740 mm)
+half_slots_xy = [[70.0, 210.0], [1405.0, 210.0]]   # ASSUMPTION: half-stone stacks at 737.5 -+667.5
+half_slot_layers = 2        # ASSUMPTION
 
 [routes]
 # ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in
@@ -478,15 +482,16 @@ dashboard_port = 29999      # CONFIRMED: UR Dashboard Server
 script_port = 30002         # CONFIRMED: secondary client interface (URScript)
 rtde_port = 30004           # CONFIRMED: RTDE
 rtde_hz = 125.0             # CONFIRMED: CB3 RTDE maximum frequency
-reg_started = 20            # ASSUMPTION: 24..47 (reserved for RTDE since 3.9) are missing on PolyScope 3.3.3
-reg_done = 21               # (probe 2026-10-06); 0..23 are shared with the fieldbus there. 20..22 read 0 for 2 s on
-reg_error = 22              # 2026-10-06 (nothing writes them) - assumed free of fieldbus/PLC use. reg_error: block
-                            # error codes (0 none, 1 IK unreachable)
+reg_started = 20            # ASSUMPTION: 24..47 (reserved for RTDE since 3.9) are missing on PolyScope 3.3.3 (probe
+                            # 2026-10-06); 0..23 are shared with the fieldbus there. 20..22 read 0 for 2 s on
+                            # 2026-10-06 (nothing writes them) - assumed free of fieldbus/PLC use
+reg_done = 21               # ASSUMPTION: see reg_started
+reg_error = 22              # ASSUMPTION: see reg_started; block error codes (0 none, 1 IK unreachable)
 contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
 abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
 do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel; tools/ur_check.py grip on the UR5): the gripper switches on
-do_grip_open = 0            # an edge of standard DO0 (open) and DO1 (close)
+do_grip_open = 0            # CONFIRMED 2026-10-06 (with do_grip_close): an edge of standard DO0 (open) and DO1 (close)
 grip_pulse_s = 0.5          # CONFIRMED 2026-10-06: a 0.5 s pulse opens/closes reliably (shorter ones not tried)
 grip_wait_s = 0.5           # ASSUMPTION: the jaws take ~0.5 s (Samuel by eye, opening, 2026-10-06) from the edge;
                             # pulse + wait = 1.0 s after the edge = 2x the stroke. Closing on a stone not timed yet
