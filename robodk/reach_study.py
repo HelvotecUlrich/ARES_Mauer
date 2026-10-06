@@ -147,7 +147,7 @@ def deck_study(chk: Checker, cfg: dict) -> dict:
     layers = list(range(1, dk["layers"] + 1))
     maps, rows = {}, []
     for layer in layers:
-        z = a["deck_top_z"] + dk["holder_z"] + layer * b["height"] + 2.0   # +2 mm: stone clear of the one below
+        z = a["deck_top_z"] + dk["holder_z"] + layer * b["height"] + (layer - 1) * b.get("bed_joint", 0.0) + 2.0  # +2 mm: clear
         for y in ys:
             for x in xs:
                 pose = transl(x, y, z) * rotz(PI / 2) * rotx(PI)            # stone length along ARES y

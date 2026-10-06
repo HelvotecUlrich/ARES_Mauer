@@ -16,7 +16,9 @@ def straight_config():
     cfg = copy.deepcopy(config.load())
     cfg["wall"].pop("legs", None)
     cfg["wall"]["shape"] = "straight"
-    cfg["wall"]["dist_nominal"] = 740.0                   # the straight wall's distance (reach study 2026-10-02)
+    cfg["wall"]["dist_nominal"] = 840.0                   # 740 (reach study 2026-10-02) until 2026-10-06: with the
+    # stones pins up the first course stands 22 mm lower and the RoboDK reach of course 0 at 740 mm has an 80 mm gap
+    # beside ARES (results/reach_table.json) - the greedy planner cannot step over it
     for t in cfg["targets"]:
         if t["parent"] == "wall":
             i = int(t["name"][1:])
@@ -35,15 +37,16 @@ L_BOARDS = {"W0": ("A", 60.0), "W1": ("A", 460.0), "W2": ("A", 860.0), "W3": ("A
 
 
 def l_config():
-    """The station config with the L wall of 2026-10-05 (L_LEGS, L_BOARDS, wall distance 740 mm) - for the tests of
-    the L behaviour (job v2 routes, leg change, half stones), independent of the wall in config/station.toml."""
+    """The station config with the L wall of 2026-10-05 (L_LEGS, L_BOARDS; wall distance 840 mm since 2026-10-06, was
+    740 - see straight_config) - for the tests of the L behaviour (job v2 routes, leg change, half stones),
+    independent of the wall in config/station.toml."""
     import copy
 
     from mauer import config
     cfg = copy.deepcopy(config.load())
     cfg["wall"]["shape"] = "L"
     cfg["wall"]["ares_inside"] = False                    # ARES worked outside the L's corner
-    cfg["wall"]["dist_nominal"] = 740.0                   # the L's wall distance (the C: 840 mm)
+    cfg["wall"]["dist_nominal"] = 840.0                   # the L's wall distance (was 740, see straight_config)
     cfg["wall"]["legs"] = copy.deepcopy(L_LEGS)
     for t in cfg["targets"]:
         if t["parent"] == "wall":

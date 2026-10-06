@@ -1,22 +1,24 @@
 """Floor guides of the first course and of the floor pick-up station: laser-cut MDF pieces (DXF for the Trotec,
-800 x 600 mm sheets), 3D-printed socket blocks (STL for the Bambu Lab X1E + OpenSCAD source) and the floor map (PDF
+800 x 600 mm sheets), 3D-printed locating cones (STL for the Bambu Lab X1E + OpenSCAD source) and the floor map (PDF
 on A3 at a fixed scale + a coordinate table) to measure out the room.
 
     py.exe tools/make_guides.py [--out targets/guides] [--no-map]
 
-Design (config [guides], Samuel 2026-10-06: MDF strip + printed sockets, carpet tape, V-tabs for the existing board
-plates, station on the floor in one row):
+Design (config [guides], Samuel 2026-10-06: stones PINS UP ([brick] pins_up), MDF strip + printed locating cones,
+carpet tape, V-tabs for the existing board plates, station on the floor in one row):
 - Per wall leg a 4 mm MDF strip ([plates] mdf_t), [guides] strip_width wide, centred on the leg's wall line, from
-  u = 0 to n0 x pitch. Per first-course stone two peg holes (the block's pegs) and four relief holes under the pins.
+  u = 0 to n0 x pitch. Every first-course stone stands directly on the strip ([wall] base_z = mdf_t); two peg holes
+  per stone take the pegs of two locating cones in diagonally opposite sockets of its underside (a half stone: one
+  cone in each of its two sockets).
   The ARES-side edge (leg v = +strip_width/2, the face the existing wall plates were cut for) carries a V-tab at every
   inner stone joint u = pitch k (k = 1 .. n0-1); one tab in a plate's V-notch plus the edge fixes a plate completely.
 - Pieces: a strip is cut [guides] cut_offset after a stone joint (the tab stays whole) into pieces of at most
   segment_max; consecutive pieces join with a dovetail on the centre line (tail on the downstream piece, socket on the
   upstream one, wall order A -> B -> C). The last corner_arm_stones stones of a leg and the first of the next form
   one L-piece across the corner (the 3 mm butt-joint gap filled), so the corner offset is cut, not measured.
-- Socket block (printed, [wall] base_z - mdf_t high): four conical sockets through (two for a half stone), cone =
-  pin cone of the stone CAD + [guides] socket_clearance; two pegs underneath into the strip's peg holes. The STL is
-  oriented for printing (top face on the bed, pegs up: no supports; the cone walls overhang 24 deg from vertical).
+- Locating cone (printed): the stone's socket cone (STEP: r socket_r_mouth at the face -> socket_r_bottom at
+  socket_depth) minus [guides] socket_clearance, locator_h high, with a peg into the strip's peg hole. The STL is
+  oriented for printing (narrow top on the bed, peg up: no supports; the wall overhangs 25 deg from vertical).
 - Station: one MDF piece set in the station frame ([pickup_station]: x along the row, y away from ARES), cut between
   the stacks into pieces <= segment_max; holes for every stack's block at row_y, closed windows for the plain S0/S1
   plates ([[targets]] parent "station") with [guides] window_clearance.
@@ -26,8 +28,8 @@ plates, station on the floor in one row):
 
 Outputs (in --out): laser_sheet_<n>.dxf (layers CUT red / ENGRAVE blue, as tools/make_plates.py; sheet border on
 layer SHEET green, not to be cut), laser_test.dxf (test pieces: one stone, a dovetail pair, an S-plate window),
-laser_sheets.svg / .png (previews), socket_block_full.stl / socket_block_half.stl, socket_blocks.scad, floor_map.pdf,
-floor_plan.md (coordinates, diagonals, part list, room size).
+laser_sheets.svg / .png (previews), locating_cone.stl, locating_cone.scad, floor_map.pdf, floor_plan.md
+(coordinates, diagonals, part list, room size).
 """
 from __future__ import annotations
 
@@ -62,22 +64,19 @@ class GuideParams:
     pitch: float                # stone length = first-course pitch [mm]
     strip_w: float
     mdf_t: float
-    block_h: float              # [wall] base_z - mdf_t
-    block_l: float
-    block_w: float
+    stone_l: float
+    stone_w: float
     half_l: float
-    pin_along: float
-    pin_across: float
-    r_base: float
-    r_tip: float
-    pin_len: float
+    pin_along: float            # socket (= pin) centres along the stone
+    pin_across: float           # ... and across
+    r_mouth: float              # socket cone (STEP)
+    r_bottom: float
+    socket_depth: float
+    locator_h: float
     clearance: float
     peg_d: float
     peg_len: float
     peg_hole_d: float
-    peg_u: float
-    half_peg_u: float
-    relief_d: float
     vtab: tuple[float, float]
     dovetail: tuple[float, float, float]
     joint_c: float
@@ -94,174 +93,62 @@ class GuideParams:
 
 
 def params(cfg: dict) -> GuideParams:
-    gd, pl = cfg["guides"], cfg["plates"]
+    gd, pl, b = cfg["guides"], cfg["plates"], cfg["brick"]
     mdf = float(pl["mdf_t"])
+    hb = cfg.get("half_brick") or b
     p = GuideParams(
-        pitch=float(cfg["brick"]["length"]), strip_w=float(gd["strip_width"]), mdf_t=mdf,
-        block_h=float(cfg["wall"]["base_z"]) - mdf, block_l=float(gd["block_length"]), block_w=float(gd["block_width"]),
-        half_l=float(gd["half_block_length"]), pin_along=float(gd["pin_along"]), pin_across=float(gd["pin_across"]),
-        r_base=float(gd["pin_r_base"]), r_tip=float(gd["pin_r_tip"]), pin_len=float(cfg["brick"]["pin_length"]),
+        pitch=float(b["length"]), strip_w=float(gd["strip_width"]), mdf_t=mdf, stone_l=float(b["length"]),
+        stone_w=float(b["width"]), half_l=float(hb.get("length", b["length"] / 2)), pin_along=float(gd["pin_along"]),
+        pin_across=float(gd["pin_across"]), r_mouth=float(gd["socket_r_mouth"]), r_bottom=float(gd["socket_r_bottom"]),
+        socket_depth=float(gd["socket_depth"]), locator_h=float(gd["locator_h"]),
         clearance=float(gd["socket_clearance"]), peg_d=float(gd["peg_d"]), peg_len=float(gd["peg_len"]),
-        peg_hole_d=float(gd["peg_hole_d"]), peg_u=float(gd["peg_u"]), half_peg_u=float(gd["half_peg_u"]),
-        relief_d=float(gd["relief_d"]), vtab=tuple(float(v) for v in gd["vtab"]),
+        peg_hole_d=float(gd["peg_hole_d"]), vtab=tuple(float(v) for v in gd["vtab"]),
         dovetail=tuple(float(v) for v in gd["dovetail"]), joint_c=float(gd["joint_clearance"]),
         cut_offset=float(gd["cut_offset"]), arm=int(gd["corner_arm_stones"]), seg_max=float(gd["segment_max"]),
         sheet=tuple(float(v) for v in gd["sheet"]), sheet_margin=float(gd["sheet_margin"]),
         window_c=float(gd["window_clearance"]))
-    if p.block_h <= p.peg_len or p.block_h >= p.pin_len:
-        raise ValueError(f"[guides]: block height {p.block_h} mm must lie between the peg ({p.peg_len}) and the pin "
-                         f"length ({p.pin_len}) - the pin tips end in the strip's relief holes")
-    if cone_r(p, p.block_h) * 2.0 >= p.relief_d:
-        raise ValueError("[guides] relief_d smaller than the cone where it leaves the block")
+    if not b.get("pins_up"):
+        raise ValueError("make_guides is designed for [brick] pins_up = true (locating cones in the sockets)")
+    if abs(float(cfg["wall"]["base_z"]) - mdf) > 1e-9:
+        raise ValueError("[wall] base_z must equal [plates] mdf_t: the first course stands on the MDF strip")
+    if not 0.0 < p.locator_h < p.socket_depth or p.peg_len >= mdf:
+        raise ValueError("[guides]: locator_h must be inside the socket and the peg shorter than the MDF is thick")
+    if 2 * cone_r(p, p.locator_h) <= p.peg_d + 4.0:
+        raise ValueError("[guides]: the locating cone's top is too narrow around its peg")
     if abs(float(pl["block_length"]) - p.pitch) > 1e-9:
         raise ValueError("[plates] block_length must equal the stone pitch (the plates' notches sit on its joints)")
     return p
 
 
 # ── socket blocks ─────────────────────────────────────────────────────────────
-def cone_r(p: GuideParams, depth: float) -> float:
-    """Socket radius at `depth` below the block top: the pin cone (r_base at the stone's underside, r_tip pin_len
-    below) + clearance."""
-    return p.r_base - (p.r_base - p.r_tip) * depth / p.pin_len + p.clearance
+def cone_r(p: GuideParams, height: float) -> float:
+    """Locating cone radius at `height` above the strip = the stone's socket cone at that depth above its underside
+    (STEP) minus the clearance."""
+    return p.r_mouth - (p.r_mouth - p.r_bottom) * height / p.socket_depth - p.clearance
 
 
-def block_size(p: GuideParams, kind: str) -> tuple[float, float]:
-    return (p.block_l if kind == "full" else p.half_l), p.block_w
+def stone_size(p: GuideParams, kind: str) -> tuple[float, float]:
+    return (p.stone_l if kind == "full" else p.half_l), p.stone_w
 
 
-def pin_xy(p: GuideParams, kind: str) -> list[Pt]:
-    """Pin centres in the block / stone frame (u along the stone, v across, origin = stone centre)."""
+def socket_xy(p: GuideParams, kind: str) -> list[Pt]:
+    """All socket centres in the stone frame (u along the stone, v across, origin = stone centre)."""
     a, b = p.pin_along / 2.0, p.pin_across / 2.0
     if kind == "full":
         return [(su * a, sv * b) for su in (-1.0, 1.0) for sv in (-1.0, 1.0)]
     return [(0.0, -b), (0.0, b)]
 
 
-def peg_xy(p: GuideParams, kind: str) -> list[Pt]:
-    d = p.peg_u if kind == "full" else p.half_peg_u
-    return [(-d, 0.0), (d, 0.0)]
+def locator_xy(p: GuideParams, kind: str) -> list[Pt]:
+    """The sockets that get a locating cone: two diagonally opposite ones (a half stone: its two)."""
+    a, b = p.pin_along / 2.0, p.pin_across / 2.0
+    return [(-a, -b), (a, b)] if kind == "full" else [(0.0, -b), (0.0, b)]
 
 
-def _ray_hit(c: Pt, ang: float, rect: tuple[float, float, float, float]) -> Pt:
-    x0, y0, x1, y1 = rect
-    dx, dy = math.cos(ang), math.sin(ang)
-    ts = []
-    if dx > 1e-12:
-        ts.append((x1 - c[0]) / dx)
-    if dx < -1e-12:
-        ts.append((x0 - c[0]) / dx)
-    if dy > 1e-12:
-        ts.append((y1 - c[1]) / dy)
-    if dy < -1e-12:
-        ts.append((y0 - c[1]) / dy)
-    t = min(ts)
-    return c[0] + t * dx, c[1] + t * dy
-
-
-def _on_rect(q: Pt, rect: tuple[float, float, float, float], tol: float = 1e-9) -> bool:
-    x0, y0, x1, y1 = rect
-    inside = x0 - tol <= q[0] <= x1 + tol and y0 - tol <= q[1] <= y1 + tol
-    edge = min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) <= tol
-    return inside and edge
-
-
-def _zip_ring(inner: list[int], outer: list[int], outer_ang: list[float], n: int) -> list[tuple[int, int, int]]:
-    """Triangles (CCW seen from +z) between a hole ring (n vertices at angles 2 pi i / n) and the cell boundary
-    (vertices sorted by angle in [0, 2 pi), outer[0] at angle 0)."""
-    m = len(outer)
-    tris = []
-    i = j = 0
-    while i < n or j < m:
-        ai = 2.0 * math.pi * (i + 1) / n
-        aj = outer_ang[j + 1] if j + 1 < m else 2.0 * math.pi
-        if i < n and (j >= m or ai <= aj + 1e-12):
-            tris.append((inner[i], outer[j % m], inner[(i + 1) % n]))
-            i += 1
-        else:
-            tris.append((inner[i % n], outer[j], outer[(j + 1) % m]))
-            j += 1
-    return tris
-
-
-def block_body(p: GuideParams, kind: str, n: int = N_SEG) -> tuple[np.ndarray, np.ndarray]:
-    """Closed mesh (vertices, triangles) of the block body WITHOUT pegs, use orientation: bottom z = 0 on the MDF,
-    top z = block_h, sockets through. Outward normals (CCW)."""
-    L, W = block_size(p, kind)
-    H = p.block_h
-    pins = pin_xy(p, kind)
-    r_top, r_bot = cone_r(p, 0.0), cone_r(p, H)
-    xs, ys = sorted({q[0] for q in pins}), sorted({q[1] for q in pins})
-
-    def splits(vals, lo, hi):
-        return [lo] + [(a + b) / 2.0 for a, b in zip(vals, vals[1:])] + [hi]
-
-    xb, yb = splits(xs, -L / 2, L / 2), splits(ys, -W / 2, W / 2)
-    cells = [((xb[i], yb[j], xb[i + 1], yb[j + 1]), (xs[i], ys[j])) for i in range(len(xs)) for j in range(len(ys))]
-    for rect, c in cells:
-        if not (rect[0] < c[0] - r_top and c[0] + r_top < rect[2] and rect[1] < c[1] - r_top and c[1] + r_top < rect[3]):
-            raise ValueError(f"[guides] {kind} block {L} x {W} mm too small for the sockets (r {r_top:.2f} mm)")
+def frustum(c: Pt, r0: float, r1: float, z0: float, z1: float, n: int = N_SEG) -> tuple[np.ndarray, np.ndarray]:
+    """Closed frustum (outward normals): radius r0 at z0, r1 at z1."""
     angs = [2.0 * math.pi * k / n for k in range(n)]
-    hits = [[_ray_hit(c, a, rect) for a in angs] for rect, c in cells]
-    all_pts = [q for hs in hits for q in hs] + [(x, y) for rect, _ in cells for x in (rect[0], rect[2])
-                                                for y in (rect[1], rect[3])]
-    V: list[tuple[float, float, float]] = []
-    idx: dict = {}
-
-    def vid(x: float, y: float, z: float) -> int:
-        k = (round(x, 7), round(y, 7), round(z, 7))
-        if k not in idx:
-            idx[k] = len(V)
-            V.append((x, y, z))
-        return idx[k]
-
-    T: list[tuple[int, int, int]] = []
-    for (rect, c) in cells:
-        bnd = {}
-        for q in all_pts:
-            if _on_rect(q, rect):
-                bnd[(round(q[0], 7), round(q[1], 7))] = q
-        pts = sorted(bnd.values(), key=lambda q: math.atan2(q[1] - c[1], q[0] - c[0]) % (2.0 * math.pi))
-        ang = [math.atan2(q[1] - c[1], q[0] - c[0]) % (2.0 * math.pi) for q in pts]
-        if ang[0] > 1e-9:
-            raise AssertionError("boundary must start at the ray hit of angle 0")
-        for z, r, up in ((H, r_top, True), (0.0, r_bot, False)):
-            inner = [vid(c[0] + r * math.cos(a), c[1] + r * math.sin(a), z) for a in angs]
-            outer = [vid(q[0], q[1], z) for q in pts]
-            for t in _zip_ring(inner, outer, ang, n):
-                T.append(t if up else (t[0], t[2], t[1]))
-        for k in range(n):                              # socket wall, normal towards the axis (into the hole)
-            a, b = angs[k], angs[(k + 1) % n]
-            bk, bk1 = vid(c[0] + r_bot * math.cos(a), c[1] + r_bot * math.sin(a), 0.0), \
-                vid(c[0] + r_bot * math.cos(b), c[1] + r_bot * math.sin(b), 0.0)
-            tk, tk1 = vid(c[0] + r_top * math.cos(a), c[1] + r_top * math.sin(a), H), \
-                vid(c[0] + r_top * math.cos(b), c[1] + r_top * math.sin(b), H)
-            T += [(bk, tk, tk1), (bk, tk1, bk1)]
-    outer_pts = {}
-    for q in all_pts:
-        if abs(abs(q[0]) - L / 2) < 1e-9 or abs(abs(q[1]) - W / 2) < 1e-9:
-            outer_pts[(round(q[0], 7), round(q[1], 7))] = q
-
-    def perim(q: Pt) -> float:
-        x, y = q
-        if abs(y + W / 2) < 1e-9 and x < L / 2 - 1e-9:
-            return x + L / 2
-        if abs(x - L / 2) < 1e-9 and y < W / 2 - 1e-9:
-            return L + y + W / 2
-        if abs(y - W / 2) < 1e-9 and x > -L / 2 + 1e-9:
-            return L + W + L / 2 - x
-        return 2 * L + W + W / 2 - y
-
-    ring = sorted(outer_pts.values(), key=perim)
-    for a, b in zip(ring, ring[1:] + ring[:1]):         # outer walls, normal outwards
-        ab, bb, bt, at = vid(a[0], a[1], 0.0), vid(b[0], b[1], 0.0), vid(b[0], b[1], H), vid(a[0], a[1], H)
-        T += [(ab, bb, bt), (ab, bt, at)]
-    return np.asarray(V, float), np.asarray(T, int)
-
-
-def cylinder(c: Pt, r: float, z0: float, z1: float, n: int = N_SEG) -> tuple[np.ndarray, np.ndarray]:
-    """Closed cylinder (outward normals)."""
-    angs = [2.0 * math.pi * k / n for k in range(n)]
-    V = [(c[0] + r * math.cos(a), c[1] + r * math.sin(a), z) for z in (z0, z1) for a in angs]
+    V = [(c[0] + r * math.cos(a), c[1] + r * math.sin(a), z) for z, r in ((z0, r0), (z1, r1)) for a in angs]
     V += [(c[0], c[1], z0), (c[0], c[1], z1)]
     cb, ct = 2 * n, 2 * n + 1
     T = []
@@ -271,17 +158,16 @@ def cylinder(c: Pt, r: float, z0: float, z1: float, n: int = N_SEG) -> tuple[np.
     return np.asarray(V, float), np.asarray(T, int)
 
 
-def block_mesh(p: GuideParams, kind: str, print_orientation: bool = True) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Body + pegs (separate closed shells; the pegs reach 0.5 mm into the body - the slicer unites them). Print
-    orientation: turned 180 deg about x (top face on the bed, pegs up)."""
-    shells = [block_body(p, kind)]
-    for q in peg_xy(p, kind):
-        shells.append(cylinder(q, p.peg_d / 2.0, -p.peg_len, 0.5))
+def locator_mesh(p: GuideParams, print_orientation: bool = True) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Cone (base on the strip at z 0) + peg (into the peg hole, reaching 0.5 mm into the cone - the slicer unites
+    the shells). Print orientation: turned 180 deg about x (narrow top on the bed, peg up)."""
+    shells = [frustum((0.0, 0.0), cone_r(p, 0.0), cone_r(p, p.locator_h), 0.0, p.locator_h),
+              frustum((0.0, 0.0), p.peg_d / 2.0, p.peg_d / 2.0, -p.peg_len, 0.5)]
     if print_orientation:
         out = []
         for V, T in shells:
             W = V.copy()
-            W[:, 1], W[:, 2] = -V[:, 1], p.block_h - V[:, 2]
+            W[:, 1], W[:, 2] = -V[:, 1], p.locator_h - V[:, 2]
             out.append((W, T))
         shells = out
     return shells
@@ -300,24 +186,16 @@ def write_stl(path: Path, shells: list[tuple[np.ndarray, np.ndarray]], name: str
 
 
 def write_scad(path: Path, p: GuideParams) -> None:
-    def blk(kind: str) -> str:
-        L, W = block_size(p, kind)
-        pins = ", ".join(f"[{u:.3f}, {v:.3f}]" for u, v in pin_xy(p, kind))
-        pegs = ", ".join(f"[{u:.3f}, {v:.3f}]" for u, v in peg_xy(p, kind))
-        return (f"module socket_block_{kind}() {{\n"
-                f"    difference() {{\n        translate([{-L / 2:.3f}, {-W / 2:.3f}, 0]) cube([{L:.3f}, {W:.3f}, H]);\n"
-                f"        for (q = [{pins}]) translate([q[0], q[1], -0.01]) cylinder(h = H + 0.02, r1 = R_BOT, "
-                f"r2 = R_TOP);\n    }}\n"
-                f"    for (q = [{pegs}]) translate([q[0], q[1], -PEG_LEN]) cylinder(h = PEG_LEN + 0.5, d = PEG_D);\n}}\n")
     path.write_text(
-        "// Socket blocks of the ARES_Mauer floor guides - generated by tools/make_guides.py from config/station.toml\n"
-        "// [guides] (edit the config and regenerate rather than this file). Use orientation: bottom on the MDF strip,\n"
-        "// pegs down; PRINT upside down (top face on the bed, pegs up). Units mm.\n"
-        f"$fn = 96;\nH = {p.block_h:.3f};          // [wall] base_z - [plates] mdf_t\n"
-        f"R_TOP = {cone_r(p, 0.0):.3f};      // pin cone at the stone's underside + clearance\n"
-        f"R_BOT = {cone_r(p, p.block_h):.3f};      // the same cone at the block bottom\n"
-        f"PEG_D = {p.peg_d:.3f};\nPEG_LEN = {p.peg_len:.3f};\n\n" + blk("full") + "\n" + blk("half") +
-        "\nsocket_block_full();\ntranslate([0, 140, 0]) socket_block_half();\n", encoding="ascii")
+        "// Locating cone of the ARES_Mauer floor guides - generated by tools/make_guides.py from config/station.toml\n"
+        "// [guides] (edit the config and regenerate rather than this file). Use orientation: base on the MDF strip,\n"
+        "// peg down into the peg hole; PRINT upside down (narrow top on the bed, peg up). Units mm.\n"
+        f"$fn = 96;\nH = {p.locator_h:.3f};          // [guides] locator_h\n"
+        f"R_BASE = {cone_r(p, 0.0):.3f};    // socket cone at the stone's underside - clearance\n"
+        f"R_TOP = {cone_r(p, p.locator_h):.3f};     // the same cone at H\n"
+        f"PEG_D = {p.peg_d:.3f};\nPEG_LEN = {p.peg_len:.3f};\n\n"
+        "cylinder(h = H, r1 = R_BASE, r2 = R_TOP);\n"
+        "translate([0, 0, -PEG_LEN]) cylinder(h = PEG_LEN + 0.5, d = PEG_D);\n", encoding="ascii")
 
 
 # ── laser-cut pieces ──────────────────────────────────────────────────────────
@@ -329,7 +207,7 @@ class Piece:
     outline: list[Pt]                           # CCW, with tabs / dovetails
     holes: list[tuple[Pt, float]] = field(default_factory=list)      # (centre, diameter)
     windows: list[list[Pt]] = field(default_factory=list)
-    blocks: list[tuple[str, Pt, float, str]] = field(default_factory=list)   # (label, centre, angle, kind)
+    blocks: list[tuple[str, Pt, float, str]] = field(default_factory=list)   # stones: (label, centre, angle, kind)
     texts: list[tuple[Pt, float, str]] = field(default_factory=list)
     notes: str = ""
 
@@ -376,11 +254,10 @@ def decorate(p: GuideParams, poly: list[Pt], feats: dict[int, list[tuple[float, 
 
 
 def stone_holes(p: GuideParams, kind: str, centre: Pt, ang: float) -> list[tuple[Pt, float]]:
+    """Peg holes of the locating cones of a stone at `centre`, turned by `ang` (rad) in the piece frame."""
     c, s = math.cos(ang), math.sin(ang)
-
-    def at(q: Pt) -> Pt:
-        return centre[0] + c * q[0] - s * q[1], centre[1] + s * q[0] + c * q[1]
-    return [(at(q), p.relief_d) for q in pin_xy(p, kind)] + [(at(q), p.peg_hole_d) for q in peg_xy(p, kind)]
+    return [((centre[0] + c * q[0] - s * q[1], centre[1] + s * q[0] + c * q[1]), p.peg_hole_d)
+            for q in locator_xy(p, kind)]
 
 
 def _split(items: list[int], kmax: int) -> list[list[int]]:
@@ -489,9 +366,10 @@ def station_pieces(cfg: dict, p: GuideParams, plates: list[tuple[str, Pt, tuple[
     stacks.sort(key=lambda s: s[1])
     # cut candidates: middle of the gaps between neighbouring stacks, away from the blocks
     cands = []
+    reach = p.pin_along / 2.0 + cone_r(p, 0.0) + 5.0                    # the cones of a stone stay this far inside
     for a, b in zip(stacks, stacks[1:]):
-        lo = a[1] + block_size(p, a[2])[0] / 2.0
-        hi = b[1] - block_size(p, b[2])[0] / 2.0
+        lo = a[1] + (reach if a[2] == "full" else cone_r(p, 0.0) + 5.0)
+        hi = b[1] - (reach if b[2] == "full" else cone_r(p, 0.0) + 5.0)
         if hi - lo > 2 * (p.dovetail[1] + 5.0):
             cands.append((a[1] + a[3] / 2.0 + b[1] - b[3] / 2.0) / 2.0)
     cuts, start = [], 0.0
@@ -612,11 +490,13 @@ def sheet_dxf(items: list[tuple[Piece, bool, Pt]], p: GuideParams, label: str) -
         for w in pc.windows:
             d.poly(mp.CUT, [_place(q, rot, off) for q in w])
         for name, c, ang, kind in pc.blocks:
-            L, W = block_size(p, kind)
+            L, W = stone_size(p, kind)
             ca, sa = math.cos(ang), math.sin(ang)
             corners = [(c[0] + ca * u - sa * v, c[1] + sa * u + ca * v) for u, v in
                        ((-L / 2, -W / 2), (L / 2, -W / 2), (L / 2, W / 2), (-L / 2, W / 2))]
             d.poly(mp.ENGRAVE, [_place(q, rot, off) for q in corners])
+            for u, v in locator_xy(p, kind):
+                d.circle(mp.ENGRAVE, _place((c[0] + ca * u - sa * v, c[1] + sa * u + ca * v), rot, off), cone_r(p, 0.0))
             d.text(mp.ENGRAVE, _place((c[0] - 6.0, c[1] - 2.5), rot, off), 5.0, name)
         for q, hgt, s in pc.texts:
             d.text(mp.ENGRAVE, _place(q, rot, off), hgt, s)
@@ -672,7 +552,7 @@ def write_png(sheets: list[list[tuple[Piece, bool, Pt]]], p: GuideParams, path: 
             for c, dia in pc.holes:
                 cv2.circle(img, P(_place(c, rot, off)), max(1, int(dia / 2 * px_per_mm)), (0, 0, 220), 1, cv2.LINE_AA)
             for name, c, ang, kind in pc.blocks:
-                L, Wb = block_size(p, kind)
+                L, Wb = stone_size(p, kind)
                 ca, sa = math.cos(ang), math.sin(ang)
                 q = np.array([P(_place((c[0] + ca * u - sa * v, c[1] + sa * u + ca * v), rot, off))
                               for u, v in ((-L / 2, -Wb / 2), (L / 2, -Wb / 2), (L / 2, Wb / 2), (-L / 2, Wb / 2))],
@@ -1041,12 +921,11 @@ def plan_md(cfg: dict, data: dict, sheets: list, sc: int) -> list[str]:
     lines.append(f"Guides + station: {b0[2] - b0[0]:.0f} x {b0[3] - b0[1]:.0f} mm; including every ARES position, route "
                  f"and rotation circle: {b1[2] - b1[0]:.0f} x {b1[3] - b1[1]:.0f} mm "
                  f"(x {b1[0]:.0f}..{b1[2]:.0f}, y {b1[1]:.0f}..{b1[3]:.0f} in the map frame).")
-    n_full = sum(1 for pc in data["leg_pieces"] + data["station_pieces"] for b in pc.blocks if b[3] == "full")
-    n_half = sum(1 for pc in data["station_pieces"] for b in pc.blocks if b[3] == "half")
+    n_cones = sum(len(pc.holes) for pc in data["leg_pieces"] + data["station_pieces"])
     lines.append("")
     lines.append(f"Parts: {len(sheets)} MDF sheets {p.sheet[0]:.0f} x {p.sheet[1]:.0f} x {p.mdf_t:.0f} mm "
                  f"({len(data['leg_pieces'])} guide pieces, {len(data['station_pieces'])} station pieces), "
-                 f"{n_full} full + {n_half} half socket blocks (print 1-2 spares each), carpet tape.")
+                 f"{n_cones} locating cones (2 per stone on the guides; print a few spares), carpet tape.")
     for fx in fm.warnings:
         lines.append(f"WARNING: {fx}")
     return lines
@@ -1070,10 +949,11 @@ def main(argv: list[str] | None = None) -> int:
     sheet_dxf(test[0], p, "ARES_Mauer guides TEST").write(out / "laser_test.dxf")
     write_svg(sheets + test, p, out / "laser_sheets.svg")
     write_png(sheets + test, p, out / "laser_sheets.png")
-    for kind in ("full", "half"):
-        write_stl(out / f"socket_block_{kind}.stl", block_mesh(p, kind), f"ARES_Mauer socket block {kind}")
-    write_scad(out / "socket_blocks.scad", p)
-    print(f"{len(sheets)} laser sheets + test sheet, socket blocks full / half (STL, SCAD) -> {out}", flush=True)
+    for old in ("socket_block_full.stl", "socket_block_half.stl", "socket_blocks.scad"):   # the pins-down design
+        (out / old).unlink(missing_ok=True)
+    write_stl(out / "locating_cone.stl", locator_mesh(p), "ARES_Mauer locating cone")
+    write_scad(out / "locating_cone.scad", p)
+    print(f"{len(sheets)} laser sheets + test sheet, locating cone (STL, SCAD) -> {out}", flush=True)
     for i, items in enumerate(sheets):
         print(f"  sheet {i + 1}: " + ", ".join(pc.name for pc, _, _ in items), flush=True)
     if not a.no_map:
@@ -1081,8 +961,9 @@ def main(argv: list[str] | None = None) -> int:
         legs = data["legs"]
         info = {"title": "C wall " + " / ".join(f"{lg.name} {lg.n0}" for lg in legs) + " stones, floor station",
                 "first_leg": legs[0].name,
-                "sub": f"[wall] base_z {cfg['wall']['base_z']} mm, guides [guides], station [pickup_station] - "
-                       "generated by tools/make_guides.py from config/station.toml",
+                "sub": f"stones pins up, first course on the 4 mm MDF ([wall] base_z {cfg['wall']['base_z']} mm), "
+                       "course pitch 121 mm; guides [guides], station [pickup_station] - generated by "
+                       "tools/make_guides.py from config/station.toml",
                 "page2": []}
         info["page2"] = plan_md(cfg, data, sheets, 0)
         sc = write_map_pdf(out / "floor_map.pdf", fm, cfg, p, info)

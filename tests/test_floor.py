@@ -27,7 +27,9 @@ DEG = math.pi / 180.0
 
 @pytest.fixture(scope="module")
 def cfg():
-    return l_config()                                    # the L (stops A1 / B0 below)
+    c = l_config()                                       # the L (stops A1 / B0 below) at its original 740 mm: the route
+    c["wall"]["dist_nominal"] = 740.0                    # checks need the stop line 10 mm from the plates (geometry
+    return c                                             # only - no reach table; the planner tests use 840)
 
 
 @pytest.fixture(scope="module")
@@ -161,7 +163,7 @@ def test_config_boards_sit_on_block_centres_and_are_clear(cfg, model):
         assert floor.point_inside((c[0], c[1]), s.plate)                     # board centre on its plate
     # every stop of the job sees >= 2 boards (kinematic) - checked when building the job; here: plates never under
     # ARES at a stop and >= 2 boards within the look window (|d| < 1000 mm) of every stop
-    job = make_job.build_nominal(cfg)
+    job = make_job.build_nominal(l_config())                                # planned at 840 mm (reach table)
     for st in job.stops:
         near = [s for s in model["sites"]
                 if math.hypot(sum(p[0] for p in s.plate) / 4 - st.ares.x_mm, sum(p[1] for p in s.plate) / 4 -
@@ -188,3 +190,28 @@ def test_bad_plate_sites_are_reported(cfg, model):
     t["xyz"][0] += 30.0
     with pytest.raises(ValueError, match="not a plate on a block centre"):
         floor.site_from_target(cfg, A, t, size)
+
+
+def test_routes_end_with_an_approach_of_at_least_min_approach():
+    """2026-10-06: with the floor station the planner ended a dock -> stop route of the L with a rotation ON the stop
+    (the goal was clear, so no back-off point) - the sequencer stops [sequencer] arrival_standoff_mm before the goal
+    along the last translation and needs one. min_approach_mm forces a final translation of at least that length."""
+    c = l_config()                                         # the L at 840 mm with the floor station
+    legs = wp.legs(c)
+    mj = make_job
+    job_ = mj.build_l(c)
+    dock = job_.station.dock_in_wall
+    st = job_.stops[1]
+    obst, _ = mj.floor_model(c, legs, mj.target_sites(c, legs), [(f"stop {s.index}", s.ares) for s in job_.stops])
+    ares, clr = floor.AresShape.from_config(c), c["routes"]["clearance_mm"]
+    free = floor.plan_route(dock, st.ares, obst, ares, clr, c["routes"]["backoff_mm"], min_approach_mm=0.0)
+    assert floor.segments(free.waypoints)[0][-1].kind == "rotate"           # the old behaviour (reproduced)
+    r = floor.plan_route(dock, st.ares, obst, ares, clr, c["routes"]["backoff_mm"], min_approach_mm=60.0)
+    last = floor.segments(r.waypoints)[0][-1]
+    assert last.kind == "translate" and last.length_mm >= 60.0 - 1e-6
+    assert floor.validate_route(r.waypoints, obst, ares, clr) == []
+    for s in job_.stops:                                                    # the job uses [routes] min_approach_mm
+        for route in (s.route, s.route_from_station, s.route_to_station):
+            if route:
+                last = floor.segments(route)[0][-1]
+                assert last.kind == "translate" and last.length_mm >= c["routes"]["min_approach_mm"] - 1e-6

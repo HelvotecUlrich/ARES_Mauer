@@ -47,7 +47,7 @@ def test_straight_wall_is_the_old_trapezoid(cfg, table):
     reach, lo, hi, grid = wp.reach_fn(table)
     plan = wp.sequence(cfg, stones, reach, lo, stones[0].u - lo[0])
     assert wp.check_plan(cfg, stones, plan) == []
-    assert [(a, len(b)) for a, b in plan] == [(920.0, 30), (2120.0, 24), (3320.0, 24), (4520.0, 12)]
+    assert [(a, len(b)) for a, b in plan] == [(860.0, 26), (1860.0, 20), (2860.0, 20), (3860.0, 20), (4860.0, 4)]
 
 
 def test_leg_is_a_rectangle_with_half_stones(cfg):
@@ -130,11 +130,11 @@ def test_check_plan_catches_order_errors(cfg, table):
 
 def test_reach_fn_is_conservative(table):
     reach, lo, hi, grid = wp.reach_fn(table)
-    assert grid == 20.0 and lo[3] == -660.0 and hi[3] == 660.0
-    assert reach(3, -660.0) and not reach(3, -670.0)                       # between grid points: both must be ok
-    assert reach(3, -650.0)
+    assert grid == 20.0 and lo[3] == -620.0 and hi[3] == 620.0             # 840 mm, pins up (2026-10-06)
+    assert reach(3, -620.0) and not reach(3, -630.0)                       # between grid points: both must be ok
+    assert reach(3, -610.0)
     reach_m, *_ = wp.reach_fn(table, margin_mm=20.0)
-    assert not reach_m(3, -660.0) and reach_m(3, -640.0)
+    assert not reach_m(3, -620.0) and reach_m(3, -600.0)
 
 
 def test_legs_from_config_and_validation(cfg):

@@ -221,7 +221,8 @@ def load_stl(path: Path) -> list:
 def stone_points(cfg: dict, frame: str, u: float = 0.0, z_top: float = 0.0, tcp_z: float = 0.0) -> list:
     """Stone mesh vertices (flat list, 3 per triangle) placed in the wall frame or in the tool (flange) frame.
 
-    Stone CAD frame: x 0..width (ribbed faces), y -length..0, z 0..height (pins below z = 0).
+    Stone CAD frame: x 0..width (ribbed faces), y -length..0, z 0..height; [brick] mesh is turned pins up
+    (2026-10-06, pins z height..height + pin_length; robodk/make_half_stone.py), the CAD as modelled has them below.
     frame="wall": top centre at (u, 0, z_top), long axis along wall x.
     frame="tool": top centre at the TCP (0, 0, tcp_z) of the flange frame, z pointing into the stone.
     """

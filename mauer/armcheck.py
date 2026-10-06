@@ -214,12 +214,15 @@ def stone_boxes(cfg: Mapping, stones: Iterable, legs: Mapping[str, object] | Non
 
 def _stone_box(cfg: Mapping, name: str, T_tcp, kind: str = "full") -> Box:
     """Box of a stone held / standing with its top centre at T_tcp (TCP z into the stone, length along TCP x; width
-    incl. the ribs)."""
+    incl. the ribs). [brick] pins_up (2026-10-06): the pins stand pin_length above the top face - the box reaches up
+    to their tips (with pins down they sit in the sockets of the course below)."""
     rib = float(cfg["brick"].get("rib_mm", 0.0))
     dims = cfg["half_brick"] if kind == "half" else cfg["brick"]
     L, W, H = float(dims["length"]), float(dims["width"]), float(dims["height"])
+    up = float(cfg["brick"].get("pin_length", 0.0)) if cfg["brick"].get("pins_up") else 0.0
     T = np.asarray(T_tcp, float)
-    return Box(name, g.apply(T, [[0.0, 0.0, H / 2.0]])[0], T[:3, :3], np.array([L / 2.0, W / 2.0 + rib, H / 2.0]))
+    return Box(name, g.apply(T, [[0.0, 0.0, (H - up) / 2.0]])[0], T[:3, :3],
+               np.array([L / 2.0, W / 2.0 + rib, (H + up) / 2.0]))
 
 
 def station_boxes(cfg: Mapping, slots: Iterable, table: tuple[float, float] | None = None) -> list[Box]:

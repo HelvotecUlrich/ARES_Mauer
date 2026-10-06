@@ -206,7 +206,8 @@ def magazine_slots(cfg: dict) -> list:
     """(x, y, z_top) of all simulate.py magazine slots (ARES frame), stone long axis along ARES y."""
     deck = cfg["ares"]["deck_top_z"] + cfg["deck"]["holder_z"]
     H = cfg["brick"]["height"]
-    return [(cfg["ur5"]["mount_x"] + dx, y, deck + lay * H) for dx, n in MAG_ROWS for lay in range(1, n + 1)
+    bed = cfg["brick"].get("bed_joint", 0.0)
+    return [(cfg["ur5"]["mount_x"] + dx, y, deck + lay * H + (lay - 1) * bed) for dx, n in MAG_ROWS for lay in range(1, n + 1)
             for y in MAG_Y]
 
 

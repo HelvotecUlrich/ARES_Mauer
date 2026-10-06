@@ -453,7 +453,7 @@ def _magazine(ctx: _Ctx) -> mjob.Magazine:
     for ri, dx in enumerate(ctx.rows_dx):
         for yi, y in enumerate(ctx.mag_y):
             for lay in range(1, ctx.n_layers + 1):
-                T = g.transl(x0 + dx, y, deck + lay * ctx.H) @ g.rotz(math.pi / 2) @ g.rotx(math.pi)
+                T = g.transl(x0 + dx, y, mconfig.stack_top_z(cfg, deck, lay)) @ g.rotz(math.pi / 2) @ g.rotx(math.pi)
                 T_bf = ctx.T_base_ares @ T @ g.inv(ctx.T_flange_tcp)
                 q = ik_near(T_bf, ctx.q_park)
                 ok = q is not None and ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is not None
@@ -494,7 +494,7 @@ def _station(ctx: _Ctx) -> mjob.Station:
         for i, (x, y) in enumerate(xys):
             stack = f"{prefix}{i:02d}"
             for lay in range(1, layers + 1):
-                T = g.transl(float(x), float(y), z0 + lay * height) @ g.rotx(math.pi)
+                T = g.transl(float(x), float(y), mconfig.stack_top_z(cfg, z0, lay, kind)) @ g.rotx(math.pi)
                 T_bf = T_base_station @ T @ g.inv(ctx.T_flange_tcp)
                 q = ik_near(T_bf, ctx.q_park)
                 ok = q is not None and ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is not None
@@ -639,6 +639,7 @@ def route_params(cfg: dict) -> dict:
     r = cfg.get("routes", {}) or {}
     return {"clearance_mm": float(r.get("clearance_mm", 50.0)), "backoff_mm": float(r.get("backoff_mm", 100.0)),
             "arrival_standoff_mm": arrival_standoff(cfg),
+            "min_approach_mm": float(r.get("min_approach_mm", 0.0)),
             "after_rotation_weight": float(r.get("after_rotation_weight", 5.0)),
             "grid_mm": float(r.get("grid_mm", 100.0)), "search_mm": float(r.get("search_mm", 2500.0))}
 
@@ -690,7 +691,8 @@ def plan_l_routes(cfg: dict, stops: list[mjob.Stop], obstacles: list, dock: Pose
     {"problems": [...], "routes": {...stats}}; fills the routes into the stops."""
     rp = route_params(cfg)
     ares = floor.AresShape.from_config(cfg)
-    kw = dict(after_rotation_weight=rp["after_rotation_weight"], grid_mm=rp["grid_mm"], search_mm=rp["search_mm"])
+    kw = dict(after_rotation_weight=rp["after_rotation_weight"], grid_mm=rp["grid_mm"], search_mm=rp["search_mm"],
+              min_approach_mm=rp["min_approach_mm"])
     problems: list[str] = []
     info: dict = {}
 

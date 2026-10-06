@@ -46,15 +46,17 @@ def job(cfg):
 
 
 def test_plan_matches_the_robodk_simulation(job, cfg):
-    assert [len(s.stones) for s in job.stops] == [30, 24, 24, 12]
-    assert [s.a_mm for s in job.stops] == pytest.approx([920.0, 2120.0, 3320.0, 4520.0])
+    # planner output at the wall distance 840 mm (pins up, 2026-10-06); the RoboDK straight-wall run at 740 mm matched
+    # the then plan [30, 24, 24, 12] at a = 920 .. 4520 mm
+    assert [len(s.stones) for s in job.stops] == [26, 20, 20, 20, 4]
+    assert [s.a_mm for s in job.stops] == pytest.approx([860.0, 1860.0, 2860.0, 3860.0, 4860.0])
     assert job.n_stones == 90 and job.meta["n_stones"] == 90 and job.legs == []
     assert all(s.leg is None and not s.route and not s.route_to_station for s in job.stops)
     dist = cfg["wall"]["dist_nominal"]
     for s in job.stops:                       # front wall: ARES faces the wall (-wall y) at y = dist
         assert (s.ares.x_mm, s.ares.y_mm, s.ares.theta_deg) == pytest.approx((s.a_mm, dist, -90.0), abs=1e-9)
     dx, dy, dth = relative_move(job.stops[0].ares, job.stops[1].ares)
-    assert (dx, dy, dth) == pytest.approx((0.0, 1200.0, 0.0), abs=1e-9)      # sideways, +y body = left
+    assert (dx, dy, dth) == pytest.approx((0.0, 1000.0, 0.0), abs=1e-9)      # sideways, +y body = left
     assert job.magazine.capacity == 15
     assert sorted(set(s.id for s in job.magazine.slots) - set(job.magazine.take_order)) == \
         ["r0y0l3", "r0y1l3", "r0y2l3"]
@@ -66,16 +68,17 @@ def test_place_pose_convention(job):
         assert not t.flip
         assert np.allclose(t.T_wall_tcp, g.transl(t.u_mm, 0.0, t.z_top_mm) @ g.rotx(math.pi), atol=1e-12)
     tops = sorted({t.z_top_mm for t in job.stones()})
-    assert tops == pytest.approx([146.0, 266.0, 386.0, 506.0])     # base 26 + k * 120 + 120 ([wall], [brick])
+    assert tops == pytest.approx([124.0, 245.0, 366.0, 487.0])     # base 4 + k * (120 + 1) + 120 ([wall], [brick])
     assert all(t.kind == "full" and t.leg is None and t.key == (t.course, t.index) for t in job.stones())
 
 
 def test_magazine_pick_poses_and_order(job, cfg):
-    """robodk/simulate.py:106-108: transl(x, y, deck + layer H) @ rotz(pi/2) @ rotx(pi), emptied top layer first."""
+    """robodk/simulate.py:106-108: transl(x, y, deck + layer H + (layer - 1) bed joint) @ rotz(pi/2) @ rotx(pi),
+    emptied top layer first."""
     deck = cfg["ares"]["deck_top_z"] + cfg["deck"]["holder_z"]
     x0 = cfg["ur5"]["mount_x"]
     s = job.magazine.slot("r1y2l2")
-    assert np.allclose(s.T_ares_tcp, g.transl(x0 - 433.6, 205.0, deck + 2 * 120.0) @ g.rotz(math.pi / 2)
+    assert np.allclose(s.T_ares_tcp, g.transl(x0 - 433.6, 205.0, deck + 2 * 120.0 + 1.0) @ g.rotz(math.pi / 2)
                        @ g.rotx(math.pi), atol=1e-9)
     layers = [job.magazine.slot(i).layer for i in job.magazine.take_order]
     assert layers == sorted(layers, reverse=True)
@@ -117,7 +120,8 @@ def test_station_and_park(job, cfg):
     assert not any("station slot" in w for w in job.meta["warnings"])
     for s in st.slots:
         h = cfg["brick"]["height"] if s.kind == "full" else cfg["half_brick"]["height"]
-        assert s.T_station_tcp[2, 3] == pytest.approx(ps["table_z"] + ps["holder_z"] + s.layer * h)
+        assert s.T_station_tcp[2, 3] == pytest.approx(ps["table_z"] + ps["holder_z"] + s.layer * h
+                                                      + (s.layer - 1) * cfg["brick"]["bed_joint"])
         x, y = (ps["slots_xy"] if s.kind == "full" else ps["half_slots_xy"])[int(s.stack_id[1:])]
         assert s.T_station_tcp[:2, 3] == pytest.approx([x, y]) and s.id == f"{s.stack_id}l{s.layer}"
     layers = [st.slot(i).layer for i in st.take_order]
@@ -204,7 +208,8 @@ def test_station_stacks(job, cfg):
     st = mjob.SlotState.station(stn)
     low, top = stn.slot("s00l1"), stn.slot("s00l2")
     assert low.stack_id == top.stack_id == "s00" and (low.layer, top.layer) == (1, 2)
-    assert top.T_station_tcp[2, 3] - low.T_station_tcp[2, 3] == pytest.approx(cfg["brick"]["height"])
+    assert top.T_station_tcp[2, 3] - low.T_station_tcp[2, 3] == pytest.approx(cfg["brick"]["height"] +
+                                                                              cfg["brick"]["bed_joint"])
     assert not st.can_take("s00l1") and st.can_take("s00l2")
     with pytest.raises(ValueError):
         st.take("s00l1")
@@ -347,7 +352,7 @@ def test_l_looks_use_boards_of_the_stops_own_leg_clear_of_the_built_wall(ljob, l
     for s in ljob.stops:
         built += [stones[t.key] for t in s.stones]
         arm = armcheck.ArmChecker(lcfg, armcheck.stone_boxes(lcfg, built, by_name))
-        assert len(s.looks) == (1 if s.index == 1 else 2)                  # see below
+        assert len(s.looks) == 2                                            # see below
         T_base_wall = g.inv(T_ab) @ g.inv(s.ares.T)
         for lk in s.looks:
             (b,) = lk.boards
@@ -356,14 +361,15 @@ def test_l_looks_use_boards_of_the_stops_own_leg_clear_of_the_built_wall(ljob, l
             assert g.apply(T_cam_board, [[*specs[b].centre_mm, 0.0]])[0] == pytest.approx(
                 [0.0, 0.0, lcfg["camera"]["working_dist"]], abs=1e-6)
             assert arm.hits(lk.qnear_rad, s.ares.T @ T_ab) == []
-    # 2026-10-06: looks are also checked against the ARES chassis and a full magazine - the W4 look from stop 1 (RoboDK:
-    # "ARES / UR5 link 6") is rejected, the L's stop 1 keeps W2 only (its board layout predates that check)
-    assert [[lk.boards[0] for lk in s.looks] for s in ljob.stops] == [["W0", "W3"], ["W2"], ["W5", "W7"]]
-    # the rejected looks of the first L plan: W4 from stop 2 and W5 from stop 1, once leg A is complete
+    # 2026-10-06: looks are also checked against the ARES chassis and a full magazine - at 740 mm the W4 look from stop 1
+    # (RoboDK: "ARES / UR5 link 6") was rejected; at the wall distance 840 mm (since the stones are laid pins up) it
+    # clears both
+    assert [[lk.boards[0] for lk in s.looks] for s in ljob.stops] == [["W0", "W3"], ["W2", "W4"], ["W5", "W7"]]
+    # a look rejected by the built wall: W5 from stop 1 once leg A is complete (at 740 mm also W4 from stop 2)
     ctx = make_job._Ctx(lcfg, lcfg["wall"]["dist_nominal"], 2, make_job.LOOK_MARGIN_MM)
     T_legs = config.leg_frames(lcfg)
     leg_a = [st for st in stones.values() if st.leg == "A"]
-    for k, b in ((2, "W4"), (1, "W5")):
+    for k, b in ((1, "W5"),):
         st = ljob.stops[k]
         free, _ = make_job.wall_look_candidates(ctx, st.ares, T_legs[st.leg], None)            # kinematic only
         built_, _ = make_job.wall_look_candidates(ctx, st.ares, T_legs[st.leg], None, leg_a, by_name)
@@ -380,9 +386,10 @@ def test_l_routes_are_valid(ljob, lcfg):
     clr = lcfg["routes"]["clearance_mm"]
     dock = ljob.station.dock_in_wall
     assert not ljob.stops[0].route
-    m = ljob.stops[1].route                                                  # same leg: back off, along, approach
-    segs, sp = floor.segments(m)
-    assert sp == [] and [sg.kind for sg in segs] == ["translate"] * 3
+    m = ljob.stops[1].route                                                  # same leg: along the stop line (110 mm
+    segs, sp = floor.segments(m)                                             # from the plates at 840 mm; at 740 it
+    assert sp == [] and [sg.kind for sg in segs] == ["translate"] * 2       # backed off first), then the approach
+    assert segs[-1].length_mm == pytest.approx(lcfg["routes"]["min_approach_mm"])     # ([routes] min_approach_mm)
     assert floor.validate_route(m, obst, ares, clr) == []
     for w in m[1:-1]:                                                       # real clearance along the leg
         assert min(floor.poly_dist(ares.footprint(w), o.poly) for o in obst) >= clr - 1e-6
@@ -431,10 +438,10 @@ def test_l_job_without_routes_is_refused(ljob, lcfg, tmp_path):
     pf = "\n".join(preflight_real(lcfg, bad, intrinsics_file=tmp_path / "i", handeye_file=tmp_path / "h"))
     assert "without a recorded route check" in pf and "no station route" in pf
     assert route_problems(lcfg, ljob) == []                                  # the planned job is clean
-    moved = copy.deepcopy(ljob)                                               # a plate moved under a route
+    moved = copy.deepcopy(ljob)                                               # a route edited through leg A
     r = moved.stops[2].route
-    r[2] = Pose2D(r[2].x_mm, r[2].y_mm - 900.0, r[2].theta_rad)
-    r[3] = Pose2D(r[3].x_mm, r[3].y_mm - 900.0, r[3].theta_rad)
+    r[1] = Pose2D(r[0].x_mm, 0.0, r[0].theta_rad)                            # down onto the wall line ...
+    r.insert(2, Pose2D(r[2].x_mm, 0.0, r[0].theta_rad))                      # ... and along it
     assert any("stop 2 route" in x for x in route_problems(lcfg, moved))
 
 
@@ -598,7 +605,12 @@ def test_c_routes_and_floor(ccfg, cjob):
     assert "leg change stop 1 -> stop 2" in rc and "leg change stop 3 -> stop 4" in rc
     for st in cjob.stops[1:]:
         assert st.route and st.route[0] == cjob.stops[st.index - 1].ares and st.route[-1] == st.ares
-        assert len(st.route) == 2                                            # one translation, no turn
+        segs, _ = floor.segments(st.route)                                   # translations only, no turn; the last
+        assert all(sg.kind == "translate" for sg in segs) and len(segs) <= 2  # one straight ahead (body +x), at least
+        last = segs[-1]                                                      # [routes] min_approach_mm (2026-10-06)
+        assert last.length_mm >= ccfg["routes"]["min_approach_mm"] - 1e-6
+        assert math.isclose(math.atan2(last.end.y_mm - last.start.y_mm, last.end.x_mm - last.start.x_mm),
+                            st.ares.theta_rad, abs_tol=1e-9)
     assert math.hypot(cjob.stops[2].ares.x_mm - cjob.stops[1].ares.x_mm,
                       cjob.stops[2].ares.y_mm - cjob.stops[1].ares.y_mm) < 200.0     # leg change A -> B at the corner
     p = ccfg["plates"]
@@ -645,4 +657,4 @@ def test_stop_poses_per_side_keep_the_heading_inside_the_c(lcfg):
         p = make_job.stop_pose(ins, d, 500.0, T[lg.name], side)
         assert p.theta_deg == pytest.approx(0.0, abs=1e-9)                    # ARES never turns inside the C
         assert lg.from_wall(p.x_mm, p.y_mm) == pytest.approx((500.0, d))      # on the leg's ARES side, at its distance
-    assert (make_job.leg_side(lcfg, wp.legs(lcfg)[0]), make_job.leg_dist(lcfg, wp.legs(lcfg)[0])) == ("front", 740.0)
+    assert (make_job.leg_side(lcfg, wp.legs(lcfg)[0]), make_job.leg_dist(lcfg, wp.legs(lcfg)[0])) == ("front", 840.0)

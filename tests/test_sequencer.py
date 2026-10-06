@@ -126,7 +126,7 @@ def test_zero_errors_places_within_half_a_millimetre(cfg, job10, tmp_path):
     assert res.state == "done" and p["n"] == 9 and p["seated"] == 9
     assert p["horiz_mm"]["max"] < 0.5 and p["dz_mm"]["max"] < 0.5 and p["yaw_deg"]["max"] < 0.05
     assert len(w.ares.moves) == 1
-    assert w.ares.moves[0]["kind"] == "translate" and w.ares.moves[0]["dy_mm"] == pytest.approx(1200.0, abs=0.5)
+    assert w.ares.moves[0]["kind"] == "translate" and w.ares.moves[0]["dy_mm"] == pytest.approx(1000.0, abs=0.5)
     assert w.violations == [] and res.reloads == 0
     ev = [e["event"] for e in _events(seq)]
     assert ev[0] == "run_start" and ev[-1] == "run_done" and ev.count("placed") == 9 and "wall_frame" in ev
@@ -493,10 +493,10 @@ def _decline_once(match):
 
 
 LEG_CHANGE_LEGS = ["stop 0 -> stop 1 leg 0", "stop 0 -> stop 1 leg 1", "stop 0 -> stop 1 leg 2",
-                   "stop 0 -> stop 1 leg 3", "stop 0 -> stop 1 last leg"]
+                   "stop 0 -> stop 1 last leg"]                                # L at 840 mm, floor station (2026-10-06)
 STATION_LEGS = ["stop 1 -> station leg 0", "stop 1 -> station leg 1", "stop 1 -> station leg 2",
-                "stop 1 -> station leg 3", "stop 1 -> station last leg", "station -> stop 1 leg 0",
-                "station -> stop 1 leg 1", "station -> stop 1 leg 2", "station -> stop 1 last leg"]
+                "stop 1 -> station last leg", "station -> stop 1 leg 0", "station -> stop 1 leg 1",
+                "station -> stop 1 leg 2", "station -> stop 1 last leg"]
 
 
 def _leg_names(why: str, route) -> list[str]:
@@ -732,7 +732,8 @@ def test_c_leg_change_b_to_c_and_station_trip_from_c(ccfg, cjob, tmp_path):
     j = copy.deepcopy(cjob)
     b, c = j.stops[3], j.stops[4]
     assert (b.leg, c.leg) == ("B", "C")
-    b.stones, c.stones = b.stones[:2], c.stones[:4]
+    b.stones, c.stones = b.stones[:2], c.stones[:4]                         # B's last stop may hold only 1 stone
+    n = len(b.stones) + len(c.stones)
     b.index, c.index = 0, 1
     b.route = []
     j.stops = [b, c]
@@ -742,7 +743,7 @@ def test_c_leg_change_b_to_c_and_station_trip_from_c(ccfg, cjob, tmp_path):
     w, seq = sim(ccfg, j, scenario("realistic"), tmp_path, seed=1)
     res = seq.run()
     p = w.placement_stats()
-    assert res.state == "done" and p["n"] == p["seated"] == 6 and res.reloads >= 1
+    assert res.state == "done" and p["n"] == p["seated"] == n and res.reloads >= 1
     assert w.violations == [] and _floor_hits(w, seq) == []
     whys = [e["why"] for e in _events(seq) if e["event"] == "route"]
     assert "stop 0 -> stop 1" in whys and "stop 1 -> station" in whys and "station -> stop 1" in whys

@@ -438,14 +438,19 @@ class RoutePlan:
 def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares: AresShape, clearance_mm: float,
                backoff_mm: float, *, after_rotation_weight: float = 5.0, grid_mm: float = 100.0,
                search_mm: float = 2500.0, bounds: tuple[float, float, float, float] | None = None,
-               corridor_mm: float = 100.0, n_corridors: int = 15) -> RoutePlan:
+               corridor_mm: float = 100.0, n_corridors: int = 15, min_approach_mm: float = 0.0) -> RoutePlan:
     """Cheapest valid route start -> goal of the form in the module docstring (at most one rotation). RouteError if
     none is found. Rotation points: the back-off points, the goal's back-off ray and a grid_mm grid within search_mm
     of start/goal (or `bounds` = (x0, y0, x1, y1)); between the back-off points and the rotation point up to two
     axis-parallel translations, or three via a corridor offset by k * corridor_mm (|k| <= n_corridors) on one side
-    of the rotation."""
+    of the rotation. min_approach_mm: the route ends with a translation (body +x) of at least this length - the
+    goal's back-off point lies at least that far behind the goal even where the goal is clear (2026-10-06: a dock ->
+    stop route of the L ended with a rotation on the stop; the sequencer stops arrival_standoff_mm before the goal
+    along the last translation)."""
     S1 = _back_off_point(start, obstacles, ares, clearance_mm, backoff_mm)
     G1 = _back_off_point(goal, obstacles, ares, clearance_mm, backoff_mm)
+    if math.hypot(G1.x_mm - goal.x_mm, G1.y_mm - goal.y_mm) < min_approach_mm - 1e-9:
+        G1 = _backed_off(goal, min_approach_mm)
     head = [start] if same_pose(S1, start) else [start, S1]
     tail = [goal] if same_pose(G1, goal) else [G1, goal]
     w = float(after_rotation_weight)

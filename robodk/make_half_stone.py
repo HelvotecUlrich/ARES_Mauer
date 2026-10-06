@@ -1,6 +1,13 @@
-"""Half stone mesh (PLACEHOLDER): the full stone mesh clipped to half length and closed.
+"""Stone meshes for the simulation: the full stone turned PINS UP ([brick] pins_up, 2026-10-06) and the half stone
+(PLACEHOLDER): the full stone mesh clipped to half length and closed.
 
-    py.exe robodk/make_half_stone.py            # writes cad/stone_half_placeholder.stl
+    py.exe robodk/make_half_stone.py            # writes [brick] mesh (pins up) + cad/stone_half_placeholder.stl
+
+Pins up: [brick] mesh_cad (the CAD as modelled, pins below z = 0) turned 180 deg about the stone's length axis
+(x -> width - x, z -> height - z; y unchanged) -> [brick] mesh: body z 0..height as before (the top-centre TCP
+convention holds), pins on top z height..height + pin_length, sockets from below. The half stone is clipped from
+mesh_cad (the section loops close reliably in the CAD as exported) and then turned the same way (clipping along y
+commutes with the turn).
 
 The CAD of the CURRENT half stone is not available ([half_brick] in config/station.toml: Gino's archive half stone is
 the old design). Until it is measured, the half stone is modelled from the full stone cad/stone_full_2026-10-01.stl
@@ -245,6 +252,15 @@ def make_half(full: np.ndarray, length: float) -> tuple[np.ndarray, dict]:
     return V2[F2], rep
 
 
+def turn_pins_up(tris: np.ndarray, width: float, height: float) -> np.ndarray:
+    """Full stone CAD (pins below) turned 180 deg about the length axis through (width/2, height/2): pins on top.
+    A proper rotation - the triangle orientation stays valid."""
+    out = np.array(tris, float, copy=True)
+    out[..., 0] = width - out[..., 0]
+    out[..., 2] = height - out[..., 2]
+    return out
+
+
 def main(argv: list | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", type=Path, default=OUT)
@@ -256,9 +272,20 @@ def main(argv: list | None = None) -> int:
     for key in ("width", "height", "pin_length"):
         if abs(float(hb.get(key, b[key])) - float(b[key])) > 1e-9:
             raise SystemExit(f"[half_brick] {key} differs from [brick] {key}: the clipped full stone does not fit")
-    full = read_stl(REPO / b["mesh"])
+    if b.get("pins_up"):
+        cad = read_stl(REPO / b["mesh_cad"])
+        up = turn_pins_up(cad, float(b["width"]), float(b["height"]))
+        zmax = float(up[..., 2].max())
+        if abs(zmax - (float(b["height"]) + float(b["pin_length"]))) > 1e-3:
+            raise SystemExit(f"turned stone: top {zmax:.3f} != height + pin_length")
+        write_stl(REPO / b["mesh"], up, f"{Path(b['mesh_cad']).name} turned pins up (x -> w - x, z -> h - z)")
+        print(f"written {b['mesh']} (pins up, z {float(up[..., 2].min()):.1f} .. {zmax:.1f})")
+    full = read_stl(REPO / b.get("mesh_cad", b["mesh"]))
     tris, rep = make_half(full, length)
-    print(f"input {b['mesh']}: {rep['input_faces']} faces, {rep['input_volume_cm3']:.1f} cm3"
+    if b.get("pins_up"):
+        tris = turn_pins_up(tris, float(b["width"]), float(b["height"]))
+        rep["bbox_min"][2], rep["bbox_max"][2] = float(tris[..., 2].min()), float(tris[..., 2].max())
+    print(f"input {b.get('mesh_cad', b['mesh'])}: {rep['input_faces']} faces, {rep['input_volume_cm3']:.1f} cm3"
           + (f" (repaired: {'; '.join(rep['input_problems'])})" if rep["input_problems"] else ""))
     print(f"half stone: {rep['output_faces']} faces ({rep['cap_faces']} cap faces, "
           f"{rep['n_loops']} section loop(s)), volume {rep['output_volume_cm3']:.1f} cm3, bbox {rep['bbox_min']} .. "
@@ -268,7 +295,8 @@ def main(argv: list | None = None) -> int:
     if abs(rep["bbox_min"][1] + length) > 1e-3 or abs(rep["bbox_max"][1]) > 1e-3:
         raise SystemExit(f"output length wrong: y {rep['bbox_min'][1]} .. {rep['bbox_max'][1]}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    write_stl(args.out, tris, f"stone_half_placeholder clipped from {Path(b['mesh']).name} y>={-length:g}")
+    write_stl(args.out, tris, f"stone_half_placeholder clipped from {Path(b.get('mesh_cad', b['mesh'])).name} "
+                              f"y>={-length:g}" + (" pins up" if b.get("pins_up") else ""))
     print(f"written {args.out}")
     return 0
 

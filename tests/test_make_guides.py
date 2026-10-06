@@ -1,6 +1,7 @@
-"""tools/make_guides.py (floor guides + floor station, design 2026-10-06): the printed socket block (closed mesh, pin
-fit), the MDF pieces of the configured C (pitch, V-tabs under every board plate, no overlaps in the room or on the
-sheets, sheet size) and the floor station (windows hold the plain plates, holes under every stack)."""
+"""tools/make_guides.py (floor guides + floor station, design 2026-10-06, stones pins up): the printed locating cone
+(closed mesh, fit in the STEP socket), the MDF pieces of the configured C (peg holes in diagonal sockets of every
+stone, V-tabs under every board plate, no overlaps in the room or on the sheets, sheet size) and the floor station
+(windows hold the plain plates, cones under every stack)."""
 import math
 import sys
 from collections import Counter
@@ -35,35 +36,38 @@ def _volume(V, T):
     return float(sum(np.dot(V[a], np.cross(V[b], V[c])) for a, b, c in T) / 6.0)
 
 
-@pytest.mark.parametrize("kind", ["full", "half"])
-def test_socket_block_is_closed_with_the_right_volume(data, kind):
+def test_locating_cone_is_closed_and_fits_the_socket(data):
     p = data["params"]
-    V, T = mg.block_body(p, kind)
-    assert _closed(V, T)
-    L, W = mg.block_size(p, kind)
-    H = p.block_h
+    shells = mg.locator_mesh(p)
+    assert len(shells) == 2 and all(_closed(*sh) for sh in shells)
+    V, T = mg.locator_mesh(p, print_orientation=False)[0]
     n = mg.N_SEG
     k = n / (2 * math.pi) * math.sin(2 * math.pi / n)                       # polygon / circle area
-    r1, r2 = mg.cone_r(p, 0.0), mg.cone_r(p, H)
-    cones = len(mg.pin_xy(p, kind)) * math.pi * k * H / 3.0 * (r1 * r1 + r1 * r2 + r2 * r2)
-    assert _volume(V, T) == pytest.approx(L * W * H - cones, rel=1e-9)
-    shells = mg.block_mesh(p, kind)
-    assert len(shells) == 3 and all(_closed(*s) for s in shells)
-    Vp = np.vstack([s[0] for s in shells])                                  # print orientation: top on the bed
-    assert Vp[:, 2].min() == pytest.approx(0.0) and Vp[:, 2].max() == pytest.approx(H + p.peg_len)
+    r0, r1 = mg.cone_r(p, 0.0), mg.cone_r(p, p.locator_h)
+    assert _volume(V, T) == pytest.approx(math.pi * k * p.locator_h / 3 * (r0 * r0 + r0 * r1 + r1 * r1), rel=1e-9)
+    for z in np.linspace(0.0, p.locator_h, 8):                              # socket cone (STEP) - cone = clearance
+        socket = 18.0 - (18.0 - 7.508) * z / 22.5
+        assert socket - mg.cone_r(p, z) == pytest.approx(p.clearance)
+    assert p.locator_h < p.socket_depth and p.peg_len < p.mdf_t
+    Vp = np.vstack([sh[0] for sh in shells])                                # print orientation: narrow top on the bed
+    assert Vp[:, 2].min() == pytest.approx(0.0) and Vp[:, 2].max() == pytest.approx(p.locator_h + p.peg_len)
 
 
-def test_pins_fit_the_sockets_and_end_above_the_floor(cfg, data):
+def test_stones_pins_up_stand_on_the_strip(cfg, data):
     p = data["params"]
-    assert p.block_h + p.mdf_t == pytest.approx(cfg["wall"]["base_z"])
-    assert cfg["pickup_station"]["holder_z"] == pytest.approx(cfg["wall"]["base_z"])
-    for d in np.linspace(0.0, p.block_h, 12):                              # pin cone vs socket cone in the block
-        pin = p.r_base - (p.r_base - p.r_tip) * d / p.pin_len
-        assert mg.cone_r(p, d) - pin == pytest.approx(p.clearance)
-    assert p.relief_d / 2 > mg.cone_r(p, p.block_h)                         # the pin leaves the block into the hole
-    assert cfg["wall"]["base_z"] - p.pin_len > 1.0                          # tip clear of the floor
-    full = sorted(mg.pin_xy(p, "full"))
-    assert full[0] == pytest.approx((-50.25, -26.5)) and full[-1] == pytest.approx((50.25, 26.5))
+    assert cfg["brick"]["pins_up"] is True
+    assert cfg["wall"]["base_z"] == pytest.approx(p.mdf_t) == pytest.approx(cfg["pickup_station"]["holder_z"])
+    assert sorted(mg.socket_xy(p, "full")) == pytest.approx([(-50.25, -25.714), (-50.25, 25.714), (50.25, -25.714),
+                                                              (50.25, 25.714)])      # STEP socket centres
+    loc = mg.locator_xy(p, "full")
+    assert len(loc) == 2 and loc[0] == pytest.approx((-loc[1][0], -loc[1][1]))     # diagonally opposite sockets
+    mesh = REPO / cfg["brick"]["mesh"]
+    if mesh.exists():                                                        # robodk/make_half_stone.py output
+        sys.path.insert(0, str(REPO / "robodk"))
+        import make_half_stone as mh
+        t = mh.read_stl(mesh)
+        assert float(t[..., 2].min()) == pytest.approx(0.0, abs=1e-3)
+        assert float(t[..., 2].max()) == pytest.approx(cfg["brick"]["height"] + cfg["brick"]["pin_length"], abs=1e-3)
 
 
 def _leg(data, name):
@@ -71,26 +75,27 @@ def _leg(data, name):
 
 
 def _holes_in_leg(data):
-    """{leg: sorted u of the peg holes} over all pieces (wall frame -> leg frame)."""
+    """{leg: sorted (u, v) of the peg holes} over all pieces (wall frame -> leg frame)."""
     p = data["params"]
     out = {lg.name: [] for lg in data["legs"]}
     for pc in data["leg_pieces"]:
         for c, dia in pc.holes:
-            if abs(dia - p.peg_hole_d) > 1e-9:
-                continue
+            assert dia == pytest.approx(p.peg_hole_d)
             w = pc.to_wall(c)
             for lg in data["legs"]:
                 u, v = lg.from_wall(*w)
-                if -1e-6 <= u <= lg.n0 * p.pitch + 1e-6 and abs(v) < 1e-6:
-                    out[lg.name].append(u)
+                if -1e-6 <= u <= lg.n0 * p.pitch + 1e-6 and abs(v) < p.h:
+                    out[lg.name].append((round(u, 6), round(v, 6)))
     return {k: sorted(v) for k, v in out.items()}
 
 
-def test_every_first_course_stone_has_its_pegs_at_the_pitch(data):
+def test_every_first_course_stone_has_two_cones_in_diagonal_sockets(data):
     p = data["params"]
     holes = _holes_in_leg(data)
+    a, b = p.pin_along / 2, p.pin_across / 2
     for lg in data["legs"]:
-        want = sorted(k * p.pitch + p.pitch / 2 + s * p.peg_u for k in range(lg.n0) for s in (-1, 1))
+        want = sorted((round(k * p.pitch + p.pitch / 2 + s * a, 6), round(s * b, 6)) for k in range(lg.n0)
+                      for s in (-1, 1))
         assert holes[lg.name] == pytest.approx(want, abs=1e-6), lg.name
     names = [pc.name for pc in data["leg_pieces"]]
     assert names == ["A0-A2", "A3-A5", "A6-A7", "A8-B1", "B2-B4", "B5-C1", "C2-C4"]
@@ -211,8 +216,8 @@ def test_station_windows_hold_the_plates_and_blocks_sit_on_the_row(cfg, data):
 
 def test_cli_writes_everything(tmp_path):
     assert mg.main(["--out", str(tmp_path), "--no-map"]) == 0
-    for f in ("laser_sheet_1.dxf", "laser_test.dxf", "laser_sheets.svg", "laser_sheets.png", "socket_block_full.stl",
-              "socket_block_half.stl", "socket_blocks.scad"):
+    for f in ("laser_sheet_1.dxf", "laser_test.dxf", "laser_sheets.svg", "laser_sheets.png", "locating_cone.stl",
+              "locating_cone.scad"):
         assert (tmp_path / f).stat().st_size > 0, f
     dxf = (tmp_path / "laser_sheet_1.dxf").read_text()
     assert dxf.startswith("0\nSECTION") and "CUT" in dxf and "ENGRAVE" in dxf and dxf.rstrip().endswith("EOF")

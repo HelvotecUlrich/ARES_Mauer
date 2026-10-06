@@ -22,9 +22,9 @@ Marking points: lay out leg A's outer edge first (O -> A end), then place the ot
   station, back-left corner                     x  -1837.5   y   1810.0
   ARES base_link at the dock                    x  -1100.0   y    900.0
   ARES dock                                     x  -1100.0   y    900.0   heading   90.0 deg
-  ARES stop 0                                   x    180.0   y    640.0   heading    0.0 deg
+  ARES stop 0                                   x    200.0   y    640.0   heading    0.0 deg
   ARES stop 1                                   x   1120.0   y    640.0   heading    0.0 deg
-  ARES stop 2                                   x   1100.0   y    742.7   heading    0.0 deg
+  ARES stop 2                                   x   1100.0   y    762.7   heading    0.0 deg
   ARES stop 3                                   x   1100.0   y    922.7   heading    0.0 deg
   ARES stop 4                                   x   1037.3   y    882.7   heading    0.0 deg
 
@@ -41,7 +41,7 @@ Diagonals (tape measure, mm):
 
 Guides + station: 3839 x 1812 mm; including every ARES position, route and rotation circle: 3839 x 1812 mm (x -1838..2002, y -2..1810 in the map frame).
 
-Parts: 4 MDF sheets 800 x 600 x 4 mm (7 guide pieces, 2 station pieces), 28 full + 2 half socket blocks (print 1-2 spares each), carpet tape.
+Parts: 4 MDF sheets 800 x 600 x 4 mm (7 guide pieces, 2 station pieces), 60 locating cones (2 per stone on the guides; print a few spares), carpet tape.
 ```
 
 Laser sheets: 1: A8-B1, A0-A2; 2: B5-C1, A3-A5; 3: station1, station2; 4: A6-A7, B2-B4, C2-C4

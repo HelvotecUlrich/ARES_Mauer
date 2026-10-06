@@ -193,7 +193,8 @@ class Sim:
     def fill_magazine(self, slots: list) -> None:
         self.magazine = []
         for layer, x, y in slots:
-            p_tc = transl(x, y, self.deck + layer * self.H) * rotz(PI / 2)
+            p_tc = transl(x, y, self.deck + layer * self.H + (layer - 1) * self.cfg["brick"].get("bed_joint", 0.0)) \
+                * rotz(PI / 2)
             st = self.new_stone(self.f_ares, p_tc * T_TC_CAD, "mag")
             self.magazine.append((st, p_tc * rotx(PI)))
         self.magazine.sort(key=lambda m: -m[1].Pos()[2])
@@ -336,7 +337,8 @@ def run_straight(args, cfg: dict, RDK) -> int:
     # magazine slots that the UR5 can serve (checked like the wall positions)
     chk = Checker(RDK, cfg, True)
     slots = [(lay, x, y) for x, n in mag_rows for lay in range(1, n + 1) for y in MAG_Y
-             if chk.check_both(transl(x, y, sim.deck + lay * sim.H + 2.0) * rotz(PI / 2) * rotx(PI))[0]]
+             if chk.check_both(transl(x, y, sim.deck + lay * sim.H + (lay - 1) * cfg["brick"].get("bed_joint", 0.0)
+                                      + 2.0) * rotz(PI / 2) * rotx(PI))[0]]
     chk.close()
     print(f"magazine: {len(slots)} reachable slots", flush=True)
     if args.plan_only:

@@ -45,6 +45,14 @@ def T_flange_cam_nominal(cfg: dict) -> np.ndarray:
     return pose(cfg["camera"]["mount"])
 
 
+def stack_top_z(cfg: dict, z0: float, layer: int, kind: str = "full") -> float:
+    """Top of the stone in stack layer `layer` (1 = lowest) of stones standing on z0 (magazine, station): the stone
+    heights plus [brick] bed_joint between them (the pins are 1 mm longer than the sockets are deep, 2026-10-06)."""
+    b = cfg["brick"]
+    h = float((cfg.get("half_brick") or {}).get("height", b["height"])) if kind == "half" else float(b["height"])
+    return float(z0) + layer * h + (layer - 1) * float(b.get("bed_joint", 0.0))
+
+
 def T_flange_tcp(cfg: dict) -> np.ndarray:
     """Gripper TCP in the flange frame – identical to robodk/rdk_common.tcp_pose(): z offset, then rotz(90°)."""
     from .geometry import rotz, transl
