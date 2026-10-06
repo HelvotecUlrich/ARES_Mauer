@@ -35,7 +35,7 @@ height/tilt on the sprung casters not yet measured.
 | `robodk/reach_study.py` | reach study wall + pick area on the deck → `results/` |
 | `robodk/simulate.py` | simulation: reach table → wall plan → collision-checked pick and place, ARES drives between stops |
 | `robodk/wallplan.py` | wall layout (trapezoid; L legs as rectangles with half stones) and placement sequence: stones only on complete supports; plan and cross-leg checker |
-| `mauer/floor.py`, `tools/plan_layout.py` | floor plan of the L: plates, ARES routes and their clearance check; trade-off, drawing, plan report |
+| `mauer/floor.py`, `tools/plan_layout.py` | floor plan of the wall of legs (C, L): plates, ARES routes and their clearance check; candidates, drawing, plan report |
 | `robodk/motion.py` | collision-checked motion planner (IK ranking, safe waypoints, contact phases) |
 | `robodk/show_stop.py` | colours the stones of one stop in the station (from `results/reach_wall.csv`) |
 | `cad/gripper_backengreifer_gino.tool` | gripper "Backengreifer" (EHPS-20-A + ribbed jaws) exported from Gino's `UR5_sim_v3.rdk` |
@@ -51,7 +51,7 @@ e.g. from WSL:
 ```bash
 py.exe robodk/build_station.py --snapshot      # (re)build station, save robodk/ARES_UR5_Mauer.rdk
 py.exe robodk/reach_study.py --coarse --deck   # ~15 min; full grid without --coarse ~45 min
-py.exe robodk/simulate.py --animate          # the L of the config (~20 min): wall + station trips, results/l_wall_sim.md
+py.exe robodk/simulate.py --animate          # the wall of the config (the C, ~35 min) + station trips, results/l_wall_sim.md
 ```
 
 From Windows (cmd/PowerShell in `C:\Users\samue\ARES_Mauer`): `build` rebuilds the station, `sim` runs the
@@ -150,49 +150,52 @@ Runtime package `mauer/` (no RoboDK), tools in `tools/`, runbook **`docs/CAMERA_
 - Not done yet: real hardware tests, adversarial code review (started, stopped for time), RoboDK export of
   collision-checked jobs, deck/magazine referencing with the camera.
 
-## L wall with half stones (2026-10-05, simulation only)
+## C wall (2026-10-06, simulation only)
 
-Samuel: a small L, the wall a bit shorter, 4 courses, the 8 existing wall boards placed differently, half stones at the
-ends. Plan and drawing: **`results/l_wall_plan.md`**, `results/l_wall_layout.png` (`py.exe tools/plan_layout.py`;
-candidates `--evaluate`). Pure Python: kinematic checks plus a coarse arm-vs-built-wall check of the looks
-(`mauer/armcheck.py`). RoboDK collision run of the current job (2026-10-06, `results/l_wall_sim.md`, 22.6 min):
-76/76 stones placed and 61/61 moved station → magazine in 5 station trips with collision-checked motion, the station
-boards seen at every arrival, 12 ARES routes without a colliding sample; the job's W4 look from stop 1 touches ARES
-(a grid pose works). Saved as `robodk/ARES_UR5_Mauer_L.rdk`; `results/l_station.png` shows ARES at the dock.
+Samuel: "make it a small C, one length is 2m, then 1.5 across and 1m back", ARES a bit farther from the wall, keep the
+existing boards. Plan and drawing: **`results/l_wall_plan.md`**, `results/l_wall_layout.png` (`py.exe
+tools/plan_layout.py`; `--evaluate [--legs 10,7,5]`). RoboDK collision run (`results/l_wall_sim.md`, 13.4 min, saved as `robodk/ARES_UR5_Mauer_L.rdk`): **94/94 stones placed and 79/79 moved station → magazine in 6 trips with collision-checked motion**, 16 ARES routes (both leg changes, every station trip) without a colliding sample, every planned board seen in every state. **Open**: 4 of the 10 job looks (W2 at stop 0, W3 at stop 1, W4 at stop 2, W5 at stop 3) bring the wrist / gripper into ARES - RoboDK finds a grid pose for each, but `make_job`'s coarse arm check does not model ARES above the deck (at 740 mm only W4 of the L): the looks need the RoboDK check (planner export) or an ARES envelope before a real run.
 
-- **Corner**: the 53 × 100.5 mm pin pattern is not square, so a stone turned by 90° never engages the sockets below -
-  the legs cannot interlock. Leg A runs through (its end flush with the body of B's outer face), leg B starts at A's
-  inside face beyond A's 1.69 mm ribs and a 1 mm gap (`[brick] rib_mm` CAD, `[wall] corner_gap_mm` ASSUMPTION; B's
-  base blocks stand 2.69 mm off A's): a vertical butt joint. Half stones (`[half_brick]`, PLACEHOLDER: no CAD of the current half stone; one pin pair
-  centred) close both ends of every odd course, so every leg is a rectangle (`robodk/wallplan.py`).
-- **Chosen** (trade-off of n_A 9..12 × n_B 5..8): A = 12, B = 6 stones in course 0 (2400 + 1200 mm), 76 stones (8 half),
-  3 stops (A 680, A 1780, B 600), one leg change (back off, sideways, forward along B, rotate -90° 150 mm behind the B
-  stop, approach). Reach margin ±20 mm per stone (`[wall] reach_margin_mm`). All 8 boards on base-block centres, no
-  spare block (`targets/README.md` table). A stop looks only at boards of its own leg, with looks clear of the wall
-  built by the end of the stop: W0-W3 / W2-W4 / W5-W7 usable, the job uses W0 + W3, W2 + W4, W5 + W7 (review
-  2026-10-05: the first plan's W4 look from the B stop put the wrist inside leg A, and a fit over boards of both legs
-  moved the leg-A stones with any leg-B error).
+- **Legs** (`[[wall.legs]]`): A 10 stones (2.0 m), B 7 (1.4 m; 1.52 m over the outer faces of A and C - B = 6 would
+  give 1.32 m and one stop less), C 5 (1.0 m) back along A, a C open towards the station side; 94 stones (12 half). Every
+  corner is a vertical butt joint: the 53 × 100.5 mm pin pattern is not square, so a stone turned by 90° never engages
+  the sockets below. The earlier leg runs through (its end flush with the body of the next leg's outer face), the next
+  leg starts at its inside face beyond the 1.69 mm ribs and a 1 mm gap (`[brick] rib_mm` CAD, `[wall] corner_gap_mm`
+  ASSUMPTION). Half stones (`[half_brick]`, PLACEHOLDER) close both ends of every odd course, so every leg is a
+  rectangle (`robodk/wallplan.py`). ARES works from the outside of every leg.
+- **Wall distance 840 mm** (was 740): ARES front 110 mm from the board plates at a stop (was 10 mm), reach of the top
+  course ±600 mm (±660), still **5 stops** (A 26 + 16, B 26 + 4, C 22 stones). Study 2026-10-06 (world simulation,
+  5 seeds each, realistic errors + assumed board placement errors σ 0.3 mm / 0.1°): 740 and 840 mm give the same
+  placement error (max 2.8-4.6 mm), 740 mm touched a plate once in 10 runs, 840 mm never (≥ 65 mm), 9 instead of 16
+  ARES moves between stops. **One board in front** of each stop instead of two would work with 5 of the existing
+  boards (one look per measurement), but the heading then comes from that board's rotation (stone yaw up to 0.24° vs
+  0.07°; a board 0.3° crooked ≈ 3.5 mm at the stop ends) and a bumped board goes unnoticed (two boards: fit residual)
+  - Samuel chose two boards. The reach table cache (`results/reach_table.json`, `mauer/reach_cache.py`) holds 740 and
+  840 mm.
+- **Boards**: the 8 existing boards on base-block centres (`[[targets]]`, `plan_layout --evaluate`): A 4 (W0-W3), B 2
+  (W4, W5), C 2 (W6, W7); two own-leg boards at every stop, looks clear of the wall built by the end of the stop,
+  worst baseline 800 mm.
 - **ARES routes** (`mauer/floor.py`, `[routes]`): explicit wall-frame waypoints, one PLC translation or rotation per
-  leg, validated against the legs, plates and station table (50 mm clearance, rotation circle r 635 mm) - also the
-  move along a leg (back off, along, approach). The sequencer steers them dead-reckoned, ends a route 40 mm before
-  its stop (`[sequencer] arrival_standoff_mm`), measures the wall there and closes the loop to the stop; a partly
-  visible board re-aims the looks (marker corners), a bounded search covers larger misses. An interrupted route
-  (pause, declined step, ARES error) is resumed from its next leg, never by a straight line to another route; an
-  aborted move updates the estimate from odometry, an ARES error without outcome needs the operator's pose.
+  leg, validated against the legs, plates and station table (50 mm clearance, rotation circle r 635 mm), incl. both
+  leg changes (A → B, B → C around the second corner) and the station trips from every stop. The sequencer steers them
+  dead-reckoned, ends a route 40 mm before its stop (`[sequencer] arrival_standoff_mm`), measures the wall there and
+  closes the loop to the stop; interrupted routes resume from their next leg.
 - **Pick-up station** (2026-10-06, Samuel: "put the stones on the loading dock, as many as fit"; all PLACEHOLDER,
-  `[pickup_station]`): ARES docks 100 mm from the table (was 240), the UR5 reaches 8 stacks of 2 full stones + 4 half
-  stones (nominal kinematics at the dock, magazine pitch 205 / 220 mm) = 20 stones, so every trip refills the whole
-  magazine: **5 station trips instead of 19**. Job v2 station slots stack (`layer` / `stack`, emptied from the top).
-  S0/S1 sit on the table top at the table ends (they were modelled on the floor) - the camera is 150 mm beside the
-  flange axis, so a look between the stacks hung the gripper in them; `make_job` now checks station looks against a
-  full station (`mauer.armcheck.station_boxes`).
-- **World simulation** (realistic errors, seeds 1-3): camera loop 76/76 seated, max 3.9-4.0 mm (out-of-loop mount and
-  holder errors; 0.82 mm without them), 5 station trips, 60-66 ARES moves (224 with the old station); dead reckoning
-  stops at a station pick or misses by up to 257 mm. The true ARES path is checked: no move touches a leg, plate or
-  the table in the 4 camera-loop runs (smallest gap 8.7 mm). With the old station a slip (ASSUMPTION: up to 30 mm on
-  any move) during the last closed-loop approach put ARES up to 14.5 mm onto a plate in all 3 seeds; there are now far
-  fewer such approaches, but the plates still end 10 mm before the ARES front at a stop. **Open**: a larger gap
-  (shallower plates or a larger wall distance + new reach table) or a measured slip figure.
+  `[pickup_station]`): ARES docks 100 mm from the table, the UR5 reaches 8 stacks of 2 full stones + 4 half stones =
+  20 stones, so a trip refills the whole magazine (job v2 station slots stack: `layer` / `stack`). S0/S1 on the table
+  top at the table ends; station looks are checked against a full station (`mauer.armcheck.station_boxes`).
+- **World simulation** (`results/l_wall_sim.json`, realistic errors, seeds 1-3): camera loop 94/94 seated, max
+  3.9-4.0 mm (out-of-loop mount and holder errors; 0.83 mm without them), 6 station trips, no ARES contact with a leg,
+  plate or the table (smallest gap 60 mm); dead reckoning stops at a station pick or misses by up to 172 mm.
+
+## L wall (2026-10-05, superseded by the C; `tests/conftest.py` l_config keeps it for the tests)
+
+Samuel: a small L, A = 12, B = 6 stones (76, 8 half), 3 stops at the wall distance 740 mm, the 8 boards W0-W4 on A and
+W5-W7 on B; a stop looks only at boards of its own leg (review 2026-10-05: a look across the corner put the wrist
+inside leg A, and a fit over both legs moved the leg-A stones with any leg-B error). RoboDK run with the stacked
+station (commit db78e1a): 76/76 placed, 61/61 moved station → magazine in 5 trips, no route collision. World
+simulation: 76/76 seated, max 3.9-4.0 mm; the plates ended 10 mm before the ARES front at a stop - with the old
+19-trip station a slip on the last approach put ARES up to 14.5 mm onto a plate in all 3 seeds (now settled by 840 mm).
 
 ## Results front wall (2026-10-02, `results/reach_summary.md`, coarse grid; placeholders: mount height, TCP 190 mm, base plate 20 mm, 3 courses)
 

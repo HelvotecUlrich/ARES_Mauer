@@ -1,11 +1,10 @@
 {
- "note": "tools/run_job.py data/jobs/nominal_L.json --sim --scenario realistic --seed N --compare (camera loop vs dead reckoning, strict grasp) and --no-camera --lenient-grasp (dead reckoning to the end), seeds 1-3, plus --scenario slip --seed 1 (camera loop); the rows collected with run_job.sim_once (2026-10-06, job with the stacked pick-up station: 16 full + 4 half stones within reach of the dock, 5 reloads - was 3 + 2 slots and 19 reloads). The true ARES path is checked against the legs, plates and the station table (mauer.simworld floor check).",
+ "note": "tools/run_job.py data/jobs/nominal_C.json --sim --scenario realistic --seed N --compare (camera loop vs dead reckoning, strict grasp) and --no-camera --lenient-grasp (dead reckoning to the end), seeds 1-3, plus --scenario slip --seed 1 (camera loop); the rows collected with run_job.sim_once (2026-10-06, the C: legs A 10, B 7, C 5 stones, 94 stones, wall distance 840 mm, stacked pick-up station). The true ARES path is checked against the legs, plates and the station table (mauer.simworld floor check).",
  "discussion": [
-  "- Camera loop, realistic: 76/76 seated in every seed (8/8 half stones), horizontal error max 3.92-4.02 mm, dominated by the errors outside the loop (1 mm UR-mount error and 1 mm holder scatter on the deck magazine, WorldErrors.realistic): the `slip` scenario (same drive errors and slips without them) gives 76/76 within 0.82 mm (seed 1).",
-  "- Pick-up station (2026-10-06, PLACEHOLDER layout: ARES docks 100 mm from the table, 8 stacks of 2 full stones + 4 half stones): every reload brings a full magazine, 5 reloads instead of 19 - 60-66 ARES moves and ~8 min driving per run (seed 1 before: 224 moves, 30 min).",
-  "- True ARES path (camera loop): no move touches a leg, plate or the table in any of the 4 runs (smallest gap 8.7-8.8 mm realistic, 5.4 mm slip). Before, a plate was touched in all 3 realistic seeds (up to 14.5 mm), always by the closed-loop correction after the arrival standoff with a slip of 15-24 mm on that last move. With 5 instead of 19 returns from the station there are far fewer such arrivals; the geometry is unchanged (plates end 10 mm before the ARES front at a stop, slip model ASSUMPTION 20 % per translation, up to 30 mm), so the open decision stays: a larger gap or a measured slip figure for short moves on the real ARES.",
-  "- Seed 3: the start pose (operator placement, sigma 10 mm, WorldErrors.realistic) already lies 16 mm on plates W1 / W2 - a note of the simulation, not a move of the sequencer.",
-  "- Dead reckoning stops at a station pick (the gripper misses stone s00l2: seeds 1 and 3 on the first trip, seed 2 on the second, 15, 30, 15 stones placed); with a lenient gripper the 76 stones miss the pins by up to 257 mm (14, 25, 0 seated), 61, 61, 48 of the 61 stones moved station -> magazine land off their holders (up to 120 mm) and in seed 3 ARES drifts 33 mm onto plate W0 on the 4.3 m return leg from the station to leg B - the reference case without the camera."
+  "- Camera loop, realistic: 94/94 seated in every seed (12/12 half stones), horizontal error max 3.88-4.01 mm, dominated by the errors outside the loop (1 mm UR-mount error and 1 mm holder scatter on the deck magazine, WorldErrors.realistic): the `slip` scenario gives 94/94 within 0.83 mm (seed 1). 6 station trips, 61-73 ARES moves per run.",
+  "- True ARES path (camera loop): no move touches a leg, plate or the table in the 4 runs; smallest gap to an obstacle 70-89 mm realistic, 60 mm slip. At the wall distance 840 mm the plates end 110 mm before the ARES front at a stop (740 mm: 10 mm - with the old 19-trip station a slip on the last closed-loop approach put ARES onto a plate in all 3 realistic seeds of the L, the C study at 740 mm once in 10 runs) - the open plate-gap decision of 2026-10-05 is settled by the larger distance.",
+  "- Seed 3: no start-pose overlap any more (at 740 mm the operator's start placement lay 16 mm on plates W1 / W2).",
+  "- Dead reckoning stops at a station pick (the gripper misses stone s00l2: seeds 1 and 3 on the first trip, seed 2 on the second, 15, 30, 15 stones placed); with a lenient gripper the 94 stones miss the pins by up to 172 mm (11, 15, 0 seated), 79, 78, 70 of the stones moved station -> magazine land off their holders (up to 241 mm) and ARES drives up to 59 mm onto the plates (plate W0, plate W6) - the reference case without the camera."
  ],
  "runs": [
   {
@@ -13,78 +12,78 @@
    "scenario": "realistic",
    "mode": "camera loop",
    "placement": {
-    "n": 76,
-    "seated": 76,
+    "n": 94,
+    "seated": 94,
     "by_kind": {
      "full": {
-      "n": 68,
-      "seated": 68,
-      "pin_max_mm": 4.045938955239821
+      "n": 82,
+      "seated": 82,
+      "pin_max_mm": 4.032828894330315
      },
      "half": {
-      "n": 8,
-      "seated": 8,
-      "pin_max_mm": 1.6742953380394268
+      "n": 12,
+      "seated": 12,
+      "pin_max_mm": 2.003976418939952
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 1.7994830049051231,
-     "rms": 1.8432320479403133,
-     "p95": 2.0877564694289683,
-     "max": 4.024553438949889
+     "n": 94,
+     "mean": 1.8167313172702726,
+     "rms": 1.853922185883189,
+     "p95": 2.1032885823651957,
+     "max": 4.009941454679715
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 1.7936701866340663,
-     "rms": 1.8382280295220563,
-     "p95": 2.0808621139572487,
-     "max": 4.045938955239821
+     "n": 94,
+     "mean": 1.7996551457658005,
+     "rms": 1.8377442166428828,
+     "p95": 2.086821102060278,
+     "max": 4.032828894330315
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 1.2415290417898517,
-     "rms": 1.5147593168430722,
-     "p95": 2.074815944103392,
-     "max": 4.024005070374585
+     "n": 94,
+     "mean": 1.323280964567271,
+     "rms": 1.5391743396881763,
+     "p95": 2.049355019355437,
+     "max": 4.00640338665562
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 0.6672536532953155,
-     "rms": 1.0502421599761416,
-     "p95": 2.022862276044606,
-     "max": 2.0742452219275265
+     "n": 94,
+     "mean": 0.7123771712578021,
+     "rms": 1.0334262544349107,
+     "p95": 2.0236164145905544,
+     "max": 2.084708452287032
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.27042668173365875,
-     "rms": 0.3205590734524273,
-     "p95": 0.5678282996341864,
-     "max": 0.665815294448862
+     "n": 94,
+     "mean": 0.20886632553006462,
+     "rms": 0.2554978151913663,
+     "p95": 0.5065422289060222,
+     "max": 0.6204910549901683
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 0.004274178908728843,
-     "rms": 0.005354724977980617,
-     "p95": 0.010199894364582174,
-     "max": 0.015243022307736566
+     "n": 94,
+     "mean": 0.0042548656150758835,
+     "rms": 0.005245941818859499,
+     "p95": 0.009807561415332504,
+     "max": 0.013459917431254445
     }
    },
    "ares": {
-    "moves": 66,
+    "moves": 73,
     "translations": 47,
-    "rotations": 19,
-    "slips": 10,
-    "drive_time_s": 501.2828675318736,
+    "rotations": 26,
+    "slips": 12,
+    "drive_time_s": 586.8943476553047,
     "true_pose": {
-     "x_mm": 3081.3181621946405,
-     "y_mm": -663.6477234389417,
-     "theta_rad": -3.1346567030273778
+     "x_mm": 1376.3059520876366,
+     "y_mm": -2243.9439300488075,
+     "theta_rad": 1.5769189751449693
     }
    },
-   "corrections": 13,
-   "reloads": 5,
-   "shots": 52,
+   "corrections": 15,
+   "reloads": 6,
+   "shots": 64,
    "error": "",
    "violations": [],
    "notes": [],
@@ -92,7 +91,7 @@
     "checked": true,
     "hits": [],
     "start_overlaps": [],
-    "min_gap_mm": 8.755849192052002
+    "min_gap_mm": 74.75733760431964
    }
   },
   {
@@ -101,53 +100,53 @@
    "mode": "dead reckoning, strict grasp",
    "placement": {
     "n": 15,
-    "seated": 14,
+    "seated": 11,
     "by_kind": {
      "full": {
       "n": 13,
-      "seated": 12,
-      "pin_max_mm": 10.928260308903996
+      "seated": 9,
+      "pin_max_mm": 11.331996153442361
      },
      "half": {
       "n": 2,
       "seated": 2,
-      "pin_max_mm": 8.147265103372773
+      "pin_max_mm": 8.54917521781204
      }
     },
     "horiz_mm": {
      "n": 15,
-     "mean": 8.933295588973321,
-     "rms": 8.970781224870274,
-     "p95": 10.114743973367121,
-     "max": 10.795636483738244
+     "mean": 9.327330745189235,
+     "rms": 9.363499381947056,
+     "p95": 10.501795803258737,
+     "max": 11.1993733539906
     },
     "pin_mm": {
      "n": 15,
-     "mean": 9.050093808171775,
-     "rms": 9.08808195735446,
-     "p95": 10.249925631990795,
-     "max": 10.928260308903996
+     "mean": 9.444552427883178,
+     "rms": 9.481185027794604,
+     "p95": 10.637478492251894,
+     "max": 11.331996153442361
     },
     "dx_mm": {
      "n": 15,
-     "mean": 6.4908433019188685,
-     "rms": 6.580627433784881,
-     "p95": 8.084582459244478,
-     "max": 8.705611453809468
+     "mean": 6.838006467297993,
+     "rms": 6.923289904303181,
+     "p95": 8.431745624623623,
+     "max": 9.052774619188654
     },
     "dy_mm": {
      "n": 15,
-     "mean": 6.044320923034667,
-     "rms": 6.096741618455125,
-     "p95": 7.312289109415809,
-     "max": 7.728644263889815
+     "mean": 6.2535377695452015,
+     "rms": 6.304219029879636,
+     "p95": 7.521505955926362,
+     "max": 7.937861110400329
     },
     "dz_mm": {
      "n": 15,
-     "mean": 0.4804671988003918,
-     "rms": 0.5305004346363654,
-     "p95": 0.864433740067031,
-     "max": 0.8711369250780763
+     "mean": 0.6200935013008556,
+     "rms": 0.6596195360826079,
+     "p95": 1.004060042567491,
+     "max": 1.0107632275785363
     },
     "yaw_deg": {
      "n": 15,
@@ -158,28 +157,28 @@
     }
    },
    "ares": {
-    "moves": 4,
-    "translations": 3,
+    "moves": 3,
+    "translations": 2,
     "rotations": 1,
     "slips": 1,
-    "drive_time_s": 34.12134739146694,
+    "drive_time_s": 32.30484393811227,
     "true_pose": {
-     "x_mm": -1110.0775378193864,
-     "y_mm": 862.7456715179871,
-     "theta_rad": 1.5757436882783669
+     "x_mm": -1108.192602641149,
+     "y_mm": 861.3881723936582,
+     "theta_rad": 1.5762103719763783
     }
    },
    "corrections": 0,
    "reloads": 1,
    "shots": 0,
-   "error": "SequencerError: robot pick_station failed (pick station slot s00l2 (full)): gripper missed stone st016 (full): offset (29.8, 26.4) mm - the arm is NOT parked; ARES stays interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park it, then resume from stop 0",
+   "error": "SequencerError: robot pick_station failed (pick station slot s00l2 (full)): gripper missed stone st016 (full): offset (28.2, 24.9) mm - the arm is NOT parked; ARES stays interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park it, then resume from stop 0",
    "violations": [],
    "notes": [],
    "floor": {
     "checked": true,
     "hits": [],
     "start_overlaps": [],
-    "min_gap_mm": 73.29937620824461
+    "min_gap_mm": 74.81235011989929
    }
   },
   {
@@ -187,148 +186,219 @@
    "scenario": "realistic",
    "mode": "dead reckoning, lenient grasp",
    "placement": {
-    "n": 76,
-    "seated": 14,
+    "n": 94,
+    "seated": 11,
     "by_kind": {
      "full": {
-      "n": 68,
-      "seated": 12,
-      "pin_max_mm": 137.95527065797876
+      "n": 82,
+      "seated": 9,
+      "pin_max_mm": 154.7007524043336
      },
      "half": {
-      "n": 8,
+      "n": 12,
       "seated": 2,
-      "pin_max_mm": 258.43187873529575
+      "pin_max_mm": 155.8022628757325
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 70.87857782732445,
-     "rms": 83.58138541231642,
-     "p95": 133.27084818612016,
-     "max": 257.41437582776445
+     "n": 94,
+     "mean": 71.099554985465,
+     "rms": 83.97928198599425,
+     "p95": 144.55684454657867,
+     "max": 155.0768512830782
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 72.10227162582511,
-     "rms": 84.95385627082872,
-     "p95": 133.73912903585114,
-     "max": 258.43187873529575
+     "n": 94,
+     "mean": 72.72232982949474,
+     "rms": 85.91536753229364,
+     "p95": 145.587511925294,
+     "max": 155.8022628757325
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 53.106751038946186,
-     "rms": 64.93570051549604,
-     "p95": 117.28273185174908,
-     "max": 202.77798385563756
+     "n": 94,
+     "mean": 42.01803433857204,
+     "rms": 54.25903862419141,
+     "p95": 125.53592439901998,
+     "max": 134.5047093711064
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 43.91734875485563,
-     "rms": 52.623215276187636,
-     "p95": 108.17676961310343,
-     "max": 158.56623267972395
+     "n": 94,
+     "mean": 53.18865049886339,
+     "rms": 64.09739878077458,
+     "p95": 130.66568443414374,
+     "max": 148.59914469738214
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.35560618715252407,
-     "rms": 0.4494622238125708,
-     "p95": 0.8639549411376706,
-     "max": 1.060020073016517
+     "n": 94,
+     "mean": 0.415908314187746,
+     "rms": 0.4945790303865528,
+     "p95": 0.9054477532211591,
+     "max": 1.0107632275785363
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 1.9880171690067652,
-     "rms": 2.4419649998947834,
-     "p95": 3.9245300543076054,
-     "max": 4.203849795890058
+     "n": 94,
+     "mean": 2.4701762120892488,
+     "rms": 3.081106944249714,
+     "p95": 5.3535309654026655,
+     "max": 5.65572041934643
     }
    },
    "ares": {
-    "moves": 47,
-    "translations": 36,
-    "rotations": 11,
+    "moves": 45,
+    "translations": 35,
+    "rotations": 10,
     "slips": 6,
-    "drive_time_s": 484.304814717305,
+    "drive_time_s": 560.1068395739663,
     "true_pose": {
-     "x_mm": 3233.507396711942,
-     "y_mm": -344.6011860880204,
-     "theta_rad": -3.070011449430824
+     "x_mm": 1596.1888084047428,
+     "y_mm": -2108.172347989307,
+     "theta_rad": 1.6677731392501638
     }
    },
    "corrections": 0,
-   "reloads": 5,
+   "reloads": 6,
    "shots": 0,
    "error": "",
-   "violations": [],
+   "violations": [
+    "ARES footprint overlaps plate W6 by 52.2 mm during rotate no. 37 ((1557.5, -2137.6) mm, -176.47 deg -> (1555.7, -2138.5) mm, 94.79 deg)",
+    "ARES footprint overlaps plate W6 by 39.6 mm during translate no. 41 ((-892.2, -2345.7) mm, 95.15 deg -> (1574.5, -2118.1) mm, 95.24 deg)",
+    "ARES footprint overlaps plate W6 by 50.9 mm during translate no. 45 ((-869.0, -2345.6) mm, 95.50 deg -> (1596.2, -2108.2) mm, 95.56 deg)"
+   ],
    "notes": [
-    "stone st016 not seated in magazine slot r1y2l1: 28.5 mm",
-    "stone st017 not seated in magazine slot r0y2l1: 26.3 mm",
-    "stone st018 not seated in magazine slot r1y1l1: 24.4 mm",
-    "stone st019 not seated in magazine slot r0y1l1: 26.3 mm",
-    "stone st020 not seated in magazine slot r1y0l1: 25.3 mm",
-    "stone st021 not seated in magazine slot r0y0l1: 25.1 mm",
-    "stone st022 not seated in magazine slot r1y2l2: 26.4 mm",
-    "stone st023 not seated in magazine slot r0y2l2: 25.5 mm",
-    "stone st025 not seated in magazine slot r1y1l2: 25.6 mm",
-    "stone st029 not seated in magazine slot r0y1l2: 25.4 mm",
-    "stone st030 not seated in magazine slot r1y0l2: 26.3 mm",
-    "stone st031 not seated in magazine slot r0y0l2: 24.5 mm",
-    "stone st032 not seated in magazine slot r1y2l3: 25.9 mm",
-    "stone st033 not seated in magazine slot r1y1l3: 27.1 mm",
-    "stone st034 not seated in magazine slot r1y0l3: 26.7 mm",
-    "stone st036 not seated in magazine slot r1y2l1: 38.5 mm",
-    "stone st037 not seated in magazine slot r0y2l1: 42.4 mm",
-    "stone st038 not seated in magazine slot r1y1l1: 40.4 mm",
-    "stone st039 not seated in magazine slot r0y1l1: 36.9 mm",
-    "stone st040 not seated in magazine slot r1y0l1: 42.0 mm",
-    "stone st041 not seated in magazine slot r0y0l1: 36.0 mm",
-    "stone st042 not seated in magazine slot r1y2l2: 38.2 mm",
-    "stone st043 not seated in magazine slot r0y2l2: 37.2 mm",
-    "stone st044 not seated in magazine slot r1y1l2: 38.2 mm",
-    "stone st045 not seated in magazine slot r0y1l2: 41.8 mm",
-    "stone st046 not seated in magazine slot r1y0l2: 41.5 mm",
-    "stone st047 not seated in magazine slot r0y0l2: 39.3 mm",
-    "stone st048 not seated in magazine slot r1y2l3: 37.5 mm",
-    "stone st049 not seated in magazine slot r1y1l3: 37.8 mm",
-    "stone st050 not seated in magazine slot r1y0l3: 38.5 mm",
-    "stone st051 not seated in magazine slot r1y2l1: 47.4 mm",
-    "stone st052 not seated in magazine slot r0y2l1: 53.2 mm",
-    "stone st053 not seated in magazine slot r1y1l1: 51.6 mm",
-    "stone st054 not seated in magazine slot r0y1l1: 46.0 mm",
-    "stone st024h not seated in magazine slot r1y0l1: 47.8 mm",
-    "stone st055 not seated in magazine slot r0y0l1: 53.0 mm",
-    "stone st056 not seated in magazine slot r1y2l2: 47.1 mm",
-    "stone st057 not seated in magazine slot r0y2l2: 46.1 mm",
-    "stone st026h not seated in magazine slot r1y1l2: 52.9 mm",
-    "stone st058 not seated in magazine slot r0y1l2: 46.4 mm",
-    "stone st027h not seated in magazine slot r1y0l2: 52.0 mm",
-    "stone st059 not seated in magazine slot r0y0l2: 47.0 mm",
-    "stone st060 not seated in magazine slot r1y2l3: 51.6 mm",
-    "stone st028h not seated in magazine slot r1y1l3: 46.1 mm",
-    "stone st061 not seated in magazine slot r1y0l3: 53.7 mm",
-    "stone st066 not seated in magazine slot r1y2l1: 101.7 mm",
-    "stone st067 not seated in magazine slot r0y2l1: 115.0 mm",
-    "stone st074h not seated in magazine slot r1y1l1: 101.0 mm",
-    "stone st068 not seated in magazine slot r0y1l1: 113.9 mm",
-    "stone st069 not seated in magazine slot r1y0l1: 99.4 mm",
-    "stone st070 not seated in magazine slot r0y0l1: 116.7 mm",
-    "stone st071 not seated in magazine slot r1y2l2: 99.5 mm",
-    "stone st072 not seated in magazine slot r0y2l2: 100.2 mm",
-    "stone st073 not seated in magazine slot r1y1l2: 100.5 mm",
-    "stone st075 not seated in magazine slot r0y1l2: 100.6 mm",
-    "stone st079 not seated in magazine slot r1y0l2: 116.2 mm",
-    "stone st080 not seated in magazine slot r0y0l2: 114.7 mm",
-    "stone st062 not seated in magazine slot r1y2l3: 114.6 mm",
-    "stone st063 not seated in magazine slot r1y1l3: 101.1 mm",
-    "stone st064 not seated in magazine slot r1y0l3: 99.0 mm",
-    "stone st076h not seated in magazine slot r1y2l1: 107.1 mm"
+    "stone st016 not seated in magazine slot r1y2l1: 27.0 mm",
+    "stone st017 not seated in magazine slot r0y2l1: 24.9 mm",
+    "stone st018 not seated in magazine slot r1y1l1: 23.0 mm",
+    "stone st019 not seated in magazine slot r0y1l1: 24.7 mm",
+    "stone st020 not seated in magazine slot r1y0l1: 23.9 mm",
+    "stone st021 not seated in magazine slot r0y0l1: 23.6 mm",
+    "stone st022 not seated in magazine slot r1y2l2: 24.9 mm",
+    "stone st023 not seated in magazine slot r0y2l2: 24.0 mm",
+    "stone st025 not seated in magazine slot r1y1l2: 24.1 mm",
+    "stone st029 not seated in magazine slot r0y1l2: 24.0 mm",
+    "stone st030 not seated in magazine slot r1y0l2: 24.9 mm",
+    "stone st031 not seated in magazine slot r0y0l2: 23.1 mm",
+    "stone st032 not seated in magazine slot r1y2l3: 24.4 mm",
+    "stone st033 not seated in magazine slot r1y1l3: 25.6 mm",
+    "stone st034 not seated in magazine slot r1y0l3: 25.2 mm",
+    "stone st036 not seated in magazine slot r1y2l1: 33.8 mm",
+    "stone st024h not seated in magazine slot r0y2l1: 33.8 mm",
+    "stone st037 not seated in magazine slot r1y1l1: 37.1 mm",
+    "stone st026h not seated in magazine slot r0y1l1: 35.5 mm",
+    "stone st038 not seated in magazine slot r1y0l1: 34.6 mm",
+    "stone st039 not seated in magazine slot r0y0l1: 32.2 mm",
+    "stone st027h not seated in magazine slot r1y2l2: 35.0 mm",
+    "stone st040 not seated in magazine slot r0y2l2: 35.9 mm",
+    "stone st041 not seated in magazine slot r1y1l2: 31.7 mm",
+    "stone st042 not seated in magazine slot r0y1l2: 33.2 mm",
+    "stone st043 not seated in magazine slot r1y0l2: 32.9 mm",
+    "stone st044 not seated in magazine slot r0y0l2: 33.3 mm",
+    "stone st045 not seated in magazine slot r1y2l3: 36.2 mm",
+    "stone st046 not seated in magazine slot r1y1l3: 35.8 mm",
+    "stone st047 not seated in magazine slot r1y0l3: 33.8 mm",
+    "stone st051 not seated in magazine slot r1y2l1: 90.0 mm",
+    "stone st052 not seated in magazine slot r0y2l1: 98.5 mm",
+    "stone st053 not seated in magazine slot r1y1l1: 96.8 mm",
+    "stone st054 not seated in magazine slot r0y1l1: 88.4 mm",
+    "stone st055 not seated in magazine slot r1y0l1: 98.5 mm",
+    "stone st056 not seated in magazine slot r0y0l1: 89.1 mm",
+    "stone st057 not seated in magazine slot r1y2l2: 89.1 mm",
+    "stone st058 not seated in magazine slot r0y2l2: 88.7 mm",
+    "stone st060 not seated in magazine slot r1y1l2: 87.7 mm",
+    "stone st063 not seated in magazine slot r0y1l2: 98.8 mm",
+    "stone st064 not seated in magazine slot r1y0l2: 97.7 mm",
+    "stone st065 not seated in magazine slot r0y0l2: 98.5 mm",
+    "stone st059h not seated in magazine slot r1y2l3: 90.1 mm",
+    "stone st048 not seated in magazine slot r1y1l3: 88.7 mm",
+    "stone st049 not seated in magazine slot r1y0l3: 88.7 mm",
+    "stone st066 not seated in magazine slot r1y2l1: 75.7 mm",
+    "stone st074h not seated in magazine slot r0y2l1: 74.5 mm",
+    "stone st067 not seated in magazine slot r1y1l1: 87.7 mm",
+    "stone st061h not seated in magazine slot r0y1l1: 89.4 mm",
+    "stone st068 not seated in magazine slot r1y0l1: 86.9 mm",
+    "stone st069 not seated in magazine slot r0y0l1: 73.2 mm",
+    "stone st062h not seated in magazine slot r1y2l2: 86.5 mm",
+    "stone st070 not seated in magazine slot r0y2l2: 89.1 mm",
+    "stone st071 not seated in magazine slot r1y1l2: 73.9 mm",
+    "stone st072 not seated in magazine slot r0y1l2: 74.3 mm",
+    "stone st073 not seated in magazine slot r1y0l2: 74.7 mm",
+    "stone st075 not seated in magazine slot r0y0l2: 74.6 mm",
+    "stone st076 not seated in magazine slot r1y2l3: 87.5 mm",
+    "stone st077 not seated in magazine slot r1y1l3: 89.3 mm",
+    "stone st078 not seated in magazine slot r1y0l3: 88.1 mm",
+    "stone st081 not seated in magazine slot r1y2l1: 160.2 mm",
+    "stone st082 not seated in magazine slot r0y2l1: 177.5 mm",
+    "stone st083 not seated in magazine slot r1y1l1: 175.9 mm",
+    "stone st084 not seated in magazine slot r0y1l1: 158.1 mm",
+    "stone st085 not seated in magazine slot r1y0l1: 176.5 mm",
+    "stone st086 not seated in magazine slot r0y0l1: 156.9 mm",
+    "stone st087 not seated in magazine slot r1y2l2: 159.9 mm",
+    "stone st088 not seated in magazine slot r0y2l2: 156.4 mm",
+    "stone st090 not seated in magazine slot r1y1l2: 159.9 mm",
+    "stone st093 not seated in magazine slot r0y1l2: 176.7 mm",
+    "stone st094 not seated in magazine slot r1y0l2: 175.9 mm",
+    "stone st095 not seated in magazine slot r0y0l2: 177.4 mm",
+    "stone st089h not seated in magazine slot r1y2l3: 161.8 mm",
+    "stone st079 not seated in magazine slot r1y1l3: 158.6 mm",
+    "stone st080 not seated in magazine slot r1y0l3: 156.8 mm",
+    "stone st091h not seated in magazine slot r1y2l1: 186.5 mm",
+    "stone st050 not seated in magazine slot r0y2l1: 163.9 mm",
+    "stone st035 not seated in magazine slot r1y1l1: 161.6 mm",
+    "stone st092h not seated in magazine slot r0y1l1: 179.3 mm"
    ],
    "floor": {
     "checked": true,
-    "hits": [],
+    "hits": [
+     {
+      "move": 37,
+      "kind": "rotate",
+      "obstacle": "plate W6",
+      "depth_mm": 52.20940946721976,
+      "from": {
+       "x_mm": 1557.5056710397612,
+       "y_mm": -2137.567710560477,
+       "theta_rad": -3.0800009100902837
+      },
+      "to": {
+       "x_mm": 1555.729611738172,
+       "y_mm": -2138.5414886978488,
+       "theta_rad": 1.6543801347176572
+      }
+     },
+     {
+      "move": 41,
+      "kind": "translate",
+      "obstacle": "plate W6",
+      "depth_mm": 39.649575407673865,
+      "from": {
+       "x_mm": -892.2012471698413,
+       "y_mm": -2345.717708033692,
+       "theta_rad": 1.6606440749558073
+      },
+      "to": {
+       "x_mm": 1574.4800274192053,
+       "y_mm": -2118.1106392688016,
+       "theta_rad": 1.6623007561789311
+      }
+     },
+     {
+      "move": 45,
+      "kind": "translate",
+      "obstacle": "plate W6",
+      "depth_mm": 50.93391871190033,
+      "from": {
+       "x_mm": -869.0369177812867,
+       "y_mm": -2345.5701597345114,
+       "theta_rad": 1.6667799135971615
+      },
+      "to": {
+       "x_mm": 1596.1888084047428,
+       "y_mm": -2108.172347989307,
+       "theta_rad": 1.6677731392501638
+      }
+     }
+    ],
     "start_overlaps": [],
-    "min_gap_mm": 35.320745847542405
+    "min_gap_mm": 0.0
    }
   },
   {
@@ -336,78 +406,78 @@
    "scenario": "realistic",
    "mode": "camera loop",
    "placement": {
-    "n": 76,
-    "seated": 76,
+    "n": 94,
+    "seated": 94,
     "by_kind": {
      "full": {
-      "n": 68,
-      "seated": 68,
-      "pin_max_mm": 3.978228123000746
+      "n": 82,
+      "seated": 82,
+      "pin_max_mm": 3.977617066899034
      },
      "half": {
-      "n": 8,
-      "seated": 8,
-      "pin_max_mm": 2.5691314117310466
+      "n": 12,
+      "seated": 12,
+      "pin_max_mm": 2.5628110305015723
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 1.8738856935275479,
-     "rms": 1.940117599957597,
-     "p95": 2.736515031610388,
-     "max": 3.9835255338628257
+     "n": 94,
+     "mean": 1.873799866733884,
+     "rms": 1.9294669730717167,
+     "p95": 2.610383313571054,
+     "max": 3.9803514028282208
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 1.870223143208744,
-     "rms": 1.937280989945245,
-     "p95": 2.7290778111256673,
-     "max": 3.978228123000746
+     "n": 94,
+     "mean": 1.8629286331981123,
+     "rms": 1.9194943700784106,
+     "p95": 2.6164847450665496,
+     "max": 3.977617066899034
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 1.3448979075610088,
-     "rms": 1.6326398106868278,
-     "p95": 2.732696611165366,
-     "max": 3.9803074464808788
+     "n": 94,
+     "mean": 1.4002583447305523,
+     "rms": 1.6393398433665858,
+     "p95": 2.609983327889406,
+     "max": 3.9802085702067416
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 0.6772848026523767,
-     "rms": 1.048114282998617,
-     "p95": 1.9996807196868076,
-     "max": 2.108569952312905
+     "n": 94,
+     "mean": 0.6657054231550529,
+     "rms": 1.017549840609958,
+     "p95": 2.0306759795042013,
+     "max": 2.1018523877755797
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.26196485795879565,
-     "rms": 0.3088188171094538,
-     "p95": 0.5314598408231177,
-     "max": 0.595905520090696
+     "n": 94,
+     "mean": 0.27368859128880607,
+     "rms": 0.3193686127902321,
+     "p95": 0.5560225382842429,
+     "max": 0.6577970115794756
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 0.004648794862414826,
-     "rms": 0.0057638361549505225,
-     "p95": 0.010686737830653544,
-     "max": 0.01781964890347544
+     "n": 94,
+     "mean": 0.00457588792170224,
+     "rms": 0.005640544073059872,
+     "p95": 0.010836948732292809,
+     "max": 0.018010075825427872
     }
    },
    "ares": {
-    "moves": 60,
+    "moves": 61,
     "translations": 43,
-    "rotations": 17,
-    "slips": 9,
-    "drive_time_s": 495.4097892574965,
+    "rotations": 18,
+    "slips": 6,
+    "drive_time_s": 574.3753225774964,
     "true_pose": {
-     "x_mm": 3081.296503262019,
-     "y_mm": -663.636483871738,
-     "theta_rad": -3.1384475302851684
+     "x_mm": 1379.7815606503507,
+     "y_mm": -2243.5756335226006,
+     "theta_rad": 1.5676757589214487
     }
    },
-   "corrections": 8,
-   "reloads": 5,
-   "shots": 42,
+   "corrections": 12,
+   "reloads": 6,
+   "shots": 58,
    "error": "",
    "violations": [],
    "notes": [],
@@ -415,7 +485,7 @@
     "checked": true,
     "hits": [],
     "start_overlaps": [],
-    "min_gap_mm": 8.806850641425967
+    "min_gap_mm": 89.07346380619671
    }
   },
   {
@@ -424,101 +494,100 @@
    "mode": "dead reckoning, strict grasp",
    "placement": {
     "n": 30,
-    "seated": 23,
+    "seated": 15,
     "by_kind": {
      "full": {
       "n": 28,
-      "seated": 21,
-      "pin_max_mm": 15.975102661960303
+      "seated": 13,
+      "pin_max_mm": 25.153209716603264
      },
      "half": {
       "n": 2,
       "seated": 2,
-      "pin_max_mm": 6.558115723187536
+      "pin_max_mm": 6.563374009843879
      }
     },
     "horiz_mm": {
      "n": 30,
-     "mean": 8.7614489706648,
-     "rms": 9.200382416973547,
-     "p95": 14.554245982241897,
-     "max": 15.586377936435857
+     "mean": 14.410028623427225,
+     "rms": 16.455748827437947,
+     "p95": 23.788969818287978,
+     "max": 24.915194891829522
     },
     "pin_mm": {
      "n": 30,
-     "mean": 8.969808804758186,
-     "rms": 9.421032175783166,
-     "p95": 14.928373940171095,
-     "max": 15.975102661960303
+     "mean": 14.607610241199772,
+     "rms": 16.646909212275776,
+     "p95": 24.007670259141264,
+     "max": 25.153209716603264
     },
     "dx_mm": {
      "n": 30,
-     "mean": 5.2554334932536735,
-     "rms": 6.096267923223265,
-     "p95": 10.175312886032419,
-     "max": 10.99568833742137
+     "mean": 11.872966120068785,
+     "rms": 15.339730744035654,
+     "p95": 23.506909867540333,
+     "max": 24.25867581913849
     },
     "dy_mm": {
      "n": 30,
-     "mean": 6.681695524510601,
-     "rms": 6.890758595890231,
-     "p95": 10.443036923822914,
-     "max": 11.828788639670758
+     "mean": 5.837467412294956,
+     "rms": 5.956872516028246,
+     "p95": 7.629787540632246,
+     "max": 8.569054541878977
     },
     "dz_mm": {
      "n": 30,
-     "mean": 0.41881296129045326,
-     "rms": 0.48865728772906164,
-     "p95": 0.8290077985683907,
-     "max": 0.9256748139010256
+     "mean": 0.49591025077735557,
+     "rms": 0.5776192115227895,
+     "p95": 0.9621442634410015,
+     "max": 1.0653011164014856
     },
     "yaw_deg": {
      "n": 30,
-     "mean": 0.22937847141004183,
-     "rms": 0.3165933733036633,
-     "p95": 0.6175628206168731,
-     "max": 0.6246406210414762
+     "mean": 0.2540701931692659,
+     "rms": 0.34431292667105284,
+     "p95": 0.5863679454920112,
+     "max": 0.5934457459166145
     }
    },
    "ares": {
-    "moves": 14,
-    "translations": 11,
+    "moves": 10,
+    "translations": 7,
     "rotations": 3,
-    "slips": 3,
-    "drive_time_s": 119.86225475011939,
+    "slips": 0,
+    "drive_time_s": 110.46279705842875,
     "true_pose": {
-     "x_mm": -1124.3715390511284,
-     "y_mm": 815.7667488152556,
-     "theta_rad": 1.5808831238723604
+     "x_mm": -1096.8986307629527,
+     "y_mm": 814.0077940410398,
+     "theta_rad": 1.5835786470107287
     }
    },
    "corrections": 0,
    "reloads": 2,
    "shots": 0,
-   "error": "SequencerError: robot pick_station failed (pick station slot s00l2 (full)): gripper missed stone st036 (full): offset (46.7, -21.5) mm - the arm is NOT parked; ARES stays interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park it, then resume from stop 1",
+   "error": "SequencerError: robot pick_station failed (pick station slot s00l2 (full)): gripper missed stone st036 (full): offset (21.3, -24.7) mm - the arm is NOT parked; ARES stays interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park it, then resume from stop 1",
    "violations": [],
    "notes": [
-    "stone st016 not seated in magazine slot r1y2l1: 17.1 mm",
-    "stone st017 not seated in magazine slot r0y2l1: 15.1 mm",
-    "stone st018 not seated in magazine slot r1y1l1: 16.1 mm",
-    "stone st019 not seated in magazine slot r0y1l1: 15.5 mm",
-    "stone st020 not seated in magazine slot r1y0l1: 17.0 mm",
-    "stone st021 not seated in magazine slot r0y0l1: 14.8 mm",
-    "stone st022 not seated in magazine slot r1y2l2: 17.1 mm",
-    "stone st023 not seated in magazine slot r0y2l2: 17.1 mm",
-    "stone st025 not seated in magazine slot r1y1l2: 14.8 mm",
-    "stone st029 not seated in magazine slot r0y1l2: 14.1 mm",
-    "stone st030 not seated in magazine slot r1y0l2: 15.1 mm",
-    "stone st031 not seated in magazine slot r0y0l2: 14.7 mm",
-    "stone st032 not seated in magazine slot r1y2l3: 15.0 mm",
-    "stone st033 not seated in magazine slot r1y1l3: 13.7 mm",
-    "stone st034 not seated in magazine slot r1y0l3: 16.2 mm"
+    "stone st016 not seated in magazine slot r1y2l1: 12.9 mm",
+    "stone st017 not seated in magazine slot r0y2l1: 11.0 mm",
+    "stone st018 not seated in magazine slot r1y1l1: 12.0 mm",
+    "stone st019 not seated in magazine slot r0y1l1: 11.4 mm",
+    "stone st020 not seated in magazine slot r1y0l1: 13.0 mm",
+    "stone st021 not seated in magazine slot r0y0l1: 10.7 mm",
+    "stone st022 not seated in magazine slot r1y2l2: 13.0 mm",
+    "stone st023 not seated in magazine slot r0y2l2: 13.0 mm",
+    "stone st025 not seated in magazine slot r1y1l2: 10.7 mm",
+    "stone st029 not seated in magazine slot r0y1l2: 10.0 mm",
+    "stone st030 not seated in magazine slot r1y0l2: 11.0 mm",
+    "stone st031 not seated in magazine slot r0y0l2: 10.6 mm",
+    "stone st032 not seated in magazine slot r1y2l3: 10.9 mm",
+    "stone st034 not seated in magazine slot r1y0l3: 12.1 mm"
    ],
    "floor": {
     "checked": true,
     "hits": [],
     "start_overlaps": [],
-    "min_gap_mm": 13.95921670374781
+    "min_gap_mm": 100.93174312495502
    }
   },
   {
@@ -526,148 +595,201 @@
    "scenario": "realistic",
    "mode": "dead reckoning, lenient grasp",
    "placement": {
-    "n": 76,
-    "seated": 25,
+    "n": 94,
+    "seated": 15,
     "by_kind": {
      "full": {
-      "n": 68,
-      "seated": 23,
-      "pin_max_mm": 58.43428408955692
+      "n": 82,
+      "seated": 13,
+      "pin_max_mm": 153.08152648205717
      },
      "half": {
-      "n": 8,
+      "n": 12,
       "seated": 2,
-      "pin_max_mm": 136.74832346693816
+      "pin_max_mm": 175.14010620904276
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 25.960599131412643,
-     "rms": 33.183094921730834,
-     "p95": 52.96389998915533,
-     "max": 136.20753733140035
+     "n": 94,
+     "mean": 73.14282467433014,
+     "rms": 89.2677222698934,
+     "p95": 139.8568324268886,
+     "max": 172.22899588393605
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 26.545832370879857,
-     "rms": 33.69712996943872,
-     "p95": 53.63192710481076,
-     "max": 136.74832346693816
+     "n": 94,
+     "mean": 74.06199792082799,
+     "rms": 90.33256024255947,
+     "p95": 140.56885005536046,
+     "max": 175.14010620904276
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 19.050255388544578,
-     "rms": 24.658976742757034,
-     "p95": 37.021635235726876,
-     "max": 104.76725533001672
+     "n": 94,
+     "mean": 53.53897981662336,
+     "rms": 70.38728895951037,
+     "p95": 126.3007446455829,
+     "max": 171.8161014283428
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 16.305289357643108,
-     "rms": 22.20478900113141,
-     "p95": 41.42699233858934,
-     "max": 87.04203258483744
+     "n": 94,
+     "mean": 33.55558000391913,
+     "rms": 54.903149200981275,
+     "p95": 128.76846974649962,
+     "max": 132.13123185620827
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.34571269343298827,
-     "rms": 0.4434329627783383,
-     "p95": 0.860539551377272,
-     "max": 1.1951924299785333
+     "n": 94,
+     "mean": 0.4137521230796681,
+     "rms": 0.5011528398804445,
+     "p95": 0.9095572439188515,
+     "max": 1.0653011164014856
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 0.9369061908161153,
-     "rms": 1.2562808935101102,
-     "p95": 2.2816633940242146,
-     "max": 2.3948866668978654
+     "n": 94,
+     "mean": 2.2822068292647852,
+     "rms": 3.0004134803570346,
+     "p95": 5.2696403656211235,
+     "max": 6.053479553642314
     }
    },
    "ares": {
-    "moves": 47,
-    "translations": 36,
-    "rotations": 11,
-    "slips": 7,
-    "drive_time_s": 484.304814717305,
+    "moves": 45,
+    "translations": 35,
+    "rotations": 10,
+    "slips": 6,
+    "drive_time_s": 560.1068395739663,
     "true_pose": {
-     "x_mm": 3158.7727636479553,
-     "y_mm": -468.59695348470996,
-     "theta_rad": -3.1015371076683165
+     "x_mm": 1530.9302166817624,
+     "y_mm": -2178.023674359481,
+     "theta_rad": 1.6745605333254971
     }
    },
    "corrections": 0,
-   "reloads": 5,
+   "reloads": 6,
    "shots": 0,
    "error": "",
-   "violations": [],
+   "violations": [
+    "ARES footprint overlaps plate W0 by 13.4 mm during translate no. 22 ((-1149.2, 661.5) mm, 92.71 deg -> (2746.0, 853.8) mm, 92.86 deg)",
+    "ARES footprint overlaps plate W6 by 12.3 mm during rotate no. 37 ((1545.5, -2182.2) mm, -176.71 deg -> (1545.0, -2183.3) mm, 94.83 deg)"
+   ],
    "notes": [
-    "stone st016 not seated in magazine slot r1y2l1: 17.1 mm",
-    "stone st017 not seated in magazine slot r0y2l1: 15.1 mm",
-    "stone st018 not seated in magazine slot r1y1l1: 16.1 mm",
-    "stone st019 not seated in magazine slot r0y1l1: 15.5 mm",
-    "stone st020 not seated in magazine slot r1y0l1: 17.0 mm",
-    "stone st021 not seated in magazine slot r0y0l1: 14.8 mm",
-    "stone st022 not seated in magazine slot r1y2l2: 17.1 mm",
-    "stone st023 not seated in magazine slot r0y2l2: 17.1 mm",
-    "stone st025 not seated in magazine slot r1y1l2: 14.8 mm",
-    "stone st029 not seated in magazine slot r0y1l2: 14.1 mm",
-    "stone st030 not seated in magazine slot r1y0l2: 15.1 mm",
-    "stone st031 not seated in magazine slot r0y0l2: 14.7 mm",
-    "stone st032 not seated in magazine slot r1y2l3: 15.0 mm",
-    "stone st033 not seated in magazine slot r1y1l3: 13.7 mm",
-    "stone st034 not seated in magazine slot r1y0l3: 16.2 mm",
-    "stone st036 not seated in magazine slot r1y2l1: 45.5 mm",
-    "stone st037 not seated in magazine slot r0y2l1: 44.0 mm",
-    "stone st038 not seated in magazine slot r1y1l1: 47.4 mm",
-    "stone st039 not seated in magazine slot r0y1l1: 45.0 mm",
-    "stone st040 not seated in magazine slot r1y0l1: 45.1 mm",
-    "stone st041 not seated in magazine slot r0y0l1: 44.5 mm",
-    "stone st042 not seated in magazine slot r1y2l2: 44.8 mm",
-    "stone st043 not seated in magazine slot r0y2l2: 44.7 mm",
-    "stone st044 not seated in magazine slot r1y1l2: 44.1 mm",
-    "stone st045 not seated in magazine slot r0y1l2: 44.6 mm",
-    "stone st046 not seated in magazine slot r1y0l2: 44.8 mm",
-    "stone st047 not seated in magazine slot r0y0l2: 45.4 mm",
-    "stone st048 not seated in magazine slot r1y2l3: 44.1 mm",
-    "stone st049 not seated in magazine slot r1y1l3: 44.0 mm",
-    "stone st050 not seated in magazine slot r1y0l3: 44.7 mm",
-    "stone st051 not seated in magazine slot r1y2l1: 44.3 mm",
-    "stone st052 not seated in magazine slot r0y2l1: 46.6 mm",
-    "stone st053 not seated in magazine slot r1y1l1: 44.0 mm",
-    "stone st054 not seated in magazine slot r0y1l1: 42.1 mm",
-    "stone st024h not seated in magazine slot r1y0l1: 44.9 mm",
-    "stone st055 not seated in magazine slot r0y0l1: 43.1 mm",
-    "stone st056 not seated in magazine slot r1y2l2: 41.4 mm",
-    "stone st057 not seated in magazine slot r0y2l2: 42.8 mm",
-    "stone st026h not seated in magazine slot r1y1l2: 45.7 mm",
-    "stone st058 not seated in magazine slot r0y1l2: 44.5 mm",
-    "stone st027h not seated in magazine slot r1y0l2: 45.4 mm",
-    "stone st059 not seated in magazine slot r0y0l2: 43.2 mm",
-    "stone st060 not seated in magazine slot r1y2l3: 44.2 mm",
-    "stone st028h not seated in magazine slot r1y1l3: 43.8 mm",
-    "stone st061 not seated in magazine slot r1y0l3: 45.0 mm",
-    "stone st066 not seated in magazine slot r1y2l1: 108.7 mm",
-    "stone st067 not seated in magazine slot r0y2l1: 118.4 mm",
-    "stone st074h not seated in magazine slot r1y1l1: 110.9 mm",
-    "stone st068 not seated in magazine slot r0y1l1: 118.4 mm",
-    "stone st069 not seated in magazine slot r1y0l1: 108.1 mm",
-    "stone st070 not seated in magazine slot r0y0l1: 118.8 mm",
-    "stone st071 not seated in magazine slot r1y2l2: 108.8 mm",
-    "stone st072 not seated in magazine slot r0y2l2: 109.5 mm",
-    "stone st073 not seated in magazine slot r1y1l2: 110.5 mm",
-    "stone st075 not seated in magazine slot r0y1l2: 109.5 mm",
-    "stone st079 not seated in magazine slot r1y0l2: 119.1 mm",
-    "stone st080 not seated in magazine slot r0y0l2: 117.6 mm",
-    "stone st062 not seated in magazine slot r1y2l3: 118.2 mm",
-    "stone st063 not seated in magazine slot r1y1l3: 108.5 mm",
-    "stone st064 not seated in magazine slot r1y0l3: 108.0 mm",
-    "stone st076h not seated in magazine slot r1y2l1: 76.7 mm"
+    "stone st016 not seated in magazine slot r1y2l1: 12.9 mm",
+    "stone st017 not seated in magazine slot r0y2l1: 11.0 mm",
+    "stone st018 not seated in magazine slot r1y1l1: 12.0 mm",
+    "stone st019 not seated in magazine slot r0y1l1: 11.4 mm",
+    "stone st020 not seated in magazine slot r1y0l1: 13.0 mm",
+    "stone st021 not seated in magazine slot r0y0l1: 10.7 mm",
+    "stone st022 not seated in magazine slot r1y2l2: 13.0 mm",
+    "stone st023 not seated in magazine slot r0y2l2: 13.0 mm",
+    "stone st025 not seated in magazine slot r1y1l2: 10.7 mm",
+    "stone st029 not seated in magazine slot r0y1l2: 10.0 mm",
+    "stone st030 not seated in magazine slot r1y0l2: 11.0 mm",
+    "stone st031 not seated in magazine slot r0y0l2: 10.6 mm",
+    "stone st032 not seated in magazine slot r1y2l3: 10.9 mm",
+    "stone st034 not seated in magazine slot r1y0l3: 12.1 mm",
+    "stone st036 not seated in magazine slot r1y2l1: 20.1 mm",
+    "stone st024h not seated in magazine slot r0y2l1: 20.5 mm",
+    "stone st037 not seated in magazine slot r1y1l1: 19.6 mm",
+    "stone st026h not seated in magazine slot r0y1l1: 21.9 mm",
+    "stone st038 not seated in magazine slot r1y0l1: 22.7 mm",
+    "stone st039 not seated in magazine slot r0y0l1: 19.7 mm",
+    "stone st027h not seated in magazine slot r1y2l2: 21.9 mm",
+    "stone st040 not seated in magazine slot r0y2l2: 19.7 mm",
+    "stone st041 not seated in magazine slot r1y1l2: 19.4 mm",
+    "stone st042 not seated in magazine slot r0y1l2: 19.0 mm",
+    "stone st043 not seated in magazine slot r1y0l2: 19.7 mm",
+    "stone st044 not seated in magazine slot r0y0l2: 18.5 mm",
+    "stone st045 not seated in magazine slot r1y2l3: 20.1 mm",
+    "stone st046 not seated in magazine slot r1y1l3: 19.9 mm",
+    "stone st047 not seated in magazine slot r1y0l3: 20.9 mm",
+    "stone st051 not seated in magazine slot r1y2l1: 106.8 mm",
+    "stone st052 not seated in magazine slot r0y2l1: 116.8 mm",
+    "stone st053 not seated in magazine slot r1y1l1: 114.0 mm",
+    "stone st054 not seated in magazine slot r0y1l1: 104.3 mm",
+    "stone st055 not seated in magazine slot r1y0l1: 113.6 mm",
+    "stone st056 not seated in magazine slot r0y0l1: 103.0 mm",
+    "stone st057 not seated in magazine slot r1y2l2: 105.5 mm",
+    "stone st058 not seated in magazine slot r0y2l2: 106.7 mm",
+    "stone st060 not seated in magazine slot r1y1l2: 105.9 mm",
+    "stone st063 not seated in magazine slot r0y1l2: 113.5 mm",
+    "stone st064 not seated in magazine slot r1y0l2: 113.7 mm",
+    "stone st065 not seated in magazine slot r0y0l2: 114.9 mm",
+    "stone st059h not seated in magazine slot r1y2l3: 106.0 mm",
+    "stone st048 not seated in magazine slot r1y1l3: 104.9 mm",
+    "stone st049 not seated in magazine slot r1y0l3: 104.3 mm",
+    "stone st066 not seated in magazine slot r1y2l1: 68.4 mm",
+    "stone st074h not seated in magazine slot r0y2l1: 70.2 mm",
+    "stone st067 not seated in magazine slot r1y1l1: 80.7 mm",
+    "stone st061h not seated in magazine slot r0y1l1: 81.8 mm",
+    "stone st068 not seated in magazine slot r1y0l1: 80.3 mm",
+    "stone st069 not seated in magazine slot r0y0l1: 67.3 mm",
+    "stone st062h not seated in magazine slot r1y2l2: 79.4 mm",
+    "stone st070 not seated in magazine slot r0y2l2: 80.3 mm",
+    "stone st071 not seated in magazine slot r1y1l2: 68.2 mm",
+    "stone st072 not seated in magazine slot r0y1l2: 69.1 mm",
+    "stone st073 not seated in magazine slot r1y0l2: 69.9 mm",
+    "stone st075 not seated in magazine slot r0y0l2: 69.2 mm",
+    "stone st076 not seated in magazine slot r1y2l3: 80.3 mm",
+    "stone st077 not seated in magazine slot r1y1l3: 80.0 mm",
+    "stone st078 not seated in magazine slot r1y0l3: 81.3 mm",
+    "stone st081 not seated in magazine slot r1y2l1: 177.4 mm",
+    "stone st082 not seated in magazine slot r0y2l1: 195.8 mm",
+    "stone st083 not seated in magazine slot r1y1l1: 196.1 mm",
+    "stone st084 not seated in magazine slot r0y1l1: 178.0 mm",
+    "stone st085 not seated in magazine slot r1y0l1: 196.1 mm",
+    "stone st086 not seated in magazine slot r0y0l1: 175.8 mm",
+    "stone st087 not seated in magazine slot r1y2l2: 179.1 mm",
+    "stone st088 not seated in magazine slot r0y2l2: 177.1 mm",
+    "stone st090 not seated in magazine slot r1y1l2: 178.4 mm",
+    "stone st093 not seated in magazine slot r0y1l2: 195.7 mm",
+    "stone st094 not seated in magazine slot r1y0l2: 193.2 mm",
+    "stone st095 not seated in magazine slot r0y0l2: 196.3 mm",
+    "stone st089h not seated in magazine slot r1y2l3: 181.2 mm",
+    "stone st079 not seated in magazine slot r1y1l3: 177.8 mm",
+    "stone st080 not seated in magazine slot r1y0l3: 176.0 mm",
+    "stone st091h not seated in magazine slot r1y2l1: 240.7 mm",
+    "stone st050 not seated in magazine slot r0y2l1: 219.8 mm",
+    "stone st035 not seated in magazine slot r1y1l1: 218.8 mm",
+    "stone st092h not seated in magazine slot r0y1l1: 239.0 mm"
    ],
    "floor": {
     "checked": true,
-    "hits": [],
+    "hits": [
+     {
+      "move": 22,
+      "kind": "translate",
+      "obstacle": "plate W0",
+      "depth_mm": 13.433801848562496,
+      "from": {
+       "x_mm": -1149.2240669568398,
+       "y_mm": 661.5035215873312,
+       "theta_rad": 1.6180706503440412
+      },
+      "to": {
+       "x_mm": 2745.979905228425,
+       "y_mm": 853.7994128486398,
+       "theta_rad": 1.6207796427265446
+      }
+     },
+     {
+      "move": 37,
+      "kind": "rotate",
+      "obstacle": "plate W6",
+      "depth_mm": 12.264634317707078,
+      "from": {
+       "x_mm": 1545.4648343248123,
+       "y_mm": -2182.180734051703,
+       "theta_rad": -3.084223976873013
+      },
+      "to": {
+       "x_mm": 1544.9725672166826,
+       "y_mm": -2183.29246561329,
+       "theta_rad": 1.6551275214776293
+      }
+     }
+    ],
     "start_overlaps": [],
-    "min_gap_mm": 3.5371062749550704
+    "min_gap_mm": 17.27230277815329
    }
   },
   {
@@ -675,102 +797,86 @@
    "scenario": "realistic",
    "mode": "camera loop",
    "placement": {
-    "n": 76,
-    "seated": 76,
+    "n": 94,
+    "seated": 94,
     "by_kind": {
      "full": {
-      "n": 68,
-      "seated": 68,
-      "pin_max_mm": 3.910895707957207
+      "n": 82,
+      "seated": 82,
+      "pin_max_mm": 3.8959365326064828
      },
      "half": {
-      "n": 8,
-      "seated": 8,
-      "pin_max_mm": 1.7295185200659007
+      "n": 12,
+      "seated": 12,
+      "pin_max_mm": 2.027062170767277
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 1.8034594328026854,
-     "rms": 1.852406690474794,
-     "p95": 2.34031256869603,
-     "max": 3.915283811867583
+     "n": 94,
+     "mean": 1.8318012696957096,
+     "rms": 1.87581208993854,
+     "p95": 2.2651405740823036,
+     "max": 3.8818177153175255
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 1.7859764445702884,
-     "rms": 1.8368556707634047,
-     "p95": 2.3110998402004093,
-     "max": 3.910895707957207
+     "n": 94,
+     "mean": 1.8048760774068733,
+     "rms": 1.848597529178229,
+     "p95": 2.195371782382328,
+     "max": 3.8959365326064828
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 1.2813623998557204,
-     "rms": 1.5134949265496915,
-     "p95": 2.3140901468155093,
-     "max": 3.8952024271441132
+     "n": 94,
+     "mean": 1.3263249608380596,
+     "rms": 1.532273544509061,
+     "p95": 2.1597353431826694,
+     "max": 3.881725813887442
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 0.7720855426279677,
-     "rms": 1.0680560164261623,
-     "p95": 1.9914335547768829,
-     "max": 2.071481022317869
+     "n": 94,
+     "mean": 0.7981193674961734,
+     "rms": 1.0820391774594997,
+     "p95": 2.0242876254302016,
+     "max": 2.068243663500084
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.2631246915112614,
-     "rms": 0.3154929989543401,
-     "p95": 0.5736422229730351,
-     "max": 0.6733108735512587
+     "n": 94,
+     "mean": 0.3386268405869262,
+     "rms": 0.39043442395566114,
+     "p95": 0.6724713205071124,
+     "max": 0.7646687617107091
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 0.003998524763562353,
-     "rms": 0.005044739579592797,
-     "p95": 0.009901747078715932,
-     "max": 0.01550702214118959
+     "n": 94,
+     "mean": 0.0036235352414846407,
+     "rms": 0.0047939282311100714,
+     "p95": 0.010146285128704897,
+     "max": 0.015701740738927827
     }
    },
    "ares": {
-    "moves": 65,
-    "translations": 46,
-    "rotations": 19,
-    "slips": 4,
-    "drive_time_s": 500.28566802831295,
+    "moves": 62,
+    "translations": 44,
+    "rotations": 18,
+    "slips": 6,
+    "drive_time_s": 575.4930063114875,
     "true_pose": {
-     "x_mm": 3081.5853479245957,
-     "y_mm": -661.2812484847791,
-     "theta_rad": -3.141339920111763
+     "x_mm": 1378.5377884591571,
+     "y_mm": -2242.4523943946647,
+     "theta_rad": 1.5710599447518714
     }
    },
-   "corrections": 10,
-   "reloads": 5,
-   "shots": 46,
+   "corrections": 12,
+   "reloads": 6,
+   "shots": 58,
    "error": "",
    "violations": [],
-   "notes": [
-    "start pose overlaps plate W1 by 16.2 mm (operator's start placement)",
-    "start pose overlaps plate W2 by 15.4 mm (operator's start placement)"
-   ],
+   "notes": [],
    "floor": {
     "checked": true,
     "hits": [],
-    "start_overlaps": [
-     {
-      "move": 0,
-      "kind": "start",
-      "obstacle": "plate W1",
-      "depth_mm": 16.21205604321895
-     },
-     {
-      "move": 0,
-      "kind": "start",
-      "obstacle": "plate W2",
-      "depth_mm": 15.361826416228325
-     }
-    ],
-    "min_gap_mm": 8.680628776882315
+    "start_overlaps": [],
+    "min_gap_mm": 69.89214640353345
    }
   },
   {
@@ -784,48 +890,48 @@
      "full": {
       "n": 13,
       "seated": 0,
-      "pin_max_mm": 37.75920205996556
+      "pin_max_mm": 37.83574683421934
      },
      "half": {
       "n": 2,
       "seated": 0,
-      "pin_max_mm": 37.06330593969993
+      "pin_max_mm": 37.12582103680473
      }
     },
     "horiz_mm": {
      "n": 15,
-     "mean": 36.672050161273404,
-     "rms": 36.67761657634565,
-     "p95": 37.433949829214065,
-     "max": 37.46641934691134
+     "mean": 36.74970423627544,
+     "rms": 36.75525776692182,
+     "p95": 37.53099182777045,
+     "max": 37.544507597936175
     },
     "pin_mm": {
      "n": 15,
-     "mean": 36.959920488680545,
-     "rms": 36.965383772654384,
-     "p95": 37.723120417183196,
-     "max": 37.75920205996556
+     "mean": 37.03647101840593,
+     "rms": 37.04192693152235,
+     "p95": 37.81857330488991,
+     "max": 37.83574683421934
     },
     "dx_mm": {
      "n": 15,
-     "mean": 23.79573117554463,
-     "rms": 23.815553797362764,
-     "p95": 25.31680191822839,
-     "max": 25.991544377506784
+     "mean": 24.188691548463275,
+     "rms": 24.208192400982607,
+     "p95": 25.709762291147,
+     "max": 26.384504750425435
     },
     "dy_mm": {
      "n": 15,
-     "mean": 27.879315237282828,
-     "rms": 27.893851563495943,
-     "p95": 29.02324431537106,
-     "max": 29.114008400577816
+     "mean": 27.642388775996192,
+     "rms": 27.657049629161005,
+     "p95": 28.786317854084402,
+     "max": 28.87708193929116
     },
     "dz_mm": {
      "n": 15,
-     "mean": 0.5072198342049281,
-     "rms": 0.5499530176409333,
-     "p95": 0.8668347528428967,
-     "max": 0.8998249970191523
+     "mean": 0.6468461367053919,
+     "rms": 0.6808717103626625,
+     "p95": 1.0064610553433566,
+     "max": 1.0394512995196123
     },
     "yaw_deg": {
      "n": 15,
@@ -836,44 +942,28 @@
     }
    },
    "ares": {
-    "moves": 4,
-    "translations": 3,
+    "moves": 3,
+    "translations": 2,
     "rotations": 1,
     "slips": 1,
-    "drive_time_s": 34.12134739146694,
+    "drive_time_s": 32.30484393811227,
     "true_pose": {
-     "x_mm": -1085.3760058134544,
-     "y_mm": 809.856643779201,
-     "theta_rad": 1.5836660608314475
+     "x_mm": -1089.39693122717,
+     "y_mm": 813.201759126803,
+     "theta_rad": 1.5799138251843337
     }
    },
    "corrections": 0,
    "reloads": 1,
    "shots": 0,
-   "error": "SequencerError: robot pick_station failed (pick station slot s00l2 (full)): gripper missed stone st016 (full): offset (10.1, -29.2) mm - the arm is NOT parked; ARES stays interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park it, then resume from stop 0",
+   "error": "SequencerError: robot pick_station failed (pick station slot s00l2 (full)): gripper missed stone st016 (full): offset (11.2, -24.3) mm - the arm is NOT parked; ARES stays interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park it, then resume from stop 0",
    "violations": [],
-   "notes": [
-    "start pose overlaps plate W1 by 16.2 mm (operator's start placement)",
-    "start pose overlaps plate W2 by 15.4 mm (operator's start placement)"
-   ],
+   "notes": [],
    "floor": {
     "checked": true,
     "hits": [],
-    "start_overlaps": [
-     {
-      "move": 0,
-      "kind": "start",
-      "obstacle": "plate W1",
-      "depth_mm": 16.21205604321895
-     },
-     {
-      "move": 0,
-      "kind": "start",
-      "obstacle": "plate W2",
-      "depth_mm": 15.361826416228325
-     }
-    ],
-    "min_gap_mm": 91.24923123451077
+    "start_overlaps": [],
+    "min_gap_mm": 124.03444280564393
    }
   },
   {
@@ -881,186 +971,193 @@
    "scenario": "realistic",
    "mode": "dead reckoning, lenient grasp",
    "placement": {
-    "n": 76,
+    "n": 94,
     "seated": 0,
     "by_kind": {
      "full": {
-      "n": 68,
+      "n": 82,
       "seated": 0,
-      "pin_max_mm": 140.7026169319244
+      "pin_max_mm": 149.5225804923919
      },
      "half": {
-      "n": 8,
+      "n": 12,
       "seated": 0,
-      "pin_max_mm": 169.4345936873288
+      "pin_max_mm": 146.0283833191442
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 62.35031546873814,
-     "rms": 71.80134453704522,
-     "p95": 130.6413665585646,
-     "max": 168.97991711809914
+     "n": 94,
+     "mean": 69.71495086311187,
+     "rms": 79.75627241398443,
+     "p95": 139.97854393131632,
+     "max": 147.25981638612902
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 63.385576997852326,
-     "rms": 72.92208325952872,
-     "p95": 132.28705956518738,
-     "max": 169.4345936873288
+     "n": 94,
+     "mean": 71.17559056925752,
+     "rms": 81.32957609996556,
+     "p95": 142.35491706450708,
+     "max": 149.5225804923919
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 47.6441164716825,
-     "rms": 54.81664978423103,
-     "p95": 96.0631737221861,
-     "max": 159.30021777309275
+     "n": 94,
+     "mean": 43.59216136121003,
+     "rms": 57.65506898571791,
+     "p95": 135.62411321306732,
+     "max": 143.28512053994928
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 37.40981283002269,
-     "rms": 46.37421679942893,
-     "p95": 94.75443217605208,
-     "max": 95.52205321218094
+     "n": 94,
+     "mean": 45.61449698781108,
+     "rms": 55.10858381074408,
+     "p95": 96.44612761756332,
+     "max": 110.80850992137312
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.43783123813242425,
-     "rms": 0.565031533309601,
-     "p95": 1.0718230613786233,
-     "max": 1.5407045354945694
+     "n": 94,
+     "mean": 0.4725263625672339,
+     "rms": 0.5797663286321464,
+     "p95": 1.0598370963848562,
+     "max": 1.6803308379950295
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 1.8205277429862834,
-     "rms": 2.2006165281907863,
-     "p95": 3.61499730425103,
-     "max": 4.1500970687039835
+     "n": 94,
+     "mean": 2.211793995372289,
+     "rms": 2.7944100456578904,
+     "p95": 4.793389047669311,
+     "max": 5.553808115333013
     }
    },
    "ares": {
-    "moves": 47,
-    "translations": 36,
-    "rotations": 11,
-    "slips": 7,
-    "drive_time_s": 484.304814717305,
+    "moves": 45,
+    "translations": 35,
+    "rotations": 10,
+    "slips": 6,
+    "drive_time_s": 560.1068395739663,
     "true_pose": {
-     "x_mm": 3190.776596126726,
-     "y_mm": -448.2888117147267,
-     "theta_rad": -3.0709158328400927
+     "x_mm": 1604.8918316211414,
+     "y_mm": -2099.8654286036076,
+     "theta_rad": 1.6657701660610122
     }
    },
    "corrections": 0,
-   "reloads": 5,
+   "reloads": 6,
    "shots": 0,
    "error": "",
    "violations": [
-    "ARES footprint overlaps plate W0 by 33.3 mm during translate no. 35 ((-1129.6, 624.0) mm, 93.84 deg -> (3159.8, 908.6) mm, 93.95 deg)",
-    "ARES footprint overlaps plate W1 by 6.9 mm during translate no. 35 ((-1129.6, 624.0) mm, 93.84 deg -> (3159.8, 908.6) mm, 93.95 deg)"
+    "ARES footprint overlaps plate W6 by 23.6 mm during rotate no. 37 ((1562.3, -2172.3) mm, -176.97 deg -> (1560.6, -2172.9) mm, 94.24 deg)",
+    "ARES footprint overlaps plate W6 by 58.8 mm during translate no. 45 ((-882.3, -2343.0) mm, 95.51 deg -> (1604.9, -2099.9) mm, 95.44 deg)"
    ],
    "notes": [
-    "start pose overlaps plate W1 by 16.2 mm (operator's start placement)",
-    "start pose overlaps plate W2 by 15.4 mm (operator's start placement)",
-    "stone st018 not seated in magazine slot r1y1l1: 10.6 mm",
-    "stone st020 not seated in magazine slot r1y0l1: 10.3 mm",
-    "stone st036 not seated in magazine slot r1y2l1: 11.6 mm",
-    "stone st037 not seated in magazine slot r0y2l1: 14.5 mm",
-    "stone st038 not seated in magazine slot r1y1l1: 15.9 mm",
-    "stone st039 not seated in magazine slot r0y1l1: 10.7 mm",
-    "stone st040 not seated in magazine slot r1y0l1: 16.6 mm",
-    "stone st041 not seated in magazine slot r0y0l1: 13.5 mm",
-    "stone st042 not seated in magazine slot r1y2l2: 12.0 mm",
-    "stone st043 not seated in magazine slot r0y2l2: 11.5 mm",
-    "stone st044 not seated in magazine slot r1y1l2: 11.4 mm",
-    "stone st045 not seated in magazine slot r0y1l2: 15.2 mm",
-    "stone st046 not seated in magazine slot r1y0l2: 16.4 mm",
-    "stone st047 not seated in magazine slot r0y0l2: 13.8 mm",
-    "stone st048 not seated in magazine slot r1y2l3: 13.9 mm",
-    "stone st049 not seated in magazine slot r1y1l3: 12.9 mm",
-    "stone st050 not seated in magazine slot r1y0l3: 13.1 mm",
-    "stone st051 not seated in magazine slot r1y2l1: 36.9 mm",
-    "stone st052 not seated in magazine slot r0y2l1: 40.2 mm",
-    "stone st053 not seated in magazine slot r1y1l1: 41.2 mm",
-    "stone st054 not seated in magazine slot r0y1l1: 38.2 mm",
-    "stone st024h not seated in magazine slot r1y0l1: 37.4 mm",
-    "stone st055 not seated in magazine slot r0y0l1: 41.7 mm",
-    "stone st056 not seated in magazine slot r1y2l2: 35.3 mm",
-    "stone st057 not seated in magazine slot r0y2l2: 36.0 mm",
-    "stone st026h not seated in magazine slot r1y1l2: 41.3 mm",
-    "stone st058 not seated in magazine slot r0y1l2: 36.7 mm",
-    "stone st027h not seated in magazine slot r1y0l2: 39.7 mm",
-    "stone st059 not seated in magazine slot r0y0l2: 34.3 mm",
-    "stone st060 not seated in magazine slot r1y2l3: 39.7 mm",
-    "stone st028h not seated in magazine slot r1y1l3: 33.3 mm",
-    "stone st061 not seated in magazine slot r1y0l3: 41.1 mm",
-    "stone st066 not seated in magazine slot r1y2l1: 106.6 mm",
-    "stone st067 not seated in magazine slot r0y2l1: 120.4 mm",
-    "stone st074h not seated in magazine slot r1y1l1: 107.8 mm",
-    "stone st068 not seated in magazine slot r0y1l1: 118.7 mm",
-    "stone st069 not seated in magazine slot r1y0l1: 105.8 mm",
-    "stone st070 not seated in magazine slot r0y0l1: 120.1 mm",
-    "stone st071 not seated in magazine slot r1y2l2: 105.4 mm",
-    "stone st072 not seated in magazine slot r0y2l2: 105.2 mm",
-    "stone st073 not seated in magazine slot r1y1l2: 106.7 mm",
-    "stone st075 not seated in magazine slot r0y1l2: 107.1 mm",
-    "stone st079 not seated in magazine slot r1y0l2: 119.8 mm",
-    "stone st080 not seated in magazine slot r0y0l2: 118.6 mm",
-    "stone st062 not seated in magazine slot r1y2l3: 119.5 mm",
-    "stone st063 not seated in magazine slot r1y1l3: 106.7 mm",
-    "stone st064 not seated in magazine slot r1y0l3: 106.6 mm",
-    "stone st076h not seated in magazine slot r1y2l1: 106.2 mm"
+    "stone st017 not seated in magazine slot r0y2l1: 10.1 mm",
+    "stone st018 not seated in magazine slot r1y1l1: 10.9 mm",
+    "stone st020 not seated in magazine slot r1y0l1: 10.6 mm",
+    "stone st029 not seated in magazine slot r0y1l2: 10.1 mm",
+    "stone st031 not seated in magazine slot r0y0l2: 10.3 mm",
+    "stone st033 not seated in magazine slot r1y1l3: 10.3 mm",
+    "stone st036 not seated in magazine slot r1y2l1: 12.8 mm",
+    "stone st024h not seated in magazine slot r0y2l1: 14.8 mm",
+    "stone st037 not seated in magazine slot r1y1l1: 14.7 mm",
+    "stone st026h not seated in magazine slot r0y1l1: 16.0 mm",
+    "stone st038 not seated in magazine slot r1y0l1: 15.6 mm",
+    "stone st039 not seated in magazine slot r0y0l1: 11.8 mm",
+    "stone st027h not seated in magazine slot r1y2l2: 14.9 mm",
+    "stone st040 not seated in magazine slot r0y2l2: 16.0 mm",
+    "stone st041 not seated in magazine slot r1y1l2: 14.9 mm",
+    "stone st042 not seated in magazine slot r0y1l2: 12.8 mm",
+    "stone st043 not seated in magazine slot r1y0l2: 13.1 mm",
+    "stone st044 not seated in magazine slot r0y0l2: 12.1 mm",
+    "stone st045 not seated in magazine slot r1y2l3: 15.2 mm",
+    "stone st046 not seated in magazine slot r1y1l3: 16.1 mm",
+    "stone st047 not seated in magazine slot r1y0l3: 13.9 mm",
+    "stone st051 not seated in magazine slot r1y2l1: 91.2 mm",
+    "stone st052 not seated in magazine slot r0y2l1: 99.5 mm",
+    "stone st053 not seated in magazine slot r1y1l1: 100.1 mm",
+    "stone st054 not seated in magazine slot r0y1l1: 92.2 mm",
+    "stone st055 not seated in magazine slot r1y0l1: 101.1 mm",
+    "stone st056 not seated in magazine slot r0y0l1: 88.9 mm",
+    "stone st057 not seated in magazine slot r1y2l2: 90.4 mm",
+    "stone st058 not seated in magazine slot r0y2l2: 90.5 mm",
+    "stone st060 not seated in magazine slot r1y1l2: 89.6 mm",
+    "stone st063 not seated in magazine slot r0y1l2: 99.8 mm",
+    "stone st064 not seated in magazine slot r1y0l2: 100.2 mm",
+    "stone st065 not seated in magazine slot r0y0l2: 98.2 mm",
+    "stone st059h not seated in magazine slot r1y2l3: 89.1 mm",
+    "stone st048 not seated in magazine slot r1y1l3: 91.1 mm",
+    "stone st049 not seated in magazine slot r1y0l3: 89.7 mm",
+    "stone st066 not seated in magazine slot r1y2l1: 56.2 mm",
+    "stone st074h not seated in magazine slot r0y2l1: 56.9 mm",
+    "stone st067 not seated in magazine slot r1y1l1: 69.1 mm",
+    "stone st061h not seated in magazine slot r0y1l1: 69.3 mm",
+    "stone st068 not seated in magazine slot r1y0l1: 67.5 mm",
+    "stone st069 not seated in magazine slot r0y0l1: 55.2 mm",
+    "stone st062h not seated in magazine slot r1y2l2: 67.5 mm",
+    "stone st070 not seated in magazine slot r0y2l2: 68.2 mm",
+    "stone st071 not seated in magazine slot r1y1l2: 55.3 mm",
+    "stone st072 not seated in magazine slot r0y1l2: 54.9 mm",
+    "stone st073 not seated in magazine slot r1y0l2: 56.4 mm",
+    "stone st075 not seated in magazine slot r0y0l2: 56.6 mm",
+    "stone st076 not seated in magazine slot r1y2l3: 66.8 mm",
+    "stone st077 not seated in magazine slot r1y1l3: 67.8 mm",
+    "stone st078 not seated in magazine slot r1y0l3: 67.5 mm",
+    "stone st081 not seated in magazine slot r1y2l1: 128.8 mm",
+    "stone st082 not seated in magazine slot r0y2l1: 144.3 mm",
+    "stone st083 not seated in magazine slot r1y1l1: 142.9 mm",
+    "stone st084 not seated in magazine slot r0y1l1: 126.7 mm",
+    "stone st085 not seated in magazine slot r1y0l1: 143.7 mm",
+    "stone st086 not seated in magazine slot r0y0l1: 125.7 mm",
+    "stone st087 not seated in magazine slot r1y2l2: 127.0 mm",
+    "stone st088 not seated in magazine slot r0y2l2: 126.6 mm",
+    "stone st090 not seated in magazine slot r1y1l2: 130.1 mm",
+    "stone st093 not seated in magazine slot r0y1l2: 143.2 mm",
+    "stone st094 not seated in magazine slot r1y0l2: 143.7 mm",
+    "stone st095 not seated in magazine slot r0y0l2: 143.2 mm",
+    "stone st089h not seated in magazine slot r1y2l3: 130.5 mm",
+    "stone st079 not seated in magazine slot r1y1l3: 126.5 mm",
+    "stone st080 not seated in magazine slot r1y0l3: 125.4 mm",
+    "stone st091h not seated in magazine slot r1y2l1: 175.3 mm",
+    "stone st050 not seated in magazine slot r0y2l1: 157.1 mm",
+    "stone st035 not seated in magazine slot r1y1l1: 155.3 mm",
+    "stone st092h not seated in magazine slot r0y1l1: 173.6 mm"
    ],
    "floor": {
     "checked": true,
     "hits": [
      {
-      "move": 35,
-      "kind": "translate",
-      "obstacle": "plate W0",
-      "depth_mm": 33.296880752429644,
+      "move": 37,
+      "kind": "rotate",
+      "obstacle": "plate W6",
+      "depth_mm": 23.577314114304727,
       "from": {
-       "x_mm": -1129.5800796908177,
-       "y_mm": 624.003045728126,
-       "theta_rad": 1.6378056286886684
+       "x_mm": 1562.2947795020223,
+       "y_mm": -2172.3134482854166,
+       "theta_rad": -3.0887746408786665
       },
       "to": {
-       "x_mm": 3159.791858828201,
-       "y_mm": 908.5596539933632,
-       "theta_rad": 1.6397175199711516
+       "x_mm": 1560.5726056744643,
+       "y_mm": -2172.8781090946795,
+       "theta_rad": 1.644760690075243
       }
      },
      {
-      "move": 35,
+      "move": 45,
       "kind": "translate",
-      "obstacle": "plate W1",
-      "depth_mm": 6.8721799854131405,
+      "obstacle": "plate W6",
+      "depth_mm": 58.750198556059104,
       "from": {
-       "x_mm": -1129.5800796908177,
-       "y_mm": 624.003045728126,
-       "theta_rad": 1.6378056286886684
+       "x_mm": -882.3070633949523,
+       "y_mm": -2343.005756609375,
+       "theta_rad": 1.6669882370877263
       },
       "to": {
-       "x_mm": 3159.791858828201,
-       "y_mm": 908.5596539933632,
-       "theta_rad": 1.6397175199711516
+       "x_mm": 1604.8918316211414,
+       "y_mm": -2099.8654286036076,
+       "theta_rad": 1.6657701660610122
       }
      }
     ],
-    "start_overlaps": [
-     {
-      "move": 0,
-      "kind": "start",
-      "obstacle": "plate W1",
-      "depth_mm": 16.21205604321895
-     },
-     {
-      "move": 0,
-      "kind": "start",
-      "obstacle": "plate W2",
-      "depth_mm": 15.361826416228325
-     }
-    ],
-    "min_gap_mm": 0.2644750395651556
+    "start_overlaps": [],
+    "min_gap_mm": 0.0
    }
   },
   {
@@ -1068,78 +1165,78 @@
    "scenario": "slip",
    "mode": "camera loop",
    "placement": {
-    "n": 76,
-    "seated": 76,
+    "n": 94,
+    "seated": 94,
     "by_kind": {
      "full": {
-      "n": 68,
-      "seated": 68,
-      "pin_max_mm": 0.6486854487274754
+      "n": 82,
+      "seated": 82,
+      "pin_max_mm": 0.6275008507696881
      },
      "half": {
-      "n": 8,
-      "seated": 8,
-      "pin_max_mm": 0.47751955804538754
+      "n": 12,
+      "seated": 12,
+      "pin_max_mm": 0.6996802851459966
      }
     },
     "horiz_mm": {
-     "n": 76,
-     "mean": 0.3259319124259843,
-     "rms": 0.37143879882606895,
-     "p95": 0.6702607005409787,
-     "max": 0.8234796229840569
+     "n": 94,
+     "mean": 0.3244690104503126,
+     "rms": 0.371304317380013,
+     "p95": 0.6982737866367845,
+     "max": 0.828153781177914
     },
     "pin_mm": {
-     "n": 76,
-     "mean": 0.2586214897981464,
-     "rms": 0.2903988901299865,
-     "p95": 0.5404042632225206,
-     "max": 0.6486854487274754
+     "n": 94,
+     "mean": 0.2583989750158718,
+     "rms": 0.29185950142966044,
+     "p95": 0.5387654090539546,
+     "max": 0.6996802851459966
     },
     "dx_mm": {
-     "n": 76,
-     "mean": 0.18717550839873856,
-     "rms": 0.21043165498763505,
-     "p95": 0.3929053078842344,
-     "max": 0.5144502979042045
+     "n": 94,
+     "mean": 0.1802152566859399,
+     "rms": 0.21524243881315883,
+     "p95": 0.45730481296852754,
+     "max": 0.5726571711795714
     },
     "dy_mm": {
-     "n": 76,
-     "mean": 0.22721131608930195,
-     "rms": 0.3060805447141616,
-     "p95": 0.6451699617513776,
-     "max": 0.8073265462577973
+     "n": 94,
+     "mean": 0.23767965382440906,
+     "rms": 0.3025517949687309,
+     "p95": 0.6824486652008203,
+     "max": 0.7969894131531419
     },
     "dz_mm": {
-     "n": 76,
-     "mean": 0.09175551775290738,
-     "rms": 0.12384444935943861,
-     "p95": 0.25821778676751705,
-     "max": 0.34917815223383286
+     "n": 94,
+     "mean": 0.12476436991693496,
+     "rms": 0.149108252456033,
+     "p95": 0.2614962648846499,
+     "max": 0.2934186296706969
     },
     "yaw_deg": {
-     "n": 76,
-     "mean": 0.0044388973422754005,
-     "rms": 0.005491650595576044,
-     "p95": 0.010227183114104085,
-     "max": 0.015222383022512252
+     "n": 94,
+     "mean": 0.004102344244323725,
+     "rms": 0.005126837348301395,
+     "p95": 0.010154926892450684,
+     "max": 0.013206675103884838
     }
    },
    "ares": {
-    "moves": 61,
+    "moves": 62,
     "translations": 45,
-    "rotations": 16,
-    "slips": 9,
-    "drive_time_s": 496.83569864542375,
+    "rotations": 17,
+    "slips": 11,
+    "drive_time_s": 576.2722343504829,
     "true_pose": {
-     "x_mm": 3079.181836638038,
-     "y_mm": -661.0735600456367,
-     "theta_rad": 3.139003188103528
+     "x_mm": 1362.7426848696557,
+     "y_mm": -2239.494834972671,
+     "theta_rad": 1.5703169899339695
     }
    },
-   "corrections": 10,
-   "reloads": 5,
-   "shots": 46,
+   "corrections": 12,
+   "reloads": 6,
+   "shots": 58,
    "error": "",
    "violations": [],
    "notes": [],
@@ -1147,7 +1244,7 @@
     "checked": true,
     "hits": [],
     "start_overlaps": [],
-    "min_gap_mm": 5.446659919180023
+    "min_gap_mm": 59.57767358500655
    }
   }
  ]
