@@ -160,9 +160,12 @@ working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm fie
                             # live_2026-10-06_153031.png. Changing them = new intrinsics + hand-eye calibration
 power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max 600 mA (UR5 manual 1.9.4), camera
                             # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
-ip = "192.168.1.5"          # CONFIRMED 2026-10-06 (table test, Samuel): opened and grabbed at this IP. Collides with
-                            # the ARES subnet 192.168.1/24 (MA 10_robot/ipc_c6030/IP_CONFIG_erwan.md, also 192.168.200/24,
-                            # 169.254/16) -> move it to its own subnet (ids_ipconfig) before it goes on ARES
+ip = "192.168.50.10"        # CONFIRMED 2026-10-06: persistent IP, mask /24, gateway 192.168.50.1, DHCP off (ids_ipconfig
+                            # -p ... -g 192.168.50.1 --enable-persistent-ip --disable-dhcp -R); 5/5 grabs, 123 ms. Own
+                            # subnet: no clash with ARES 192.168.1/24, 192.168.200/24, 169.254/16 (MA 10_robot/
+                            # ipc_c6030/IP_CONFIG_erwan.md). The laptop NIC "Ethernet" carries 192.168.50.1/24 next to
+                            # 192.168.1.20 and 192.168.56.20; the IDS producer streams to ONE address per NIC
+                            # (192.168.1.20), so without the gateway no frame arrived. Was 192.168.1.5 (ARES subnet)
 serial = "4110073444"       # CONFIRMED: IDS peak 26.06.2 enumeration 2026-10-05, the only IDS camera attached (model
                             # string "GV-51FxCP-M", MAC 00:1B:A2:21:21:13) – check against the camera label
 cti_path = ""               # "" = GENICAM_GENTL64_PATH, then the IDS install folder; on this laptop (CONFIRMED

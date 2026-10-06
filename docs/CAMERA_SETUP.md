@@ -57,6 +57,12 @@ py.exe tools/cam_check.py grab -n 5     # timing, grey statistics, incomplete fr
 ```
 
 Alternative if the camera has to share a cable/switch with ARES: add 192.168.50.1/24 as a second address on that NIC.
+**Then the camera needs the gateway 192.168.50.1** (2026-10-06, UR5 table test): the IDS GigE producer knows only one
+address per NIC (`ids_ipconfig --cti "...\ids_gevgentlk.cti" -l` showed 192.168.1.20) and sets it as the stream
+destination; a camera in 192.168.50/24 without a gateway cannot send there - it opens, but no frame arrives ("no
+frame within 3000 ms"). With `-g 192.168.50.1` the stream goes to the laptop NIC, which owns 192.168.1.20 too:
+`ids_ipconfig.exe --cti "C:\Program Files\IDS\ids_peak\ids_gevgentl\64\ids_gevgentlk.cti" -p -s 4110073444 -i
+192.168.50.10 -n 255.255.255.0 -g 192.168.50.1 --enable-persistent-ip --disable-dhcp -R`. A dedicated NIC avoids it.
 If frames arrive incomplete: jumbo frames on, receive buffers up, and as a last resort unbind the Hikrobot filter from
 the camera NIC (`Disable-NetAdapterBinding -Name "<NIC>" -ComponentID HKR_neuGEVFilter` – system change, decide first).
 
