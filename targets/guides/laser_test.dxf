@@ -143,7 +143,7 @@ SHEET
 40
 4.0000
 1
-ARES_Mauer guides TEST - CUT lines kerf-compensated for 0.3 mm
+ARES_Mauer guides A5.5/B7/C5 TEST - CUT lines kerf-compensated for 0.3 mm
 0
 LINE
 8
@@ -725,7 +725,7 @@ ENGRAVE
 62
 5
 10
-204.6000
+224.6000
 20
 14.0000
 30

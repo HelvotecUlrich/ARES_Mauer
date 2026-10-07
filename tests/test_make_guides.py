@@ -273,3 +273,16 @@ def test_a_leg_of_five_and_a_half_stones_ends_with_a_half_stone_on_the_corner_pi
     assert [k for _, _, k in st] == ["full"] * 5 + ["half"] and st[-1][1] == pytest.approx(1100.0)
     pc = next(pc for pc in data["leg_pieces"] if pc.name.startswith("A4-"))
     assert [b[0] for b in pc.blocks if b[0].startswith("A")] == ["A4", "A5"] and pc.blocks[1][3] == "half"
+
+
+def test_every_piece_name_is_engraved_on_the_piece(data):
+    """Review 2026-10-07: from the bbox corner the name of a corner L-piece placed turned on the sheet lay outside the
+    piece. The label starts inside the first stone block and runs along it; 120 mm of its baseline stay on the piece,
+    for both layouts."""
+    for d in (data, mg.build(config.load(variant="c_acb"), with_job=False)):
+        p = d["params"]
+        for pc in d["leg_pieces"] + d["station_pieces"]:
+            (x, y), ang = mg.piece_label_anchor(pc, p)
+            for t in (0.0, 60.0, 120.0):
+                q = (x + t * math.cos(ang), y + t * math.sin(ang))
+                assert _inside(q, pc.outline), (pc.name, t)

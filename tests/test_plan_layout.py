@@ -69,3 +69,15 @@ def test_with_legs_inside_c_turns_towards_ares_and_keeps_sides():
     assert [(lg["side"], lg["dist"]) for lg in legs] == [("right", 580.0), ("front", 840.0), ("left", 580.0)]
     for a, b in zip(legs, cfg["wall"]["legs"]):                              # the config's C is exactly this
         assert a["xyz_in_wall"] == pytest.approx(b["xyz_in_wall"], abs=0.005)
+
+
+def test_parse_legs_and_sites_with_half_stones():
+    """2026-10-07: A of 5 1/2 stones - candidates and plate sites of x.5 legs (review: int() truncated / crashed)."""
+    assert pl.parse_legs("5.5,7,5") == [(5.5, 7, 5)]
+    assert pl.parse_legs("5-6/0.5,7") == [(5, 7), (5.5, 7), (6, 7)]
+    assert pl.parse_legs("9-10,5") == [(9, 5), (10, 5)]
+    cfg = config.load()
+    c = pl.with_legs(cfg, (5.5, 7, 5))
+    wp = pl.mj.load_wallplan()
+    sites = pl.all_sites(c, wp.legs(c), (100.0, 100.0), extra=0)
+    assert sorted({s.k for s in sites if s.leg == "A"}) == [0, 1, 2, 3, 4, 5]

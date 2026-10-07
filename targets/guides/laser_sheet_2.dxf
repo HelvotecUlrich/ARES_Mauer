@@ -143,7 +143,7 @@ SHEET
 40
 4.0000
 1
-ARES_Mauer guides sheet 2/4 - CUT lines kerf-compensated for 0.3 mm
+ARES_Mauer guides A5.5/B7/C5 sheet 2/4 - CUT lines kerf-compensated for 0.3 mm
 0
 LINE
 8
@@ -730,6 +730,8 @@ ENGRAVE
 0.0
 40
 5.0000
+50
+90.0000
 1
 A4
 0
@@ -846,6 +848,8 @@ ENGRAVE
 0.0
 40
 5.0000
+50
+90.0000
 1
 A5
 0
@@ -962,6 +966,8 @@ ENGRAVE
 0.0
 40
 5.0000
+50
+90.0000
 1
 B0
 0
@@ -1078,6 +1084,8 @@ ENGRAVE
 0.0
 40
 5.0000
+50
+90.0000
 1
 B1
 0
@@ -1094,6 +1102,8 @@ ENGRAVE
 0.0
 40
 5.0000
+50
+90.0000
 1
 plate W2 ->
 0
@@ -1105,11 +1115,13 @@ ENGRAVE
 10
 548.6900
 20
-16.0000
+28.0000
 30
 0.0
 40
 6.0000
+50
+90.0000
 1
 A4-B1 (corner A/B (A runs through))
 0
@@ -1999,9 +2011,9 @@ ENGRAVE
 62
 5
 10
-16.0000
+56.0000
 20
-312.0000
+462.0000
 30
 0.0
 40

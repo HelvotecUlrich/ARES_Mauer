@@ -325,6 +325,10 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, mjob.JobError) as e:
         print(f"FAILED to build/load the job: {e}", file=sys.stderr)
         return 1
+    if (job.meta.get("config_variant") or None) != mconfig.variant_of(cfg):
+        print(f"FAILED: the job was built with config variant {job.meta.get('config_variant')!r}, the config loaded "
+              f"is {mconfig.variant_of(cfg)!r} - board placements and the wall would not match", file=sys.stderr)
+        return 1
     if args.dry_run:
         dry_run(job)
         return 0

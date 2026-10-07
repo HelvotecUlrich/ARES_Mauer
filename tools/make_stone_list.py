@@ -114,9 +114,16 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
         t.setStyle(TableStyle(list(grid.getCommands()) + list(extra)))
         return t
 
-    leg_txt = " / ".join(f"{lg} {next(int(x['n0']) for x in cfg['wall']['legs'] if x['name'] == lg)}"
+    def n0_de(v) -> str:                         # 5.5 -> "5½" (a leg ending with a half stone)
+        f = float(v)
+        return f"{int(f)}½" if abs(f - int(f) - 0.5) < 1e-9 else f"{f:g}"
+
+    leg_txt = " / ".join(f"{lg} {n0_de(next(x['n0'] for x in cfg['wall']['legs'] if x['name'] == lg))}"
                          for lg in legs if lg) if any(legs) else "gerade Wand"
-    story = [Paragraph(f"Steinliste – {cfg['wall'].get('shape', '')}-Mauer", H1),
+    variant = mconfig.variant_of(cfg)
+    src = "config/station.toml" + (f" + config/variants/{variant}.toml" if variant else "")
+    story = [Paragraph(f"Steinliste – {cfg['wall'].get('shape', '')}-Mauer"
+                       + (f" (Variante {variant})" if variant else ""), H1),
              Paragraph(f"Schenkel {leg_txt} Steine in der untersten Lage, {len(courses)} Lagen. Erzeugt am "
                        f"{datetime.now():%d.%m.%Y %H:%M} mit <font name='Courier'>tools/make_stone_list.py</font> "
                        f"aus <font name='Courier'>{job_path.as_posix()}</font> (Job vom "
@@ -167,7 +174,7 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
                         f"{_n(plan['left'])} unbenutzt in der Station. Die Mauer selbst braucht "
                         f"{_n(n_kind)}.", P),
               PageBreak(),
-              Paragraph("4. Abhängigkeiten (config/station.toml)", H2)]
+              Paragraph(f"4. Abhängigkeiten ({src})", H2)]
     rows = [["Wert", "Status", "Inhalt"]]
     for key in DEPENDS:
         keys = [key.format(leg=lg) for lg in legs if lg] if "{leg}" in key else [key]
@@ -222,6 +229,10 @@ def main(argv: list[str] | None = None) -> int:
     if (job.meta.get("config_variant") or None) != mconfig.variant_of(cfg):
         raise SystemExit(f"{a.job} was built with config variant {job.meta.get('config_variant')!r}, not "
                          f"{mconfig.variant_of(cfg)!r} - pass the matching --variant / --job")
+    if job.config_sha256 and job.config_sha256 != mjob.config_sha256(a.config, mconfig.variant_of(cfg)):
+        raise SystemExit(f"{a.job} was built from an older config (sha256 differs) - rebuild it with "
+                         "tools/make_job.py" + (f" --variant {mconfig.variant_of(cfg)}" if mconfig.variant_of(cfg)
+                                                else ""))
     job_path = a.job.resolve().relative_to(REPO) if a.job.resolve().is_relative_to(REPO) else a.job
     info = write_pdf(a.out, job, cfg, Path(job_path), a.config)
     print(f"written {a.out}: {_n(info['counts'])} stones in the wall, {len(info['plan']['trips'])} station trips, "

@@ -80,14 +80,24 @@ def with_legs(cfg: dict, n0s) -> dict:
     return c
 
 
-def parse_legs(spec: str) -> list[tuple[int, ...]]:
-    """Candidates from "10,7,5" (one) or "9-12,5-8" (every combination of the per-leg ranges)."""
+def parse_legs(spec: str) -> list[tuple]:
+    """Candidates from "10,7,5" (one) or "9-12,5-8" (every combination of the per-leg ranges, whole stones); a leg may
+    be x.5 stones (e.g. "5.5,7,5" or "5-6/0.5" = 5, 5.5, 6: 2026-10-07 A of 5 1/2 stones)."""
     import itertools
     ranges = []
     for part in spec.split(","):
-        a, _, b = part.strip().partition("-")
-        ranges.append(range(int(a), int(b or a) + 1))
+        rng, _, step = part.strip().partition("/")
+        a, _, b = rng.partition("-")
+        st = float(step) if step else 1.0
+        lo, hi = float(a), float(b or a)
+        n = int(round((hi - lo) / st))
+        ranges.append([wallplan_n0(lo + i * st) for i in range(n + 1)])
     return list(itertools.product(*ranges))
+
+
+def wallplan_n0(v):
+    """Stones in course 0 as wallplan.stones_n0 (int, or x.5)."""
+    return mj.load_wallplan().stones_n0(v)
 
 
 def legs_label(r: dict) -> str:
@@ -112,7 +122,7 @@ def shape_name(cfg: dict) -> str:
 
 
 def all_sites(cfg: dict, legs_: list, size_mm: tuple, extra: int = 3) -> list:
-    return [floor.plate_site(cfg, lg, k, size_mm) for lg in legs_ for k in range(-extra, lg.n0 + extra)]
+    return [floor.plate_site(cfg, lg, k, size_mm) for lg in legs_ for k in range(-extra, math.ceil(lg.n0) + extra)]
 
 
 def select_boards(sites: list, reach: list[set[int]], conflicts: set, centres: list, max_boards: int = MAX_BOARDS,
@@ -163,7 +173,8 @@ def evaluate(cfg0: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
     wp = mj.load_wallplan()
     cfg = with_legs(cfg0, n0s)
     legs_ = wp.legs(cfg)
-    row: dict = {"n0": [int(n) for n in n0s], "course0": int(sum(n0s)), "feasible": False, "why": ""}
+    row: dict = {"n0": [wp.stones_n0(n) for n in n0s], "course0": wp.stones_n0(sum(float(n) for n in n0s)),
+                 "feasible": False, "why": ""}
     margin = float(cfg["wall"].get("reach_margin_mm", 0.0))
     try:
         tables = {lg.name: mj.load_reach_table(cfg, mj.leg_dist(cfg, lg, ctx.dist), side=mj.leg_side(cfg, lg))[0]
@@ -730,13 +741,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--evaluate", action="store_true", help="evaluate the leg-length candidates")
     ap.add_argument("--legs", default=None, help='candidates: "10,7,5" or ranges "9-12,5-8" (default: the config)')
     ap.add_argument("--config", default=None)
+    ap.add_argument("--variant", default=None, help="config variant config/variants/<VARIANT>.toml")
     ap.add_argument("--png", default=str(RESULTS / "l_wall_layout.png"))
     ap.add_argument("--md", default=str(RESULTS / "l_wall_plan.md"))
     args = ap.parse_args(argv)
-    cfg = mconfig.load(args.config)
+    cfg = mconfig.load(args.config, args.variant)
     if args.evaluate:
         cands = (parse_legs(args.legs) if args.legs
-                 else [tuple(int(lg["n0"]) for lg in cfg["wall"]["legs"])])
+                 else [tuple(wallplan_n0(lg["n0"]) for lg in cfg["wall"]["legs"])])
         rows = evaluate_all(cfg, cands)
         RESULTS.mkdir(exist_ok=True)
         CANDIDATES_JSON.write_text(json.dumps({"rows": rows}, indent=1, default=str) + "\n", encoding="utf-8")

@@ -143,7 +143,7 @@ SHEET
 40
 4.0000
 1
-ARES_Mauer guides sheet 1/4 - CUT lines kerf-compensated for 0.3 mm
+ARES_Mauer guides c_acb A5/B7/C5 sheet 1/4 - CUT lines kerf-compensated for 0.3 mm
 0
 LINE
 8
@@ -1173,7 +1173,7 @@ ENGRAVE
 62
 5
 10
-16.0000
+28.0000
 20
 14.0000
 30
@@ -1943,7 +1943,7 @@ ENGRAVE
 62
 5
 10
-16.0000
+36.0000
 20
 440.0000
 30

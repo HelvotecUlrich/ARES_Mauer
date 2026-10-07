@@ -55,8 +55,11 @@ class Dxf:
     def circle(self, layer: str, c, r: float) -> None:
         self.ents.append(f"0\nCIRCLE\n8\n{layer}\n62\n{ACI[layer]}\n10\n{c[0]:.4f}\n20\n{c[1]:.4f}\n30\n0.0\n40\n{r:.4f}\n")
 
-    def text(self, layer: str, p, h: float, s: str) -> None:
-        self.ents.append(f"0\nTEXT\n8\n{layer}\n62\n{ACI[layer]}\n10\n{p[0]:.4f}\n20\n{p[1]:.4f}\n30\n0.0\n40\n{h:.4f}\n1\n{s}\n")
+    def text(self, layer: str, p, h: float, s: str, rot_deg: float = 0.0) -> None:
+        """TEXT at p (baseline start), height h, rotated rot_deg counter-clockwise (DXF group 50)."""
+        rot = f"50\n{rot_deg:.4f}\n" if abs(rot_deg) > 1e-9 else ""
+        self.ents.append(f"0\nTEXT\n8\n{layer}\n62\n{ACI[layer]}\n10\n{p[0]:.4f}\n20\n{p[1]:.4f}\n30\n0.0\n40\n{h:.4f}\n"
+                         f"{rot}1\n{s}\n")
 
     def write(self, path: Path) -> None:
         layers = "".join(f"0\nLAYER\n2\n{n}\n70\n0\n62\n{c}\n6\nCONTINUOUS\n" for n, c in ACI.items())
