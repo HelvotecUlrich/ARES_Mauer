@@ -1746,7 +1746,8 @@ def problems_of(sim: LSim, info: dict) -> list:
             out.append(f"butt corner {c['prev']}-{c['next']}: leg {c['next']}'s first stone of every course overlaps "
                        f"leg {c['prev']}'s ribs by {-c['gap_mm']:.2f} mm (origin at the body face, the ribs stick out "
                        f"{sf['rib_mm']:.2f} mm) - the real stone cannot sit at its planned place.")
-    if abs(sf["volume_cm3"] - 2270.0) > 50.0:
+    kg = float(sim.cfg["brick"].get("mass_kg", 0.0) or 0.0)
+    if kg <= 0.0 and abs(sf["volume_cm3"] - 2270.0) > 50.0:      # only while the stone is not weighed
         out.append(f"full stone volume: the mesh encloses {sf['volume_cm3']:.0f} cm3, not 2270 cm3 (the raw STL has "
                    "flipped faces) -> at ~2.3 g/cm3 about "
                    f"{sf['volume_cm3'] * 2.3 / 1000:.1f} kg, above the UR5 payload of 5 kg (to check with the real "
