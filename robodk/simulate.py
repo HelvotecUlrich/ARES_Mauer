@@ -512,12 +512,12 @@ class LSim(Sim):
         self.j_home = None
         self.rec = None                     # timelapse.Recorder (--video)
         self.t0 = time.time()
+        self.motion_s = 0.0
 
     def caption(self, text: str) -> None:
         """Caption of the next time-lapse frames (--video)."""
         if self.rec is not None:
             self.rec.label = text
-        self.motion_s = 0.0
 
     # ── setup ────────────────────────────────────────────────────────────────
     def setup(self) -> None:

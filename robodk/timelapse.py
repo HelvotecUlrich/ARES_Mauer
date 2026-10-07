@@ -2,9 +2,14 @@
 after every executed robot move and every ARES route sample, a caption per frame (what the run is doing), written as
 MP4 at the end.
 
-The camera is a Cam2D view like rdk_common.snapshot (renders with the RoboDK window minimised). rdk_common.snapshot /
-snapshot_pinhole close every camera window (Cam2D_Close(0)); a failed frame therefore reopens the view once and
-retries. Frames are PNGs in <video>_frames/ until write() encodes them (OpenCV, H.264 "avc1", else "mp4v") and
+The camera is a Cam2D view like rdk_common.snapshot, its window opened MINIMIZED like sim_camera.SimCamera.
+rdk_common.snapshot / snapshot_pinhole close every camera window (Cam2D_Close(0)); after that Cam2D_Snapshot on the
+closed view still succeeds but renders 160 x 133 px (sim_camera.py, probe 2026-10-06; first full run 2026-10-07:
+every frame after the station image pixelated). With the view open next to the flange camera for the whole run,
+RoboDK crashed twice (0xC000041D, after ~1700 and ~520 frames, during planning) while runs without the view never
+did: the view is therefore open only for its snapshot - re-opened (Cam2D_Add(item, params, cam), as
+SimCamera.open), snapshot until it has full size, closed again. Frames are PNGs in <video>_frames/ until write() encodes
+them with OpenCV "mp4v" (MPEG-4; "avc1" needs the OpenH264 DLL, without it OpenCV wrote 7x larger files) and
 deletes them. The caption is drawn with PIL (umlauts; OpenCV's Hershey fonts are ASCII only).
 """
 from __future__ import annotations
@@ -32,27 +37,38 @@ class Recorder:
         self.label = ""
         self.labels: list[str] = []
         self.failed = 0
+        self.reopens = 0
 
     def _open(self) -> None:
-        if self.cam is not None:
-            try:
-                self.RDK.Cam2D_Close(self.cam)
-                self.cam.Delete()
-            except Exception:  # noqa: BLE001 - already closed by Cam2D_Close(0)
-                pass
         w, h = self.size
-        self.cam = self.RDK.Cam2D_Add(self.view, f"FOCAL_LENGTH=6 FOV={self.hfov:g} FAR_LENGTH=20000 SIZE={w}x{h} "
-                                                 f"SNAPSHOT={w}x{h} BG_COLOR=white")
+        params = (f"FOCAL_LENGTH=6 FOV={self.hfov:g} FAR_LENGTH=20000 SIZE={w}x{h} SNAPSHOT={w}x{h} BG_COLOR=white "
+                  "MINIMIZED")
+        if self.cam is None:
+            self.cam = self.RDK.Cam2D_Add(self.view, params)
+        else:                                             # re-open the same item
+            self.RDK.Cam2D_Add(self.view, params, self.cam)
+            self.reopens += 1
         self.RDK.Render(True)
-        time.sleep(1.0)                                   # first render at full size (rdk_common.snapshot)
+
+    def _full_size(self, p: Path) -> bool:
+        from PIL import Image
+        try:
+            with Image.open(p) as im:
+                return tuple(im.size) == self.size
+        except OSError:
+            return False
 
     def frame(self) -> None:
-        """One frame of the current scene with the current caption."""
+        """One frame of the current scene with the current caption (the view open only for it)."""
         p = self.dir / f"f{len(self.labels):05d}.png"
-        ok = self.cam is not None and self.RDK.Cam2D_Snapshot(str(p), self.cam)
-        if not ok:
-            self._open()
-            ok = self.RDK.Cam2D_Snapshot(str(p), self.cam)
+        self._open()
+        ok = False
+        for i in range(8):                                # the first snapshot after opening can be small / empty
+            time.sleep(0.15 if i else 0.05)
+            if self.RDK.Cam2D_Snapshot(str(p), self.cam) and self._full_size(p):
+                ok = True
+                break
+        self.RDK.Cam2D_Close(self.cam)
         if ok:
             self.labels.append(self.label)
         else:
@@ -74,11 +90,7 @@ class Recorder:
         w, h = self.size
         font = ImageFont.truetype(str(FONT), 22) if FONT.exists() else ImageFont.load_default()
         small = ImageFont.truetype(str(FONT), 16) if FONT.exists() else font
-        writer = None
-        for cc in ("avc1", "mp4v"):
-            writer = cv2.VideoWriter(str(self.path), cv2.VideoWriter_fourcc(*cc), self.fps, (w, h))
-            if writer.isOpened():
-                break
+        writer = cv2.VideoWriter(str(self.path), cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (w, h))
         n = 0
         for i, label in enumerate(self.labels):
             img = Image.open(self.dir / f"f{i:05d}.png").convert("RGB").resize((w, h))
@@ -91,4 +103,5 @@ class Recorder:
             n += 1
         writer.release()
         shutil.rmtree(self.dir, ignore_errors=True)
-        return {"path": str(self.path), "frames": n, "seconds": n / self.fps, "failed_frames": self.failed}
+        return {"path": str(self.path), "frames": n, "seconds": n / self.fps, "failed_frames": self.failed,
+                "camera_reopens": self.reopens}
