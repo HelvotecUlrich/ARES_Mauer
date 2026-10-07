@@ -128,7 +128,10 @@ dist = 580.0                # ASSUMPTION: ARES side 110 mm from the board plates
 [[wall.legs]]
 name = "B"
 n0 = 7                      # CONFIRMED: Samuel 2026-10-06 ("1.5 across"; between A and C since 2026-10-07: 1.65 m over
-                            # the outer faces of A and C)
+                            # the outer faces of A and C). Built LAST (A, C, B) and CLOSES between A and C in every
+                            # course: its last stone drops into a slot with 2 x corner_gap_mm play - the 7 stones' length
+                            # tolerance must fit into it (risk accepted by Samuel 2026-10-07; alternatives offered: B
+                            # through and built first, or A -> B -> C with the ends 123 mm apart)
 xyz_in_wall = [940.0, 62.69, 0.0]      # ASSUMPTION: butt corner at A's far end towards ARES (200 * 5 - 60, 60 + 1.69 + 1.0)
 rpy_in_wall_deg = [0.0, 0.0, 90.0]
 side = "front"              # CONFIRMED: Samuel 2026-10-06 (B straight ahead of ARES driving into the C)

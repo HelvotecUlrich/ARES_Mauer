@@ -811,6 +811,13 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
     stops: list[mjob.Stop] = []
     built: list = []                                # stones placed by the end of the stop (looks must clear them)
     order = wp.build_order(cfg, legs_)              # a leg running through a corner before the one butting on it
+    for i, lg in enumerate(legs_):                  # butting at both ends: the last stone of every course closes
+        c_prev = wp.corner_of(cfg, legs_[i - 1], lg) if i > 0 else None             # between two finished legs
+        c_next = wp.corner_of(cfg, lg, legs_[i + 1]) if i + 1 < len(legs_) else None
+        if c_prev and c_next and c_prev["through"] == "prev" and c_next["through"] == "next":
+            ctx.warnings.append(f"leg {lg.name} closes between legs {legs_[i - 1].name} and {legs_[i + 1].name} in "
+                                f"every course: its last stone drops into a slot with {2 * wp.corner_gap(cfg):g} mm "
+                                "play ([wall] corner_gap_mm at both corners) - stone length tolerance")
     for lg in order:
         T_wl = T_legs[lg.name]
         for a, batch in plans[lg.name]:
