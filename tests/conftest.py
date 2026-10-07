@@ -1,9 +1,52 @@
+import os
+import socket
 import sys
 from pathlib import Path
+
+import pytest
+
+# Qt tests run headless (WSL environment variables do not reach py.exe); must be set before any Qt import
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+
+LOOPBACK = ("127.0.0.1", "::1", "localhost")
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """One QApplication for the session (amr_hmi tests/conftest.py)."""
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
+@pytest.fixture
+def no_lab_network(monkeypatch):
+    """Hard rule of the HMI tests (docs/HMI_DESIGN.md section 12.1): no connection outside loopback (the laptop may
+    be on the lab network with the PLC and the UR5), and pyads / ids_peak cannot be imported."""
+    real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
+
+    def check(addr):
+        host = addr[0] if isinstance(addr, tuple) else None
+        if host is not None and not (str(host) in LOOPBACK or str(host).startswith("127.")):
+            raise AssertionError(f"test tried to connect to {addr} (only loopback allowed)")
+
+    def connect(self, addr):
+        check(addr)
+        return real_connect(self, addr)
+
+    def connect_ex(self, addr):
+        check(addr)
+        return real_connect_ex(self, addr)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+    monkeypatch.setitem(sys.modules, "pyads", None)
+    monkeypatch.setitem(sys.modules, "ids_peak", None)
+    yield
 
 
 def straight_config():
