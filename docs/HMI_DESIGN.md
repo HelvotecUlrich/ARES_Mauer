@@ -1197,4 +1197,63 @@ class TwinLink(QObject):
 
 ## 15. Implementation notes (CORE)
 
-Filled in by the CORE step: where the implementation differs from the contract above, and why.
+Where the CORE step (branch `hmi-core`) differs from the contract above, and why. Everything not listed here is
+implemented as specified.
+
+**Deviations**
+1. `RunController.event` is `Signal(object)` (it still carries the record dict). PySide6 6.11 converts a
+   `Signal(dict)` argument to a QVariantMap: a record with a non-string key arrives as `{}` ("Cannot copy-convert
+   ... (dict)", checked 2026-10-07). `HmiContext.ads_status` stays `Signal(dict)` (amr status: string keys only).
+2. `RunWorker` (thread `mauer-run`) is a daemon `threading.Thread` with a job queue, not a QThread: it needs no
+   event loop, and a controller that is never shut down cannot crash the interpreter at exit. Signals emitted
+   from it are queued into the GUI thread (PySide6 delivers bound-method AND lambda slots there - checked).
+3. `RunController.can(action, mode=None)`: the optional `mode` is the mode the Mauer tab would prepare (radio
+   buttons) - before Prepare the controller has no mode. `enables()` also knows "options", "sim_speed" and "halt".
+4. Extra read-only members of `RunController`: `step`, `sim_step_s`, `ares_enabled`, `sequencer` (the current
+   `Sequencer` for reading `held`, `pose_status`, `paused`), `log_dir`, `odom_moved()`. `ConfirmRequest.pause_pending`
+   is also true for a pending soft abort.
+5. `tests/fake_plc.py`: READY -> MANUAL on a RISING edge of the manual request. The PLC uses the level
+   (FB_AMR_StateMachine.TcPOU:218), but `tests/test_ares_ads.py` forces READY (`amr_state = 6`) while the emulated
+   HMI holds the request TRUE; a level rule would undo those tests. The pattern-A test gets the edge from the
+   AdsWorker (safe defaults write FALSE, the Manual request TRUE).
+6. **Additional sequencer change (H7)**, own commit: a direct move between stops (no route: straight / v1 jobs)
+   now counts as a two-waypoint `RouteProgress` while it runs. Before, declining it in step mode (or a pause at its
+   interlock, an ARES error) and resuming measured stop k from where ARES still stood - the re-aimed looks were
+   unreachable (SIM: IK guard; REAL: an unchecked look pose). Found by the design's own step-mode test (8.2 / 12.2
+   "Go except the first ARES -> Decline -> resume -> done"). The uninterrupted path is unchanged.
+7. **RoboDK opt-in fix**, own commit: in `tests/test_robodk_l.py` and `tests/test_robodk_camera.py` the
+   function-scoped autouse `_opt_in` skip ran AFTER the module fixture `rdk`, so a plain `pytest` run started a
+   separate RoboDK (ports 20596 / 20598) before skipping. `_opt_in` is module-scoped now.
+8. `closeEvent` refuses also while a job is loading (`BUSY` = loading, preparing, running, pausing, aborting,
+   releasing); a second close of a closed window is accepted without a second shutdown.
+9. `hmi/main.build()` starts the `NullAdsWorker` (it emits "ADS off"); `MainWindow` never starts a worker.
+10. The heartbeat-under-load test runs the whole 10-stone straight test wall (34 stones, ~1.5 s): the 3-stone
+    job finishes in well under a second at `sim_step_s = 0`.
+11. Extra test file `tests/test_hmi_session.py` (job files load their own variant, refusals, build from config).
+
+**What exists for the feature steps** (all in the GUI thread unless noted)
+- `ctx` (`HmiContext`): `station_cfg`, `hmi` ([hmi] incl. the nested `frame` / `move` / `twin` tables), `amr_cfg`,
+  `config_path`, `ares_enabled`, `start_twin` (`--twin`), `controller`, `last_ads_status` / `ads_connected`
+  (readable from any thread), `session` (property), signals `session_changed(object)`, `ads_status(dict)`,
+  `ads_connection(bool, str)`, `twin_state_changed(str, str)`; `set_twin_state(state, detail)`,
+  `add_shutdown_hook(fn)`.
+- `ctx.controller` (`RunController`): signals `state_changed(str, str)`, `event(object)`, `snapshot_changed(object)`,
+  `shot(object)`, `confirm_requested(object)`, `confirm_cleared(int)`, `preflight_done(object)`,
+  `rig_changed(object)`, `session_loaded(object)`, `message(str, str)`; properties `state`, `mode`, `session`, `opts`
+  (`RunOptions`, e.g. `camera_loop`), `snapshot` (latest `RunSnapshot`, atomic reference - the twin thread may read
+  it), `rig` (`RigInfo`: `mode`, `cfg`, `job`, `robot`, `link`, `ads`, `world`, `camera_kind`), `preflight`,
+  `halted`, `pending`, `log_dir`; `can(action, mode=None)`; `grab()`; `set_shot_processor(fn)` (fn runs in
+  `mauer-run`: `(image, shot record | None, session cfg) -> ShotView`); `ur_source()` (a new `UrSource` per consumer
+  thread).
+- `hmi.core.snapshot`: `RunSnapshot`, `StoneInfo`, `ShotView` (`full_size` = (width, height) px), `default_shot_view`,
+  `describe_action`, `format_event`, `severity`, `category`, `boards_text`, `to_uint8`.
+- `hmi.core.sources`: `UrSnapshot`, `UrSource`, `AresLive` (`src` also "none"), `ares_live(snap, ads_status, world)`,
+  `odom_from_status`, `compose_odometry`.
+- `hmi.views.plan_view`: `plan_geometry(job, cfg) -> PlanGeometry` (`stones` key -> polygon, `course`, `order`,
+  `stops`, `routes` as (kind, waypoints), `obstacles` as (name, kind, polygon), `table`, `dock`, `ares`, `bounds`,
+  `notes`); `PlanView.set_session / set_snapshot / set_live`.
+- Tests: `tests/hmi_fakes.py` `FakeRunController` (`set_state(state, detail, mode=None)`, settable `sequencer`,
+  `rig`, `snapshot`, `preflight`, `odom`; `of(name)` lists the recorded calls), `make_ctx`, `make_window`,
+  `short_sim_session(n0, n1)`, `StubLink`, `StubCamera`, `wait_until`, `AMR_CFG`.
+- Connect controller / context signals to bound methods of the widget (or lambdas): they are queued into the GUI
+  thread; widgets never call hardware objects.
