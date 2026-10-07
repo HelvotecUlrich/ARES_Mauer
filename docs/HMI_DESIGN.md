@@ -1233,6 +1233,13 @@ implemented as specified.
 12. REAL `set_pose()` also records the current PLC odometry as the reference of the resume check (the operator vouches
     for the pose at this moment); without it a resume with an unknown odometry at the stop could never pass.
     A prepare that fails after the rig opened closes the rig again (nothing stays connected in state "loaded").
+13. `hmi-core` is rebased onto `main` at `ed5ea2a` (motion guard): the default `RealFactories.robot` builds
+    `URRobot(link, cfg, job, guard=MotionGuard(...))` as `tools/run_job.py run_real` (the real URRobot refuses
+    without a guard). `SimRig` stays as `run_job.py sim_once`, i.e. without the SIM motion guard
+    (`SimWorld(guard=False)`).
+14. `halt()` re-emits `state_changed(state, "HALT")` so the widgets show the HALTED badge before the run has
+    ended. `state` is set in the run thread before `state_changed` is queued: a widget (or test) that needs the
+    records of a run must react to the signal, not poll the attribute.
 
 **What exists for the feature steps** (all in the GUI thread unless noted)
 - `ctx` (`HmiContext`): `station_cfg`, `hmi` ([hmi] incl. the nested `frame` / `move` / `twin` tables), `amr_cfg`,
