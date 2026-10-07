@@ -31,7 +31,9 @@ planner's job:
     --no-trips refills the magazine without driving or picking (fast check of the wall alone);
   - every motion is planned and collision-checked with motion.Planner (MoveJ_Test 1 deg / MoveL_Test 2 mm) exactly
     as for the straight wall; the camera body and the adapter plate (objects on the tool) are switched on against
-    every stone (RoboDK does not check tool objects against static objects by default);
+    every stone (RoboDK does not check tool objects against static objects by default); the tool against the own arm
+    additionally with the capsule model mauer.armcheck.self_clearance (RoboDK's meshes miss the contact of
+    2026-10-06, motion.py docstring);
   - a stone whose motion cannot be planned is diagnosed (no IK = reach hole, or the colliding pairs of the vertical
     approach / transfer), then put in place without motion (red) so that the run continues with the planned wall
     state;
@@ -643,6 +645,12 @@ class LSim(Sim):
                         or max(abs(a - b) for a, b in zip(j_pre, j_t)) > 30):
                     reasons.append("configuration change on the vertical approach")
                     continue
+                if P.self_why(j_app):
+                    reasons.append("approach pose (150 mm above): " + P.self_why(j_app))
+                    continue
+                if not P.self_free_j(j_app, j_t):
+                    reasons.append("vertical approach: tool closer than the tool-vs-arm limit to the arm")
+                    continue
                 if not P.state_free(j_app):
                     reasons.append("approach pose (150 mm above) in collision: " + ", ".join(self.pairs()))
                     continue
@@ -1039,6 +1047,9 @@ class LSim(Sim):
                     continue
                 res["n_ik"] += 1
                 for j in js:
+                    if P.self_why(j):
+                        why(src, P.self_why(j))
+                        continue
                     if not P.state_free(j):
                         for p in self.pairs():
                             why(src, p)
@@ -1321,6 +1332,7 @@ def l_images(sim: LSim, look_shot: dict | None, res_dir: Path) -> list:
 
 # ── report ────────────────────────────────────────────────────────────────────
 def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
+    from mauer import armcheck
     from mauer import job as mjob
     L = []
     w = L.append
@@ -1455,7 +1467,9 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
         w("No failures: every stone was picked from its planned magazine slot and placed with a collision-checked "
           "motion.")
         w("")
-    w(f"Collision tests: {sim.planner.tests}; motion planning + execution {sim.motion_s / 60:.1f} min.")
+    w(f"Collision tests: {sim.planner.tests} ({sim.planner.self_rejects} poses / moves refused by the tool-vs-arm "
+      f"model, mauer.armcheck.self_clearance >= {armcheck.SELF_CLEARANCE_MM:g} mm); motion planning + execution "
+      f"{sim.motion_s / 60:.1f} min.")
     w("")
     if sim.trip_log:
         w("## Station trips (ARES at the dock, collision-checked station -> magazine moves)")

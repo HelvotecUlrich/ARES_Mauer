@@ -5,6 +5,12 @@ stone is part of the robot) with MoveJ_Test / MoveL_Test before it is executed. 
 descent (jaws around the stone, pins entering the sockets) and the first `engage` mm of the retreat are contact
 phases by design and not tested.
 
+Tool against the own arm: RoboDK checks the gripper, camera body and camera adapter against the UR5 links, but its
+meshes report the first contact only about 45 mm deeper than the capsule model mauer.armcheck.self_clearance (probe
+2026-10-07: no RoboDK collision at model -17 mm), and the real camera adapter touched wrist 1 on 2026-10-06 at model
+-3.7 mm. Every pose and every move (contact phases included) is therefore also checked with that model: tool >=
+armcheck.SELF_CLEARANCE_MM from the links, sampled every SELF_STEP_DEG along joint moves.
+
 Strategy for a move to a target with vertical approach:
   1. all IK solutions of the target (both gripper orientations), sorted by joint distance from the current joints;
   2. per solution: approach point above, pre-engage point; the vertical line approach -> pre-engage must be free;
@@ -17,12 +23,14 @@ import math
 import random
 
 from rdk_common import PI, tcp_pose, transl, ur5_base_pose
+from mauer import armcheck
 from robodk.robolink import COLLISION_OFF, COLLISION_ON, ITEM_TYPE_OBJECT
 from robodk.robomath import invH, rotx, rotz
 
 W = (2.0, 2.0, 1.5, 1.0, 1.0, 0.5)         # joint weights for the path cost (base and shoulder move most mass)
 STEP_DEG = 1.0                              # collision test resolution of joint moves (RoboDK default 4° missed a
 STEP_MM = 2.0                               # forearm/stone contact) and of linear moves
+SELF_STEP_DEG = 2.0                         # sampling of the tool-vs-arm model along joint moves (module docstring)
 
 
 def jdist(a, b) -> float:
@@ -56,6 +64,7 @@ class Planner:
         self.approach = cfg["study"]["approach"]
         self.z_safe = 900.0                  # TCP height for transfers over the magazine (updated by the caller)
         self.tests = 0
+        self.self_rejects = 0                # poses / moves refused by the tool-vs-arm model only
         robot.setPoseFrame(f_ares)
         robot.setPoseTool(tool)
 
@@ -78,13 +87,34 @@ class Planner:
         return invH(self.ref) * self.robot.SolveFK(j) * self.tcp
 
     # ── collision tests (robot is put back afterwards) ───────────────────────
+    def self_ok(self, j) -> bool:
+        """Tool >= armcheck.SELF_CLEARANCE_MM from the arm's own links at joints j [deg] (capsule model)."""
+        return armcheck.self_clearance([math.radians(a) for a in j], self.cfg)[0] >= armcheck.SELF_CLEARANCE_MM
+
+    def self_why(self, j) -> str:
+        """'' if self_ok(j), else the closest tool part / link of the capsule model (for diagnoses)."""
+        d, part, link = armcheck.self_clearance([math.radians(a) for a in j], self.cfg)
+        return "" if d >= armcheck.SELF_CLEARANCE_MM else f"{part} vs {link} {d:.0f} mm (tool-vs-arm model)"
+
+    def self_free_j(self, j1, j2) -> bool:
+        """self_ok along the joint move j1 -> j2 (every SELF_STEP_DEG); short linear moves are taken as joint moves."""
+        n = max(1, math.ceil(max(abs(a - b) for a, b in zip(j1, j2)) / SELF_STEP_DEG))
+        ok = all(self.self_ok([a + (b - a) * i / n for a, b in zip(j1, j2)]) for i in range(n + 1))
+        self.self_rejects += not ok
+        return ok
+
     def free_j(self, j1, j2) -> bool:
         self.tests += 1
+        if not self.self_free_j(j1, j2):
+            return False
         r = self.robot.MoveJ_Test(j1, j2, STEP_DEG)
         return r == 0
 
     def free_l(self, j1, pose) -> bool:
         self.tests += 1
+        j2 = self.ik(pose, j1)
+        if j2 is not None and not self.self_free_j(j1, j2):
+            return False
         r = self.robot.MoveL_Test(j1, pose, STEP_MM)
         return r == 0
 
@@ -101,7 +131,10 @@ class Planner:
         return None
 
     def state_free(self, j) -> bool:
-        """True if the arm (with gripper and held stone) is collision-free at joints j."""
+        """True if the arm (with gripper and held stone) is collision-free at joints j (RoboDK and self_ok)."""
+        if not self.self_ok(j):
+            self.self_rejects += 1
+            return False
         self.robot.setJoints(j)
         self.RDK.Update()                    # needed while rendering is off, else the link poses are stale
         return self.RDK.Collisions() == 0
@@ -265,8 +298,8 @@ class Planner:
                 continue
             if max(abs(a - b) for a, b in zip(j_app, j_t)) > 60 or max(abs(a - b) for a, b in zip(j_pre, j_t)) > 30:
                 continue                                       # configuration change on the vertical line
-            if not self.state_free(j_app) or not self.free_l(j_app, pre):
-                continue
+            if not self.state_free(j_app) or not self.free_l(j_app, pre) or not self.self_free_j(j_pre, j_t):
+                continue                                       # (the engage part: the tool-vs-arm model only)
             path = self._transfer(j_from, j_app)
             if path is None:
                 continue
@@ -285,7 +318,7 @@ class Planner:
         app = transl(0, 0, h) * pose
         j_pre = self.ik(pre, j_at)
         j_app = self.ik(app, j_at)
-        if not (j_pre and j_app) or not self.free_l(j_pre, app):
+        if not (j_pre and j_app) or not self.self_free_j(j_at, j_pre) or not self.free_l(j_pre, app):
             return None
         return [("E", pre), ("L", app)], j_app
 
