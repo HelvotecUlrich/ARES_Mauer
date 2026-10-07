@@ -147,8 +147,31 @@ Runtime package `mauer/` (no RoboDK), tools in `tools/`, runbook **`docs/CAMERA_
   `robodk/look_study.py` (quick grid, `results/look_study_quick.md`; the full study was stopped): this placement gives
   ≥ 2 visible boards in every stop and wall state; recommended pitch 800 mm. Their positions along the wall must be
   known exactly – a board misplaced by x mm moves the wall by x mm.
-- Not done yet: real hardware tests, adversarial code review (started, stopped for time), RoboDK export of
-  collision-checked jobs, deck/magazine referencing with the camera.
+- Not done yet: real hardware tests with ARES (prepared 2026-10-07, see below), deck/magazine referencing with the
+  camera.
+
+## C wall A 5½ → B → C, variants, motion guard (2026-10-07)
+
+Plan and state of the work: **`docs/PLAN_2026-10-07_realtest.md`**.
+
+- **Main config**: A 5½ stones (1.10 m; course 0 = 5 full + a half stone at the corner end), B 7, C 5; the earlier leg
+  runs through every corner, built A → B → C without a closure stone; C's free end 22.7 mm beyond A's start. 76 stones
+  (12 half). RoboDK: `results/l_wall_sim.md` (76/76, 62/62 station moves in 5 trips); stone list
+  `results/steinliste.pdf` (German), floor guides / map `targets/guides/`.
+- **Variant `c_acb`** (`config/variants/c_acb.toml`, every tool takes `--variant c_acb`): the ends of A and C exactly
+  lined up, A and C run through, B closes between them (built A, C, B; B's last stone per course drops into a slot with
+  2 × 1 mm play). `results/l_wall_sim_c_acb.md`, `results/steinliste_c_acb.pdf`, `targets/guides_c_acb/`.
+- **Stops**: `wallplan.sequence_leg` balances the stops - leg B needs two (its top course is 1.30 m long, the UR
+  reaches ±0.62 m along the wall there): 22 + 8 stones instead of 29 + 1.
+- **Motion guard** (`mauer/motionguard.py`, required by `URRobot` on the real robot): every joint move is checked in the
+  capsule model (tool and held stone vs the arm, ARES + magazine, the built wall, the docked station) and gets a
+  detour or is refused before anything moves. Found on the way: direct joint moves out of the magazine would swing a
+  held stone up to 26 mm into the neighbour stack, and the old `[ur] park_q_deg` had the jaws inside the forearm
+  (replaced by the elbow-up IK of the same pose - **verify slowly on the robot**). Guarded world simulation: main C
+  76/76, c_acb 74/74.
+- **RoboDK-verified jobs**: a complete clean `robodk/simulate.py` run writes `data/jobs/nominal_C[_variant]_robodk.json`
+  (meta `reach_check` "robodk"), which `preflight_real` requires for the real robot.
+- **Time-lapse**: `py.exe robodk/simulate.py --animate --video results/l_wall_sim.mp4` (`robodk/timelapse.py`).
 
 ## C wall with ARES inside (2026-10-06, simulation only)
 

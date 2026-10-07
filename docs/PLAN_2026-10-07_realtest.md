@@ -30,7 +30,8 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - [x] A3 stop optimisation (D5) in wallplan.sequence_leg: no last stop with a few stones if the stones can be placed
       from the previous stop (moved within the window) or the batches rebalanced.
 - [x] A4 main config = D1 layout; regenerate job, guides/DXF, floor map, stone list; tests.
-- [ ] A5 RoboDK runs + time-lapse videos: main (A 5 1/2 -> B -> C) and variant c_acb (optimised stops).
+- [x] A5 RoboDK runs + time-lapse videos: main (A 5 1/2 -> B -> C) 76/76 and variant c_acb 74/74 (optimised stops);
+      rerun after the park / look changes in progress (stamps the jobs RoboDK-verified).
 
 ### B - Mauer HMI (hmi/, copy of amr_hmi)
 - [ ] B1 copy amr_hmi (attribution, tests green with offscreen Qt)
@@ -52,6 +53,11 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
       hand-eye calibration on ARES, floor layout check with the boards, single stone pick/place (step mode), one
       stop, station trip, leg change, full wall; pass criteria and what to log
 - [ ] D2 preflight additions found while writing D1; HMI shows them
+- [x] D3 motion guard (mauer/motionguard.py, required by URRobot) + checked park pose + look rolls by smallest
+      joint change; guarded world sims main 76/76, c_acb 74/74
+- [x] D4 RoboDK-verified job stamp (simulate.py robodk_stamp) for preflight_real
+- [x] D5 review of the planning core (workflow review-planning-core: 10 findings fixed, 48e79b9)
+- [ ] D6 merge the HMI branch (hmi-integration) into main: URRobot needs guard=MotionGuard(...) there
 
 ## Status log
 - 2026-10-07: plan written; decisions D1-D5.
@@ -61,3 +67,6 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   Workflow({scriptPath: ~/.claude/projects/-mnt-c-Users-samue-ARES-Mauer/39cd2889-e019-422e-bafa-4b360197709b/workflows/scripts/mauer-hmi-twin-wf_7a4d2776-741.js,
   resumeFromRunId: "wf_7a4d2776-741"}) (finished agents are cached; check worktrees in /mnt/c/Users/samue/ARES_Mauer_wt
   and branches hmi-* first). Note: ARES moves keep operating pattern A (two ADS connections in one program).
+- 2026-10-07 night: A5 done; motion guard (74e8328), stamp (f954da9), review fixes (48e79b9). RoboDK reruns for the
+  new park / looks running (they also write the stamped jobs). HMI workflow wf_7a4d2776-741 resumed: maps cached,
+  design done (88 kB), core implementing in /mnt/c/Users/samue/ARES_Mauer_wt/hmi-core.
