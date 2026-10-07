@@ -1,5 +1,6 @@
 """Status strip - STUB created by the CORE step, replaced by the STATUS step (docs/HMI_DESIGN.md section 11.2):
-run state | mode | stop | stone | action | UR mode | ARES state | twin state. The constructor is fixed: StatusStrip(ctx, parent=None)."""
+run state | mode | stop | stone | action | UR mode | ARES state | twin state.
+The constructor is fixed: StatusStrip(ctx, parent=None)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt

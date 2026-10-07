@@ -32,8 +32,9 @@ Interruptions (pause, a declined step, an ARES or robot error) keep the route pr
   the same stop resumes it: an interrupted station trip continues to the station (and does the reload), an interrupted
   return or move between stops continues its remaining legs - never a straight line from wherever ARES stands to the
   first waypoint of another route. A direct move between stops (no route) counts as a two-waypoint route while it
-  runs, so an interrupted one is driven to its end on resume (2026-10-07). The first move of a resume is checked against the floor model of the job (legs,
-  plates, table; mauer.floor.job_obstacles) and refused if it would cross an obstacle. A move that ended not ok
+  runs, so an interrupted one is driven to its end on resume (2026-10-07). The first move of a resume is checked
+  against the floor model of the job (legs, plates, table; mauer.floor.job_obstacles) and refused if it would cross
+  an obstacle. A move that ended not ok
   (aborted by the PLC) updates the estimate from the odometry of the outcome and marks it unverified; an ARES error
   without an outcome marks the pose unknown - a resume then needs confirm_pose() / set_pose(pose) by the operator.
 Held stone (2026-10-07): `held` tracks the stone between pick and put-down; a pause takes effect only with empty

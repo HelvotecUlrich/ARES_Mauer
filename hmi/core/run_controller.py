@@ -67,7 +67,8 @@ class RunOptions:
     seed: int = 1                     # SIM
     lenient_grasp: bool = False       # SIM
     sim_step_s: float | None = None   # SIM pacing; None = [hmi] sim_step_s (changeable live)
-    log_dir: Path | None = None       # None = <runs_dir>/<YYYY-mm-dd_HHMMSS>_hmi_<mode>[_n] (never reused: RunLog appends)
+    log_dir: Path | None = None       # None = <runs_dir>/<YYYY-mm-dd_HHMMSS>_hmi_<mode>[_n] (never reused: RunLog
+                                      # appends)
 
 
 @dataclass(frozen=True)

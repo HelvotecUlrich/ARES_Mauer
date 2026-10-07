@@ -1,5 +1,6 @@
 """Wall pose - STUB created by the CORE step, replaced by the STATUS step (docs/HMI_DESIGN.md section 11.2):
-plan view with the live ARES pose, estimate vs SIM truth, odometry, the camera fits per stop. The constructor is fixed: AresPanel(ctx, parent=None)."""
+plan view with the live ARES pose, estimate vs SIM truth, odometry, the camera fits per stop.
+The constructor is fixed: AresPanel(ctx, parent=None)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt

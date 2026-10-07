@@ -1,6 +1,7 @@
 """AdsWorker running in a real QThread (timers, queued signals, pulse reset, blocking stop) - fake connection.
 
-Copied 2026-10-07 from MA 10_robot/hmi/amr_hmi/tests/test_worker_thread.py (commit 5935c5b), imports from the package."""
+Copied 2026-10-07 from MA 10_robot/hmi/amr_hmi/tests/test_worker_thread.py (commit 5935c5b), imports from the
+package."""
 
 from __future__ import annotations
 

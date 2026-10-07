@@ -1,5 +1,6 @@
 """UR panel - STUB created by the CORE step, replaced by the STATUS step (docs/HMI_DESIGN.md section 11.2):
-UR connection, robot / safety mode, joints, TCP, gripper outputs, payload, program state. The constructor is fixed: UrPanel(ctx, parent=None)."""
+UR connection, robot / safety mode, joints, TCP, gripper outputs, payload, program state.
+The constructor is fixed: UrPanel(ctx, parent=None)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt

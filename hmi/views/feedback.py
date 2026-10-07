@@ -1,5 +1,6 @@
 """Run feedback - STUB created by the CORE step, replaced by the STATUS step (docs/HMI_DESIGN.md section 11.2):
-placed n/N, reloads, ARES moves, corrections, warnings, measurement and SIM placement statistics. The constructor is fixed: RunFeedback(ctx, parent=None)."""
+placed n/N, reloads, ARES moves, corrections, warnings, measurement and SIM placement statistics.
+The constructor is fixed: RunFeedback(ctx, parent=None)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt

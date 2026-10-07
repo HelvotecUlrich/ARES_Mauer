@@ -1,5 +1,6 @@
 """Camera view - STUB created by the CORE step, replaced by the CAMERA step (docs/HMI_DESIGN.md section 11.1):
-the run's camera image with the detected ChArUco corners, the last measurement, Grab / Live (REAL). The constructor is fixed: CameraView(ctx, parent=None)."""
+the run's camera image with the detected ChArUco corners, the last measurement, Grab / Live (REAL).
+The constructor is fixed: CameraView(ctx, parent=None)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt

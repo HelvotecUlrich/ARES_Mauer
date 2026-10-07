@@ -94,7 +94,8 @@ class RunSnapshot:
     pose_est: Pose2D | None
     pose_src: str
     pose_status: str                # "ok" | "odometry" | "unknown"
-    ares_cmd: dict | None           # {"kind", "args", "why", "pose": Pose2D, "odom": OdomPose | None} until the move ends
+    ares_cmd: dict | None           # {"kind", "args", "why", "pose": Pose2D, "odom": OdomPose | None} until the
+                                    # move ends
     T_wall_station: np.ndarray      # copy
     magazine: Mapping[str, str]     # filled slot -> kind (copy)
     station: Mapping[str, str]
