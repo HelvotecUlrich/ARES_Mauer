@@ -50,8 +50,10 @@ def _camera(cfg: dict) -> Any:
 
 
 def _robot(link: Any, cfg: dict, job: Job) -> Any:
+    """URRobot with the motion guard the real robot requires (as tools/run_job.py run_real)."""
     from mauer.backends import URRobot
-    return URRobot(link, cfg, job)
+    from mauer.motionguard import MotionGuard
+    return URRobot(link, cfg, job, guard=MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp))
 
 
 def _intrinsics(cfg: dict) -> Any:
@@ -70,7 +72,7 @@ class RealFactories:
     link: Callable[[dict], Any] = _link                      # URLink.from_config(cfg) (the rig calls .start())
     ads: Callable[[dict], Any] = _ads                        # AresAds(cfg["ares_ads"]) (the rig calls .connect())
     camera: Callable[[dict], Any] = _camera                  # mauer.camera.open_camera(cfg) (opened)
-    robot: Callable[[Any, dict, Job], Any] = _robot          # URRobot(link, cfg, job)
+    robot: Callable[[Any, dict, Job], Any] = _robot          # URRobot(link, cfg, job, guard=MotionGuard(...))
     intrinsics: Callable[[dict], Any] = _intrinsics          # [vision] intrinsics_file
     handeye: Callable[[dict], np.ndarray] = _handeye         # [vision] handeye_file -> T_flange_cam
 
