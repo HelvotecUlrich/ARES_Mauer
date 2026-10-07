@@ -23,9 +23,9 @@ Marking points: lay out leg A's outer edge first (O -> A end), then place the ot
   ARES base_link at the dock                    x  -1100.0   y    900.0
   ARES dock                                     x  -1100.0   y    900.0   heading   90.0 deg
   ARES stop 0                                   x    120.0   y    640.0   heading    0.0 deg
-  ARES stop 1                                   x    100.0   y    762.7   heading    0.0 deg
-  ARES stop 2                                   x    100.0   y    962.7   heading    0.0 deg
-  ARES stop 3                                   x    120.0   y   1005.4   heading    0.0 deg
+  ARES stop 1                                   x    120.0   y   1005.4   heading    0.0 deg
+  ARES stop 2                                   x    100.0   y    762.7   heading    0.0 deg
+  ARES stop 3                                   x    100.0   y    962.7   heading    0.0 deg
 
 Diagonals (tape measure, mm):
   A start, outer corner -> A end, outer corner: 1000

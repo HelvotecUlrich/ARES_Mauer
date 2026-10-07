@@ -11,7 +11,9 @@ joints and via points):
   check_plan on the cached reach table, same cache key as simulate.reach_table, simulate.py:41-58) -> stops a_j and
   their stones;
 - legs ([wall] shape "C" / "L", [[wall.legs]]): every leg a rectangle with half stones at the ends of the odd courses
-  (wallplan.plan_legs, reach margin [wall] reach_margin_mm), leg A completely, then leg B; stop poses per leg
+  (wallplan.plan_legs, reach margin [wall] reach_margin_mm), one leg completely after the other in
+  wallplan.build_order (config order, but a leg that runs through a corner before the one butting against it: the C
+  since 2026-10-07 is built A, C, B); stop poses per leg
   (heading differs per leg); board looks only for boards of the STOP'S OWN LEG (review 2026-10-05: a board of the
   other leg lies behind / across the built corner, and a fit across two legs pushes a leg-B pose error into the
   leg-A stones); ARES routes (mauer.floor.plan_route, [routes]) for EVERY move between stops (same leg: back off,
@@ -808,7 +810,8 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
     by_name = {lg.name: lg for lg in legs_}
     stops: list[mjob.Stop] = []
     built: list = []                                # stones placed by the end of the stop (looks must clear them)
-    for lg in legs_:
+    order = wp.build_order(cfg, legs_)              # a leg running through a corner before the one butting on it
+    for lg in order:
         T_wl = T_legs[lg.name]
         for a, batch in plans[lg.name]:
             k = len(stops)
@@ -827,7 +830,7 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
         raise ValueError("L floor/route check failed:\n  - " + "\n  - ".join(problems))
     legs_meta = [{"name": lg.name, "n0": lg.n0, "T_wall_leg": T_legs[lg.name]} for lg in legs_]
     n_half = sum(s.kind == "half" for s in stones)
-    extra = {"shape": str(cfg["wall"].get("shape") or "legs"),
+    extra = {"shape": str(cfg["wall"].get("shape") or "legs"), "build_order": [lg.name for lg in order],
              "legs": [{"name": lg.name, "n0": lg.n0, "side": sides[lg.name], "dist_mm": dists[lg.name],
                        "a_limits_mm": [float(v) for v in limits[lg.name]],
                        "plan_a_mm": [float(a) for a, _ in plans[lg.name]]} for lg in legs_],

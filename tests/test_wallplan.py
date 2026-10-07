@@ -169,6 +169,22 @@ def test_butt_corner_towards_ares_mirrors_the_outside_corner(cfg):
     assert wp.check_legs(cfg, lg, wp.layout_legs(cfg, lg)) == []
 
 
+def test_a_leg_running_through_a_corner_is_built_before_the_one_butting_on_it(cfg):
+    """2026-10-07: C runs through its corner with B (ends of A and C lined up) -> built A, C, B (RoboDK: with B first,
+    C's corner stones beyond B's end could not be gripped); the corners are recognised with their gap."""
+    A = wp.Leg("A", 5)
+    B = wp.butt_corner(cfg, A, 7, "B", towards_ares=True)
+    C_old = wp.butt_corner(cfg, B, 5, "C", towards_ares=True)
+    C = wp.butt_corner(cfg, B, 5, "C", towards_ares=True, through="next")
+    gap = cfg["wall"]["corner_gap_mm"]
+    assert wp.corner_of(cfg, A, B) == pytest.approx({"through": "prev", "towards_ares": True, "gap_mm": gap})
+    assert wp.corner_of(cfg, B, C) == pytest.approx({"through": "next", "towards_ares": True, "gap_mm": gap})
+    assert [lg.name for lg in wp.build_order(cfg, [A, B, C_old])] == ["A", "B", "C"]
+    assert [lg.name for lg in wp.build_order(cfg, [A, B, C])] == ["A", "C", "B"]
+    assert A.to_wall(0.0, 0.0)[0] == pytest.approx(C.to_wall(wp.leg_length(cfg, 5), 0.0)[0])     # ends line up
+    assert wp.check_legs(cfg, [A, B, C], wp.layout_legs(cfg, [A, B, C])) == []
+
+
 def test_stop_limits_keep_ares_between_the_other_legs(cfg):
     """Leg B of the inside C on the front table at 840 mm: without limits the last stop is centred on the remaining
     stones (a = 1280 - ARES would stand in leg C); with a_lim every stop lies in the window and every stone is placed."""

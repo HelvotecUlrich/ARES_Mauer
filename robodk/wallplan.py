@@ -201,6 +201,28 @@ def corner_of(cfg: Mapping, prev: Leg, nxt: Leg, tol_mm: float = 1e-6) -> dict |
     return None
 
 
+def build_order(cfg: Mapping, legs_: Sequence[Leg]) -> list[Leg]:
+    """The order in which the legs are built: at every corner the leg that runs through before the one that butts
+    against it (RoboDK 2026-10-07: with B built before C, C's corner stones beyond B's end could not be placed - the
+    jaws close across the stone and one jaw would need the 2.7 mm between C and B's end face), otherwise the config
+    order. A corner that corner_of does not recognise adds no constraint. ValueError if the constraints conflict."""
+    legs_ = list(legs_)
+    before = {lg.name: set() for lg in legs_}             # leg -> legs that must be built first
+    for a, b in zip(legs_, legs_[1:]):
+        c = corner_of(cfg, a, b)
+        if c is not None:
+            first, then = (a, b) if c["through"] == "prev" else (b, a)
+            before[then.name].add(first.name)
+    out: list[Leg] = []
+    while len(out) < len(legs_):
+        done = {lg.name for lg in out}
+        nxt = next((lg for lg in legs_ if lg.name not in done and before[lg.name] <= done), None)
+        if nxt is None:
+            raise ValueError(f"legs: no build order satisfies the corners ({before})")
+        out.append(nxt)
+    return out
+
+
 # ── layout ────────────────────────────────────────────────────────────────────
 def layout(cfg: dict, n0: int) -> list:
     """Trapezoid wall: course 0 has n0 stones, every course above one stone less (bond offset 0.5)."""

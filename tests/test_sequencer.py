@@ -730,18 +730,18 @@ def cjob(ccfg):
     return make_job.build_nominal(ccfg)
 
 
-def test_c_leg_change_b_to_c_and_station_trip_from_c(ccfg, cjob, tmp_path):
-    """The second corner of the C: the last stop of leg B, the leg change B -> C (ARES turns around the B-C corner to
-    the outside of C) and a station trip from leg C, with realistic errors - every stone seated, the true ARES path
-    clear of legs, plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
+def test_c_leg_change_c_to_b_and_station_trip_from_b(ccfg, cjob, tmp_path):
+    """The second leg change of the C (built A, C, B since 2026-10-07: C runs through its corner with B): from leg C
+    to leg B and a station trip from leg B, with realistic errors - every stone seated, the true ARES path clear of
+    legs, plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
     j = copy.deepcopy(cjob)
-    b, c = j.stops[2], j.stops[3]
-    assert (b.leg, c.leg) == ("B", "C")
-    b.stones, c.stones = b.stones[:2], c.stones[:4]                         # B's last stop may hold only 1 stone
-    n = len(b.stones) + len(c.stones)
-    b.index, c.index = 0, 1
-    b.route = []
-    j.stops = [b, c]
+    c, b = j.stops[1], j.stops[2]
+    assert (c.leg, b.leg) == ("C", "B")
+    c.stones, b.stones = c.stones[:2], b.stones[:4]
+    n = len(c.stones) + len(b.stones)
+    c.index, b.index = 0, 1
+    c.route = []
+    j.stops = [c, b]
     j.magazine.initial_fill = list(j.magazine.fill_order[:3])
     make_job.plan_slots(j.stops, j.magazine, j.station, [])
     assert not __import__("mauer.job", fromlist=["validate"]).validate(j)

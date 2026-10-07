@@ -584,7 +584,8 @@ def test_c_legs_corners_and_stops(ccfg, cjob):
     assert not any("butt corner" in w for w in cjob.meta["warnings"])
     assert cjob.n_stones == sum(4 * lg.n0 + 2 for lg in legs) == 74                 # A 5 / B 7 / C 5 (2026-10-07)
     assert sum(t.kind == "half" for t in cjob.stones()) == 12 and cjob.meta["shape"] == "C"
-    assert [s.leg for s in cjob.stops] == ["A", "B", "B", "C"]
+    assert [s.leg for s in cjob.stops] == ["A", "C", "B", "B"]          # built A, C, B: C runs through its corner
+    assert cjob.meta["build_order"] == ["A", "C", "B"]                       # with B (wallplan.build_order)
     by = {lg.name: lg for lg in legs}
     lim = {d["name"]: d["a_limits_mm"] for d in cjob.meta["legs"]}
     assert lim["B"] == pytest.approx([460.0, 940.0])                         # between A's and C's plates (C runs
@@ -603,14 +604,14 @@ def test_c_legs_corners_and_stops(ccfg, cjob):
 
 
 def test_c_routes_and_floor(ccfg, cjob):
-    """Every move between stops (incl. both leg changes A -> B and B -> C) and every station trip is a validated route;
+    """Every move between stops (incl. both leg changes A -> C and C -> B) and every station trip is a validated route;
     no ARES footprint at a stop touches a leg, plate or the table; inside the C every move between stops is ONE
     straight translation (no rotation), the leg changes are short; 840 mm in front / 580 mm on a side leave 110 mm to
     the plates."""
     from mauer.sequencer import route_problems
     assert route_problems(ccfg, cjob) == []
     rc = json.dumps(cjob.meta["route_check"])
-    assert "leg change stop 0 -> stop 1" in rc and "leg change stop 2 -> stop 3" in rc
+    assert "leg change stop 0 -> stop 1" in rc and "leg change stop 1 -> stop 2" in rc
     for st in cjob.stops[1:]:
         assert st.route and st.route[0] == cjob.stops[st.index - 1].ares and st.route[-1] == st.ares
         segs, _ = floor.segments(st.route)                                   # translations only, no turn; the last
@@ -620,7 +621,8 @@ def test_c_routes_and_floor(ccfg, cjob):
         assert math.isclose(math.atan2(last.end.y_mm - last.start.y_mm, last.end.x_mm - last.start.x_mm),
                             st.ares.theta_rad, abs_tol=1e-9)
     assert math.hypot(cjob.stops[1].ares.x_mm - cjob.stops[0].ares.x_mm,
-                      cjob.stops[1].ares.y_mm - cjob.stops[0].ares.y_mm) < 200.0     # leg change A -> B at the corner
+                      cjob.stops[1].ares.y_mm - cjob.stops[0].ares.y_mm) < 400.0     # leg change A -> C: sideways
+    # across the inside of the C (both stops at x = 120 mm, 580 mm from their leg)
     p = ccfg["plates"]
     band = p["block_width"] / 2 + p["plate_depth"]
     for lg in make_job.load_wallplan().legs(ccfg):
