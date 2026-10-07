@@ -47,9 +47,10 @@ NEW_INSTANCE_PORT = 20599                          # own API port; the user's Ro
 NEW_INSTANCE_ARGS = ("-NEWINSTANCE", "-NOSPLASH", "-EXIT_LAST_COM")
 
 
-def load_config() -> dict:
-    with open(REPO / "config" / "station.toml", "rb") as f:
-        return tomllib.load(f)
+def load_config(variant: str | None = None) -> dict:
+    """config/station.toml (with the overlay config/variants/<variant>.toml: mauer.config.load)."""
+    from mauer import config as mconfig
+    return mconfig.load(variant=variant)
 
 
 def connect(new_instance: bool = False, port: int | None = None, minimized: bool = True) -> Robolink:

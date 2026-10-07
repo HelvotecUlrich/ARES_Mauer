@@ -68,10 +68,10 @@ def with_legs(cfg: dict, n0s) -> dict:
     c = copy.deepcopy(cfg)
     inside = bool(c["wall"].get("ares_inside", False))
     old = {str(d["name"]): d for d in cfg["wall"].get("legs") or []}
-    legs_ = [wp.Leg(LEG_NAMES[0], int(n0s[0]))]
+    legs_ = [wp.Leg(LEG_NAMES[0], wp.stones_n0(n0s[0]))]
     for name, n in zip(LEG_NAMES[1:], n0s[1:]):
         through = "next" if old.get(name, {}).get("runs_through") else "prev"
-        legs_.append(wp.butt_corner(c, legs_[-1], int(n), name, towards_ares=inside, through=through))
+        legs_.append(wp.butt_corner(c, legs_[-1], n, name, towards_ares=inside, through=through))
     c["wall"]["legs"] = [{"name": lg.name, "n0": lg.n0, "xyz_in_wall": [round(lg.x, 6), round(lg.y, 6), 0.0],
                           "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(lg.theta), 9)],
                           **{k: old[lg.name][k] for k in ("side", "dist", "runs_through")

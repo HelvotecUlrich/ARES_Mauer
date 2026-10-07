@@ -644,8 +644,11 @@ def _finish(ctx: _Ctx, stops, magazine, station, key, meta_extra, config_path, l
     cfg_path = Path(config_path or STATION_TOML)
     meta = _common_meta(ctx, key, {**meta_extra, "planned_reloads": slot_info["reloads"],
                                    "planned_station_refills": slot_info["station_refills"]})
+    variant = mconfig.variant_of(ctx.cfg)
+    if variant:
+        meta["config_variant"] = variant                 # config/variants/<variant>.toml over station.toml
     job = mjob.Job(stops, magazine, station, ctx.T_flange_tcp, ctx.T_ares_base, ctx.q_park.tolist(), ctx.approach,
-                   mjob.config_sha256(cfg_path), mjob.depends_on(ctx.cfg, DEPENDS_PATTERNS, cfg_path),
+                   mjob.config_sha256(cfg_path, variant), mjob.depends_on(ctx.cfg, DEPENDS_PATTERNS, cfg_path),
                    "tools/make_job.py build_nominal (config + robodk/wallplan.py + results/reach_table.json)",
                    meta=meta, legs=legs or [])
     problems = mjob.validate(job, boards=[p.name for p in ctx.pl])
@@ -858,16 +861,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-half-stones", action="store_true", help="L: legs as trapezoids (full stones only)")
     ap.add_argument("--dist", type=float, default=None, help="wall distance [mm] (default [wall] dist_nominal)")
     ap.add_argument("--config", default=None, help="station.toml (default config/station.toml)")
+    ap.add_argument("--variant", default=None,
+                    help="config variant: config/variants/<VARIANT>.toml over the config (output name gets _VARIANT)")
     ap.add_argument("--reach-table", default=None, help="reach table JSON (default results/reach_table.json)")
     ap.add_argument("--allow-stale-reach", action="store_true", help="use a reach table of another configuration")
     ap.add_argument("--max-looks", type=int, default=2, help="boards (look poses) per stop")
     ap.add_argument("--look-margin", type=float, default=LOOK_MARGIN_MM,
                     help="look poses must stay reachable for ARES errors up to this [mm] (kinematic check)")
     ap.add_argument("--out", default=None, help="output JSON (default data/jobs/nominal_L<length>.json, a wall of "
-                                                "legs: data/jobs/nominal_<[wall] shape>.json)")
+                                                "legs: data/jobs/nominal_<[wall] shape>[_<variant>].json)")
     ap.add_argument("--print", action="store_true", help="print the job summary only, write nothing")
     args = ap.parse_args(argv)
-    cfg = mconfig.load(args.config)
+    cfg = mconfig.load(args.config, args.variant)
     try:
         job = build_nominal(cfg, args.length, args.dist, reach_table_path=args.reach_table,
                             allow_stale_reach=args.allow_stale_reach, max_looks=args.max_looks,
@@ -879,8 +884,8 @@ def main(argv: list[str] | None = None) -> int:
     print(job.summary())
     if args.print:
         return 0
-    name = (f"nominal_{job.meta.get('shape', 'legs')}.json" if job.legs
-            else f"nominal_L{job.meta.get('length_stones', args.length)}.json")
+    name = (f"nominal_{job.meta.get('shape', 'legs')}{mconfig.suffix(cfg)}.json" if job.legs
+            else f"nominal_L{job.meta.get('length_stones', args.length)}{mconfig.suffix(cfg)}.json")
     out = Path(args.out) if args.out else REPO / "data" / "jobs" / name
     mjob.save(job, out)
     print(f"written {out}")

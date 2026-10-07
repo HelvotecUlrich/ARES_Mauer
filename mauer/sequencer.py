@@ -241,6 +241,10 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
     """Every reason not to run this job on the real robot (empty list = ok). Lists all problems at once."""
     from .job import config_sha256
     p: list[str] = []
+    variant = job.meta.get("config_variant") or None        # config/variants/<variant>.toml the job was built with
+    if (cfg.get("_variant") or None) != variant:
+        p.append(f"config variant {cfg.get('_variant')!r} loaded, the job was built with {variant!r} - load the "
+                 "same variant (--variant)")
     u, b, v = cfg.get("ur", {}), cfg.get("brick", {}), cfg.get("vision", {})
     if not str(u.get("host", "")).strip():
         p.append("[ur] host is empty (PLACEHOLDER) - set the UR5 IP")
@@ -261,7 +265,7 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
             p.append(f"payload {tool + half:.2f} kg (tool + half stone) exceeds the UR5 rated payload 5 kg")
         try:
             from .job import config_status
-            ph = sorted(k.split(" ", 1)[1] for k, v in config_status(config_path).items()
+            ph = sorted(k.split(" ", 1)[1] for k, v in config_status(config_path, variant).items()
                         if k.startswith("[half_brick] ") and v["status"] == "PLACEHOLDER")
         except OSError:
             ph = []
@@ -286,9 +290,10 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
     if any(t.qnear_rad is None for t in job.stones()):
         p.append("job has place poses without an IK branch hint (qnear)")
     try:
-        sha = config_sha256(config_path)
+        sha = config_sha256(config_path, variant)
         if job.config_sha256 and sha != job.config_sha256:
-            p.append("config/station.toml changed since the job was built (sha256 differs) - rebuild the job")
+            p.append("config/station.toml" + (f" + variants/{variant}.toml" if variant else "")
+                     + " changed since the job was built (sha256 differs) - rebuild the job")
     except OSError as e:
         p.append(f"config not readable: {e}")
     for key, val in (("do_grip_open", u.get("do_grip_open")), ("do_grip_close", u.get("do_grip_close"))):

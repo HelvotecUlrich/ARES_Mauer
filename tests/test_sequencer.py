@@ -719,10 +719,10 @@ def test_full_l(lcfg, ljob, tmp_path, capsys):
 
 
 # ── the C of the config (Samuel 2026-10-06; wall distance 840 mm) ─────────────────────────────────────────────────
-@pytest.fixture(scope="module")
-def ccfg():
+@pytest.fixture(scope="module", params=[None, "c_acb"], ids=lambda v: v or "main")
+def ccfg(request):
     from mauer import config
-    return config.load()
+    return config.load(variant=request.param)
 
 
 @pytest.fixture(scope="module")
@@ -730,13 +730,14 @@ def cjob(ccfg):
     return make_job.build_nominal(ccfg)
 
 
-def test_c_leg_change_c_to_b_and_station_trip_from_b(ccfg, cjob, tmp_path):
-    """The second leg change of the C (built A, C, B since 2026-10-07: C runs through its corner with B): from leg C
-    to leg B and a station trip from leg B, with realistic errors - every stone seated, the true ARES path clear of
-    legs, plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
+def test_c_last_leg_change_and_station_trip(ccfg, cjob, tmp_path):
+    """The last leg change of the C (main config A -> B -> C: B to C; variant c_acb, built A, C, B: C to B) and a
+    station trip from the leg after it, with realistic errors - every stone seated, the true ARES path clear of legs,
+    plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
     j = copy.deepcopy(cjob)
-    c, b = j.stops[1], j.stops[2]
-    assert (c.leg, b.leg) == ("C", "B")
+    k = max(i for i in range(1, len(j.stops)) if j.stops[i].leg != j.stops[i - 1].leg)
+    c, b = j.stops[k - 1], j.stops[k]
+    assert (c.leg, b.leg) == {None: ("B", "C"), "c_acb": ("C", "B")}[ccfg.get("_variant")]
     c.stones, b.stones = c.stones[:2], b.stones[:4]
     n = len(c.stones) + len(b.stones)
     c.index, b.index = 0, 1

@@ -10,12 +10,49 @@ from . import REPO
 from .geometry import pose_xyz_rpy
 
 STATION_TOML = REPO / "config" / "station.toml"
+VARIANTS = REPO / "config" / "variants"
 
 
-def load(path: str | Path | None = None) -> dict:
-    """Station config as a plain dict (same content as robodk/rdk_common.load_config())."""
+def variant_path(name: str) -> Path:
+    """config/variants/<name>.toml; FileNotFoundError listing the known variants if it does not exist."""
+    p = VARIANTS / f"{name}.toml"
+    if not p.is_file():
+        known = sorted(q.stem for q in VARIANTS.glob("*.toml")) if VARIANTS.is_dir() else []
+        raise FileNotFoundError(f"config variant {name!r} not found ({p}); known: {known}")
+    return p
+
+
+def merge(base: dict, over: dict) -> dict:
+    """base with `over` laid over it: tables merged key by key (recursively), every other value - also an array or an
+    array of tables such as [[wall.legs]] - replaced as a whole."""
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def load(path: str | Path | None = None, variant: str | None = None) -> dict:
+    """Station config as a plain dict (same content as robodk/rdk_common.load_config()). variant: the overlay
+    config/variants/<variant>.toml merged over it (merge(); 2026-10-07: wall layouts kept side by side) - the result
+    carries its name in cfg["_variant"] (variant_of, suffix)."""
     with open(Path(path) if path else STATION_TOML, "rb") as f:
-        return tomllib.load(f)
+        cfg = tomllib.load(f)
+    if variant:
+        with open(variant_path(variant), "rb") as f:
+            cfg = merge(cfg, tomllib.load(f))
+        cfg["_variant"] = str(variant)
+    return cfg
+
+
+def variant_of(cfg: dict) -> str | None:
+    """Name of the config variant cfg was loaded with (None = config/station.toml alone)."""
+    return cfg.get("_variant") or None
+
+
+def suffix(cfg: dict) -> str:
+    """'_<variant>' for output file names of a variant config, '' for the main config."""
+    v = variant_of(cfg)
+    return f"_{v}" if v else ""
 
 
 def repo_path(rel: str | Path) -> Path:

@@ -74,11 +74,13 @@ class Stone:
 
 @dataclass(frozen=True)
 class Leg:
-    """A straight leg of the wall: n0 full stones in course 0, frame (x, y, theta) in the wall frame. side / dist:
-    on which side of ARES the leg is built ("front", "left", "right", "rear") and at which distance ARES centre ->
-    leg centreline [mm]; "" / None = the [wall] side / dist_nominal of the config."""
+    """A straight leg of the wall: n0 stones in course 0 - a whole number of full stones, or x.5 (2026-10-07: A of
+    5 1/2 stones): floor(n0) full stones and a half stone at the end of course 0 (half_stones_layout) - frame (x, y,
+    theta) in the wall frame. side / dist: on which side of ARES the leg is built ("front", "left", "right", "rear")
+    and at which distance ARES centre -> leg centreline [mm]; "" / None = the [wall] side / dist_nominal of the
+    config."""
     name: str
-    n0: int
+    n0: float
     x: float = 0.0
     y: float = 0.0
     theta: float = 0.0      # rad, heading of the leg x axis in the wall frame
@@ -116,9 +118,28 @@ def half_length(cfg: Mapping) -> float:
     return float(cfg.get("half_brick", {}).get("length", cfg["brick"]["length"] / 2.0))
 
 
-def leg_length(cfg: Mapping, n0: int) -> float:
-    """Length of course 0 of a leg with n0 full stones [mm]."""
+def leg_length(cfg: Mapping, n0: float) -> float:
+    """Length of course 0 of a leg with n0 stones [mm] (n0 = x.5: the half stone + head joint = half a pitch, which
+    layout_leg checks)."""
     return n0 * pitch(cfg) - float(cfg["brick"]["head_joint"])
+
+
+def stones_n0(n0) -> int | float:
+    """n0 of a leg from the config: a whole number of stones or x.5 (ValueError otherwise); whole numbers as int."""
+    v = float(n0)
+    if v < 1.0 or abs(2.0 * v - round(2.0 * v)) > 1e-9:
+        raise ValueError(f"n0 = {n0!r}: a leg has a whole number of stones in course 0, or x.5 (one half stone)")
+    return int(round(v)) if abs(v - round(v)) < 1e-9 else round(2.0 * v) / 2.0
+
+
+def full_stones(n0: float) -> int:
+    """Full stones in course 0 of a leg with n0 stones."""
+    return int(math.floor(n0 + 1e-9))
+
+
+def has_half_end(n0: float) -> bool:
+    """n0 = x.5: course 0 ends with a half stone (the odd courses start with one)."""
+    return abs(n0 - round(n0)) > 1e-9
 
 
 def course_top(cfg: Mapping, k: int) -> float:
@@ -142,7 +163,7 @@ def legs(cfg: Mapping) -> list[Leg]:
         side = str(d.get("side", ""))
         if side not in ("", "front", "left", "right", "rear"):
             raise ValueError(f"leg {d.get('name')!r}: side {side!r} not front / left / right / rear")
-        out.append(Leg(str(d["name"]), int(d["n0"]), xyz[0], xyz[1], math.radians(rpy[2]), side,
+        out.append(Leg(str(d["name"]), stones_n0(d["n0"]), xyz[0], xyz[1], math.radians(rpy[2]), side,
                        None if d.get("dist") is None else float(d["dist"])))
     names = [lg.name for lg in out]
     if len(set(names)) != len(names):
@@ -180,7 +201,7 @@ def butt_corner(cfg: Mapping, prev: Leg, n0: int, name: str, towards_ares: bool 
         x, y = prev.to_wall(L + W / 2.0 + rib(cfg) + corner_gap(cfg), -sgn * W / 2.0)
     else:
         raise ValueError(f"butt_corner: through must be 'prev' or 'next', not {through!r}")
-    return Leg(name, int(n0), x, y, _wrap(prev.theta + sgn * math.pi / 2.0), side, dist)
+    return Leg(name, stones_n0(n0), x, y, _wrap(prev.theta + sgn * math.pi / 2.0), side, dist)
 
 
 def corner_of(cfg: Mapping, prev: Leg, nxt: Leg, tol_mm: float = 1e-6) -> dict | None:
@@ -239,13 +260,17 @@ def layout(cfg: dict, n0: int) -> list:
 
 
 def layout_leg(cfg: Mapping, leg: Leg, half_stones: bool = True) -> list[Stone]:
-    """Stones of one leg (leg frame u). half_stones: rectangle (half stones at both ends of odd courses); else the
-    trapezoid of `layout`. ValueError if the half stone does not fit the bond (length + head joint = bond offset)
-    or is not as high as a full stone."""
+    """Stones of one leg (leg frame u). half_stones: rectangle (half stones at both ends of odd courses; a leg of
+    x.5 stones: even courses floor(n0) full stones + a half stone at the END, odd courses a half stone at the START +
+    floor(n0) full stones - the full stones of course 0 keep their joints at whole pitches); else the trapezoid of
+    `layout`. ValueError if the half stone does not fit the bond (length + head joint = bond offset) or is not as
+    high as a full stone."""
     b, w = cfg["brick"], cfg["wall"]
     L, hj = float(b["length"]), float(b["head_joint"])
     p = L + hj
     if not half_stones:
+        if has_half_end(leg.n0):
+            raise ValueError(f"leg {leg.name}: {leg.n0} stones need half stones (no trapezoid of x.5 stones)")
         return [replace(s, leg=leg.name, length=L) for s in layout(dict(cfg), leg.n0)]
     hb = cfg.get("half_brick", {})
     Lh = half_length(cfg)
@@ -255,12 +280,17 @@ def layout_leg(cfg: Mapping, leg: Leg, half_stones: bool = True) -> list[Stone]:
     if abs(float(hb.get("height", b["height"])) - float(b["height"])) > EPS:
         raise ValueError("half stone height differs from the full stone height: courses would not line up")
     stones = []
+    nf, end_half = full_stones(leg.n0), has_half_end(leg.n0)
     for k in range(int(w["courses"])):
         z = course_top(cfg, k)
         if (k * float(w["bond_offset"])) % 1.0 < EPS:
-            row = [(L / 2 + i * p, FULL, L) for i in range(leg.n0)]
+            row = [(L / 2 + i * p, FULL, L) for i in range(nf)]
+            if end_half:
+                row.append((nf * p + Lh / 2, HALF, Lh))
+        elif end_half:
+            row = [(Lh / 2, HALF, Lh)] + [(Lh + hj + L / 2 + i * p, FULL, L) for i in range(nf)]
         else:
-            row = ([(Lh / 2, HALF, Lh)] + [(Lh + hj + L / 2 + i * p, FULL, L) for i in range(leg.n0 - 1)]
+            row = ([(Lh / 2, HALF, Lh)] + [(Lh + hj + L / 2 + i * p, FULL, L) for i in range(nf - 1)]
                    + [(leg_length(cfg, leg.n0) - Lh / 2, HALF, Lh)])
         stones += [Stone(k, i, u, z, leg.name, kind, ln) for i, (u, kind, ln) in enumerate(row)]
     return stones
@@ -375,12 +405,41 @@ def sequence(cfg: dict, stones: list, reach: Callable[[int, float], bool], reach
 
 def sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, float], bool], lo: Mapping,
                  hi: Mapping, grid: float, margin_mm: float = 0.0, max_stops: int = 50,
-                 a_lim: tuple[float, float] | None = None) -> list:
+                 a_lim: tuple[float, float] | None = None, balance: bool = True) -> list:
     """Plan of ONE leg: [(a_j, [Stone, ...]), ...] (a in the leg frame, multiples of `grid` so that full stones lie on
     reach-table grid points). First stop: the farthest position that leaves no stone behind the trailing reach edge;
     then as `sequence` (advance by whole pitches); a stop from which ALL remaining stones are reachable is put in the
     middle of that window (never behind the previous stop). a_lim = (a_min, a_max): ARES may only stop there (e.g.
-    inside a C, between the other legs). RuntimeError when stuck."""
+    inside a C, between the other legs). RuntimeError when stuck.
+    balance (2026-10-07, Samuel: "ARES drives once more for a single stone"): with two or more stops, the first stop
+    is also tried closer to the leg start (every grid position down to 1000 mm before the greedy one); the plan with
+    the fewest stops, then the largest smallest batch, wins - e.g. leg B of the C: 29 + 1 stones -> a balanced split
+    (the top course of B is 1.30 m long, the UR reaches +-0.62 m along the wall there: one stop cannot do it)."""
+    plan = _sequence_leg(cfg, stones, reach, lo, hi, grid, margin_mm, max_stops, a_lim)
+    if not balance or len(plan) < 2:
+        return plan
+    best, key = plan, (len(plan), -min(len(b) for _, b in plan))
+    a0 = plan[0][0]
+    lim_lo = -math.inf if a_lim is None else grid * math.ceil(a_lim[0] / grid - 1e-9)
+    a = a0 - grid
+    while a >= max(lim_lo, a0 - 1000.0) - 1e-9:
+        try:
+            alt = _sequence_leg(cfg, stones, reach, lo, hi, grid, margin_mm, max_stops, a_lim, a_first=a)
+        except RuntimeError:
+            alt = None
+        if alt is not None:
+            k = (len(alt), -min(len(b) for _, b in alt))
+            if k < key:
+                best, key = alt, k
+        a -= grid
+    return best
+
+
+def _sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, float], bool], lo: Mapping,
+                  hi: Mapping, grid: float, margin_mm: float = 0.0, max_stops: int = 50,
+                  a_lim: tuple[float, float] | None = None, a_first: float | None = None) -> list:
+    """sequence_leg without balancing; a_first: the first stop (instead of the farthest one that leaves nothing
+    behind)."""
     if len({s.leg for s in stones}) > 1:
         raise ValueError("sequence_leg: stones of more than one leg")
     pitch_ = pitch(cfg)
@@ -397,7 +456,11 @@ def sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, fl
         if a_prev is not None:
             a_min = max(a_min, a_prev + grid)
         a = None
-        if a_min <= a_max:                                    # the rest fits in one stop: centre it
+        if a_prev is None and a_first is not None:            # forced first stop (balancing)
+            if not lim_lo - 1e-9 <= a_first <= lim_hi + 1e-9:
+                raise RuntimeError(f"leg {stones[0].leg}: first stop {a_first:.0f} outside the limits")
+            a = a_first
+        elif a_min <= a_max:                                  # the rest fits in one stop: centre it
             mid = grid * round((a_min + a_max) / 2.0 / grid)
             for c in sorted({min(max(mid, a_min), a_max), a_max, a_min}, key=lambda v: abs(v - mid)):
                 if all(reach(s.course, s.u - c) for s in open_):

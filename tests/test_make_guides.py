@@ -93,12 +93,13 @@ def test_every_first_course_stone_has_two_cones_in_diagonal_sockets(data):
     p = data["params"]
     holes = _holes_in_leg(data)
     a, b = p.pin_along / 2, p.pin_across / 2
-    for lg in data["legs"]:
-        want = sorted((round(k * p.pitch + p.pitch / 2 + s * a, 6), round(s * b, 6)) for k in range(lg.n0)
-                      for s in (-1, 1))
+    for lg in data["legs"]:                       # a half stone (A 5 1/2): its two cones in its own pin pair
+        want = sorted(q for u0, u1, kind in mg.course0(p, lg)
+                      for q in ([(round((u0 + u1) / 2 + s * a, 6), round(s * b, 6)) for s in (-1, 1)] if kind == "full"
+                                else [(round((u0 + u1) / 2, 6), round(s * b, 6)) for s in (-1, 1)]))
         assert holes[lg.name] == pytest.approx(want, abs=1e-6), lg.name
     names = [pc.name for pc in data["leg_pieces"]]
-    assert names == ["A0-A2", "A3-B1", "B2-B4", "B5-C1", "C2-C4"]                 # A 5 / B 7 / C 5
+    assert names == ["A0-A1", "A2-A3", "A4-B1", "B2-B4", "B5-C1", "C2-C4"]  # A 5 1/2 / B 7 / C 5 (2026-10-07)
 
 
 def _tab_apexes(data):
@@ -146,9 +147,11 @@ def _inside(q, P):
 
 def _crosses(P, Q):
     def seg(a, b, c, d):
-        def o(p_, q, r):
-            return (q[0] - p_[0]) * (r[1] - p_[1]) - (q[1] - p_[1]) * (r[0] - p_[0])
-        return o(a, b, c) * o(a, b, d) < -1e-9 and o(c, d, a) * o(c, d, b) < -1e-9
+        def o(p_, q, r):                         # signed distance [mm] of r from the line p_ -> q
+            return ((q[0] - p_[0]) * (r[1] - p_[1]) - (q[1] - p_[1]) * (r[0] - p_[0])) / max(math.dist(p_, q), 1e-12)
+        def apart(x, y):                         # strictly on both sides, each by more than 1 um
+            return (x > 1e-6 and y < -1e-6) or (x < -1e-6 and y > 1e-6)
+        return apart(o(a, b, c), o(a, b, d)) and apart(o(c, d, a), o(c, d, b))
     E = list(zip(P, P[1:] + P[:1]))
     F = list(zip(Q, Q[1:] + Q[:1]))
     return any(seg(a, b, c, d) for a, b in E for c, d in F) or any(_inside(q, P) for q in Q) \
@@ -244,9 +247,11 @@ def test_kerf_compensation_of_the_cut_lines(data, tmp_path):
     assert radii == {round((p.peg_hole_d - p.kerf) / 2, 4)}
 
 
-def test_corner_where_c_runs_through_is_one_piece_and_the_ends_line_up(data):
-    """2026-10-07 (Samuel: the ends of A and C line up): C runs through its corner with B; the L-piece B5-C1 covers
-    B's last stone, the filled corner gap and C's first stones, and A's start lies on the line of C's end."""
+def test_corner_where_c_runs_through_is_one_piece_and_the_ends_line_up():
+    """Variant c_acb (2026-10-07, Samuel: the ends of A and C line up): C runs through its corner with B; the L-piece
+    B5-C1 covers B's last stone, the filled corner gap and C's first stones, and A's start lies on the line of C's
+    end."""
+    data = mg.build(config.load(variant="c_acb"), with_job=False)
     pc = next(pc for pc in data["leg_pieces"] if pc.name == "B5-C1")
     assert "C runs through" in pc.notes
     poly = [pc.to_wall(q) for q in pc.outline]
@@ -257,3 +262,14 @@ def test_corner_where_c_runs_through_is_one_piece_and_the_ends_line_up(data):
               C.to_wall(P / 2, 0.0), C.to_wall(1.5 * P, 0.0)):                    # C's first two stones
         assert _inside(q, poly), q
     assert A.to_wall(0.0, 0.0)[0] == pytest.approx(C.to_wall(C.n0 * P, 0.0)[0], abs=1e-9)
+
+
+def test_a_leg_of_five_and_a_half_stones_ends_with_a_half_stone_on_the_corner_piece(data):
+    """Main config 2026-10-07: A 5 1/2 stones - course 0 = 5 full stones + a half stone at the corner end, on the
+    corner L-piece A4-B1 with the two cones of its own pin pair; A's joints (V-tabs) stay at whole pitches."""
+    p = data["params"]
+    A = next(lg for lg in data["legs"] if lg.name == "A")
+    st = mg.course0(p, A)
+    assert [k for _, _, k in st] == ["full"] * 5 + ["half"] and st[-1][1] == pytest.approx(1100.0)
+    pc = next(pc for pc in data["leg_pieces"] if pc.name.startswith("A4-"))
+    assert [b[0] for b in pc.blocks if b[0].startswith("A")] == ["A4", "A5"] and pc.blocks[1][3] == "half"

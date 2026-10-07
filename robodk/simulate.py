@@ -1825,8 +1825,17 @@ def problems_of(sim: LSim, info: dict) -> list:
 
 
 def main(argv: list | None = None) -> int:
-    cfg = load_config()
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--variant", default=None)
+    variant = pre.parse_known_args(argv)[0].variant
+    cfg = load_config(variant)
+    from mauer import config as mconfig
+    sfx = mconfig.suffix(cfg)
+    l_report = REPO / "results" / f"l_wall_sim{sfx}.md"
+    l_rdk = REPO / "robodk" / f"{STATION_NAME}_L{sfx}.rdk"
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
+    ap.add_argument("--variant", default=None,
+                    help="config variant config/variants/<VARIANT>.toml (report / station names get _VARIANT)")
     ap.add_argument("--length", type=int, default=None,
                     help="STRAIGHT wall of N stones in course 0 (default: the L of [[wall.legs]], else 16)")
     ap.add_argument("--speed", type=float, default=5.0, help="RoboDK simulation speed factor")
@@ -1841,14 +1850,15 @@ def main(argv: list | None = None) -> int:
                     help="L: no station trips - the magazine is refilled without driving or picking")
     ap.add_argument("--no-images", action="store_true")
     ap.add_argument("--no-report", action="store_true")
-    ap.add_argument("--report", type=Path, default=None, help=f"L report (default {L_REPORT.relative_to(REPO)})")
+    ap.add_argument("--report", type=Path, default=None, help=f"L report (default {l_report.relative_to(REPO)})")
     ap.add_argument("--json", type=Path, default=None, help="L: raw results as JSON")
     ap.add_argument("--save-looks", type=Path, default=None, help="L: write every valid look image to this folder")
-    ap.add_argument("--out", type=Path, default=None, help=f"L: station .rdk (default {L_RDK.relative_to(REPO)})")
+    ap.add_argument("--out", type=Path, default=None, help=f"L: station .rdk (default {l_rdk.relative_to(REPO)})")
     ap.add_argument("--video", type=Path, default=None,
                     help="L: time-lapse MP4 of the run (robodk/timelapse.py: a frame after every move)")
     ap.add_argument("--video-fps", type=int, default=30)
     args = ap.parse_args(argv)
+    args.out, args.report = args.out or l_rdk, args.report or l_report
     is_l = args.length is None and wallplan.is_l(cfg)
     if args.length is None:
         args.length = 16

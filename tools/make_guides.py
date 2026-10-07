@@ -293,6 +293,17 @@ def corner_geometry(a, b, h: float, L: float) -> tuple[str, float]:
                      f"through beyond {a.name}'s end; got {math.degrees(dth):.1f} deg, u {u:.1f}, v {v:.1f} mm)")
 
 
+def course0(p: GuideParams, lg) -> list[tuple[float, float, str]]:
+    """First-course stones of a leg on its strip: (u0, u1, kind) - floor(n0) full stones from u = 0, and for a leg of
+    x.5 stones a half stone at the end (robodk/wallplan.layout_leg, 2026-10-07: A of 5 1/2 stones)."""
+    P = p.pitch
+    nf = int(math.floor(lg.n0 + 1e-9))
+    out = [(k * P, (k + 1) * P, "full") for k in range(nf)]
+    if lg.n0 - nf > 1e-9:
+        out.append((nf * P, lg.n0 * P, "half"))
+    return out
+
+
 def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece]:
     """The MDF pieces of all legs in wall order (see the module docstring)."""
     h, P, off = p.h, p.pitch, p.cut_offset
@@ -303,37 +314,43 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
     pieces: list[Piece] = []
     nl = len(legs)
     for i, lg in enumerate(legs):
-        L = lg.n0 * P
+        st = course0(p, lg)
+        n = len(st)
+        J = [u0 for u0, _, _ in st] + [st[-1][1]]          # course-0 joints, J[0] = 0, J[n] = leg length
+        L = J[-1]
         first = p.arm if i > 0 else 0
         last = p.arm if i < nl - 1 else 0
-        if first + last > lg.n0:
-            raise ValueError(f"leg {lg.name}: {lg.n0} stones are fewer than the corner arms ({first} + {last})")
-        for grp in _split(list(range(first, lg.n0 - last)), kmax):
+        if first + last > n:
+            raise ValueError(f"leg {lg.name}: {n} stones are fewer than the corner arms ({first} + {last})")
+        for grp in _split(list(range(first, n - last)), kmax):
             a, b = grp[0], grp[-1] + 1
-            u0 = 0.0 if a == 0 else a * P + off
-            u1 = L if b == lg.n0 else b * P + off
+            u0 = 0.0 if a == 0 else J[a] + off
+            u1 = L if b == n else J[b] + off
             poly = [(u0, -h), (u1, -h), (u1, h), (u0, h)]
-            feats: dict[int, list] = {2: [(u1 - k * P, "tab") for k in range(1, lg.n0) if u0 < k * P < u1]}
+            feats: dict[int, list] = {2: [(u1 - J[k], "tab") for k in range(1, n) if u0 < J[k] < u1]}
             if not (i == 0 and a == 0):
                 feats[3] = [(h, "tail")]
-            if not (i == nl - 1 and b == lg.n0):
+            if not (i == nl - 1 and b == n):
                 feats[1] = [(h, "socket")]
             pc = Piece(f"{lg.name}{a}-{lg.name}{b - 1}", (lg.x, lg.y, lg.theta), decorate(p, poly, feats))
-            _stones(p, pc, lg.name, range(a, b), lambda q: q, 0.0, plate_at)
+            _stones(p, pc, lg.name, st, range(a, b), lambda q: q, 0.0, plate_at)
             pieces.append(pc)
         if i < nl - 1:
             nb = legs[i + 1]
+            stb = course0(p, nb)
+            Jb = [u0 for u0, _, _ in stb] + [stb[-1][1]]
+            nbn = len(stb)
             kind, c0 = corner_geometry(lg, nb, h, L)
-            u_cut = (lg.n0 - p.arm) * P + off
-            arm_end = nb.n0 * P if (i + 1 == nl - 1 and p.arm == nb.n0) else p.arm * P + off
+            u_cut = J[n - p.arm] + off
+            arm_end = Jb[-1] if (i + 1 == nl - 1 and p.arm == nbn) else Jb[p.arm] + off
             if kind == "prev":                         # lg runs through, nb starts beside its ARES-side face
                 v0 = c0
                 v_end = v0 + arm_end
                 poly = [(u_cut, -h), (L, -h), (L, v_end), (L - 2 * h, v_end), (L - 2 * h, h), (u_cut, h)]
                 feats = {5: [(h, "tail")],
-                         4: [((L - 2 * h) - k * P, "tab") for k in range(1, lg.n0)
-                             if u_cut < k * P < L - 2 * h - p.vtab[0]],
-                         3: [(v_end - (v0 + k * P), "tab") for k in range(1, nb.n0) if 0 < k * P < arm_end - off / 2]}
+                         4: [((L - 2 * h) - J[k], "tab") for k in range(1, n)
+                             if u_cut < J[k] < L - 2 * h - p.vtab[0]],
+                         3: [(v_end - (v0 + Jb[k]), "tab") for k in range(1, nbn) if 0 < Jb[k] < arm_end - off / 2]}
 
                 def to_a(q: Pt, L=L, v0=v0) -> Pt:             # leg nb frame -> leg lg frame
                     return L - h - q[1], v0 + q[0]
@@ -342,31 +359,33 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
                 v_end = -h + arm_end
                 poly = [(u_cut, -h), (u0 + h, -h), (u0 + h, v_end), (u0 - h, v_end), (u0 - h, h), (u_cut, h)]
                 feats = {5: [(h, "tail")],
-                         4: [((u0 - h) - k * P, "tab") for k in range(1, lg.n0) if u_cut < k * P < L],
-                         3: [(arm_end - k * P, "tab") for k in range(1, nb.n0)
-                             if 2 * h + p.vtab[0] < k * P < arm_end - off / 2]}
+                         4: [((u0 - h) - J[k], "tab") for k in range(1, n) if u_cut < J[k] < L],
+                         3: [(arm_end - Jb[k], "tab") for k in range(1, nbn)
+                             if 2 * h + p.vtab[0] < Jb[k] < arm_end - off / 2]}
 
                 def to_a(q: Pt, u0=u0) -> Pt:                  # leg nb frame -> leg lg frame
                     return u0 - q[1], -h + q[0]
-            if not (i + 1 == nl - 1 and arm_end >= nb.n0 * P):
+            if not (i + 1 == nl - 1 and arm_end >= Jb[-1]):
                 feats[2] = [(h, "socket")]
-            pc = Piece(f"{lg.name}{lg.n0 - p.arm}-{nb.name}{p.arm - 1}", (lg.x, lg.y, lg.theta), decorate(p, poly, feats),
+            pc = Piece(f"{lg.name}{n - p.arm}-{nb.name}{p.arm - 1}", (lg.x, lg.y, lg.theta), decorate(p, poly, feats),
                        notes=f"corner {lg.name}/{nb.name} ({(lg if kind == 'prev' else nb).name} runs through)")
-            _stones(p, pc, lg.name, range(lg.n0 - p.arm, lg.n0), lambda q: q, 0.0, plate_at)
-            _stones(p, pc, nb.name, range(0, p.arm), to_a, math.pi / 2, plate_at)
+            _stones(p, pc, lg.name, st, range(n - p.arm, n), lambda q: q, 0.0, plate_at)
+            _stones(p, pc, nb.name, stb, range(0, p.arm), to_a, math.pi / 2, plate_at)
             pieces.append(pc)
     return pieces
 
 
-def _stones(p: GuideParams, pc: Piece, leg: str, ks, to_local, ang: float, plate_at: dict) -> None:
-    """Holes, engraved block footprints and labels of first-course stones ks of `leg` on piece pc (to_local maps the
-    leg's (u, v) into the piece frame, ang = the leg's rotation in the piece frame)."""
+def _stones(p: GuideParams, pc: Piece, leg: str, st: list, ks, to_local, ang: float, plate_at: dict) -> None:
+    """Holes, engraved block footprints and labels of the first-course stones ks (indices into st = course0 of
+    `leg`) on piece pc (to_local maps the leg's (u, v) into the piece frame, ang = the leg's rotation in the piece
+    frame)."""
     for k in ks:
-        c = to_local((k * p.pitch + p.pitch / 2.0, 0.0))
-        pc.holes += stone_holes(p, "full", c, ang)
-        pc.blocks.append((f"{leg}{k}", c, ang, "full"))
+        u0, u1, kind = st[k]
+        c = to_local(((u0 + u1) / 2.0, 0.0))
+        pc.holes += stone_holes(p, kind, c, ang)
+        pc.blocks.append((f"{leg}{k}", c, ang, kind))
         if (leg, k) in plate_at:
-            q = to_local((k * p.pitch + p.pitch / 2.0, p.h - 9.0))
+            q = to_local(((u0 + u1) / 2.0, p.h - 9.0))
             pc.texts.append((q, 5.0, f"plate {plate_at[(leg, k)]} ->"))
 
 
@@ -659,8 +678,7 @@ def floor_model(cfg: dict, p: GuideParams, legs: list, sites: list, st_pieces: l
     b, hb = cfg["brick"], cfg.get("half_brick", cfg["brick"])
     wr = float(b["width"]) / 2.0 + float(b.get("rib_mm", 0.0))
     for lg in legs:
-        for k in range(lg.n0):
-            u0, u1 = k * p.pitch, (k + 1) * p.pitch
+        for k, (u0, u1, _) in enumerate(course0(p, lg)):
             m.stones.append((f"{lg.name}{k}", [lg.to_wall(u, v) for u, v in ((u0, -wr), (u1, -wr), (u1, wr), (u0, wr))]))
         m.marks += [(f"{lg.name} start, outer corner", lg.to_wall(0.0, -p.h)),
                     (f"{lg.name} start, ARES-side corner", lg.to_wall(0.0, p.h)),
@@ -921,7 +939,8 @@ def build(cfg: dict, with_job: bool = True) -> dict:
         raise ValueError("make_guides needs a wall of legs ([[wall.legs]])")
     sites = mj.target_sites(cfg, legs)
     for s in sites:
-        if s.k < 0 or s.k >= next(lg.n0 for lg in legs if lg.name == s.leg):
+        lg = next(lg for lg in legs if lg.name == s.leg)
+        if s.k < 0 or s.k >= sum(kind == "full" for _, _, kind in course0(p, lg)):
             raise ValueError(f"plate {s.board} on a spare block - the guides have no spare blocks")
     leg_pcs = leg_pieces(cfg, p, legs, sites)
     st_plates = _station_plates(cfg)
@@ -978,10 +997,12 @@ def plan_md(cfg: dict, data: dict, sheets: list, sc: int) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=None)
-    ap.add_argument("--out", default=str(REPO / "targets" / "guides"))
+    ap.add_argument("--variant", default=None, help="config variant config/variants/<VARIANT>.toml")
+    ap.add_argument("--out", default=None, help="default targets/guides[_<variant>]")
     ap.add_argument("--no-map", action="store_true", help="skip the floor map (no job / routes needed)")
     a = ap.parse_args(argv)
-    cfg = config.load(a.config)
+    cfg = config.load(a.config, a.variant)
+    a.out = a.out or str(REPO / "targets" / f"guides{config.suffix(cfg)}")
     data = build(cfg, with_job=not a.no_map)
     p = data["params"]
     out = Path(a.out)

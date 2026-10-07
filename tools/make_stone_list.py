@@ -96,7 +96,7 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
     plan = loading_plan(job)
     legs = sorted({lg for lg, _, _ in c})
     courses = sorted({k for _, k, _ in c})
-    status = mjob.config_status(cfg_path)
+    status = mjob.config_status(cfg_path, mconfig.variant_of(cfg))
     tag = lambda key: STATUS_DE.get(status.get(key, {}).get("status", "UNTAGGED"), "?")  # noqa: E731
     b, hb = cfg["brick"], cfg["half_brick"]
     n_kind = {k: sum(v for (_, _, kk), v in c.items() if kk == k) for k in KINDS}
@@ -208,12 +208,20 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--job", type=Path, default=REPO / "data" / "jobs" / "nominal_C.json")
+    ap.add_argument("--job", type=Path, default=None,
+                    help="job file (default data/jobs/nominal_<[wall] shape>[_<variant>].json)")
     ap.add_argument("--config", type=Path, default=None)
-    ap.add_argument("--out", type=Path, default=REPO / "results" / "steinliste.pdf")
+    ap.add_argument("--variant", default=None, help="config variant config/variants/<VARIANT>.toml")
+    ap.add_argument("--out", type=Path, default=None, help="default results/steinliste[_<variant>].pdf")
     a = ap.parse_args(argv)
+    cfg = mconfig.load(a.config, a.variant)
+    sfx = mconfig.suffix(cfg)
+    a.job = a.job or REPO / "data" / "jobs" / f"nominal_{cfg['wall'].get('shape') or 'legs'}{sfx}.json"
+    a.out = a.out or REPO / "results" / f"steinliste{sfx}.pdf"
     job = mjob.load(a.job)
-    cfg = mconfig.load(a.config)
+    if (job.meta.get("config_variant") or None) != mconfig.variant_of(cfg):
+        raise SystemExit(f"{a.job} was built with config variant {job.meta.get('config_variant')!r}, not "
+                         f"{mconfig.variant_of(cfg)!r} - pass the matching --variant / --job")
     job_path = a.job.resolve().relative_to(REPO) if a.job.resolve().is_relative_to(REPO) else a.job
     info = write_pdf(a.out, job, cfg, Path(job_path), a.config)
     print(f"written {a.out}: {_n(info['counts'])} stones in the wall, {len(info['plan']['trips'])} station trips, "

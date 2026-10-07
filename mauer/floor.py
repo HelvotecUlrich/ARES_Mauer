@@ -585,7 +585,7 @@ def plate_site(cfg: Mapping, leg: Any, k: int, board_size_mm: tuple[float, float
     xyz = (u - w_b / 2.0, vc + h_b / 2.0, float(pc["mdf_t"]) + float(pc["paper_t"]))
     plate = [leg.to_wall(a, b) for a, b in ((u - L / 2, v0), (u + L / 2, v0), (u + L / 2, v0 + D), (u - L / 2, v0 + D))]
     block = None
-    if k < 0 or k >= leg.n0:
+    if k < 0 or k >= math.floor(leg.n0 + 1e-9):            # beyond the full stones of course 0 (x.5 legs: the half)
         block = [leg.to_wall(a, b) for a, b in ((u - bl / 2, -bw / 2), (u + bl / 2, -bw / 2), (u + bl / 2, bw / 2),
                                                 (u - bl / 2, bw / 2))]
     return PlateSite(leg.name, k, u, xyz, (180.0, 0.0, 0.0), plate, block)
@@ -647,7 +647,7 @@ def obstacles(leg_polys: Mapping[str, list[Pt]], sites: Sequence[PlateSite], tab
 class _LegFrame:
     """A leg as plate_site needs it (name, n0, to_wall) from a job's T_wall_leg."""
     name: str
-    n0: int
+    n0: float
     x: float
     y: float
     theta: float
@@ -670,7 +670,8 @@ def job_obstacles(cfg: Mapping, legs: Sequence[Mapping], T_wall_station, board_s
     polys: dict[str, list[Pt]] = {}
     for lg in legs:
         T = lg["T_wall_leg"]
-        f = _LegFrame(str(lg["name"]), int(lg["n0"]), float(T[0][3]), float(T[1][3]), math.atan2(T[1][0], T[0][0]))
+        f = _LegFrame(str(lg["name"]), float(lg["n0"]), float(T[0][3]), float(T[1][3]),
+                      math.atan2(T[1][0], T[0][0]))
         frames[f.name] = f
         Ln = f.n0 * pitch - float(b["head_joint"])
         polys[f.name] = [f.to_wall(u, v) for u, v in ((0.0, -W / 2), (Ln, -W / 2), (Ln, W / 2), (0.0, W / 2))]

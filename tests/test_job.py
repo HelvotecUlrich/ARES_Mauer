@@ -556,9 +556,21 @@ def test_make_job_cli_builds_the_configured_legs(tmp_path, capsys):
 
 
 # ── the C of the config (Samuel 2026-10-06: A 2 m, B 1.5 m across, C 1 m back; wall distance 840 mm) ──────────────
-@pytest.fixture(scope="module")
-def ccfg():
-    return config.load()
+# Two layouts since 2026-10-07: the main config (A 5 1/2 -> B -> C, the earlier leg runs through every corner) and the
+# variant c_acb (A and C run through, the ends lined up, B closes between them, built A, C, B).
+C_EXP = {
+    None: dict(n0=(5.5, 7, 5), through=("prev", "prev"), stops=["A", "B", "B", "C"], build=["A", "B", "C"], n=76,
+               ends_dx=-22.69, lim_b=[460.0, 820.0], changes=("stop 0 -> stop 1", "stop 2 -> stop 3"), d01=200.0,
+               closes=False),
+    "c_acb": dict(n0=(5, 7, 5), through=("prev", "next"), stops=["A", "C", "B", "B"], build=["A", "C", "B"], n=74,
+                  ends_dx=0.0, lim_b=[460.0, 940.0], changes=("stop 0 -> stop 1", "stop 1 -> stop 2"), d01=400.0,
+                  closes=True),
+}
+
+
+@pytest.fixture(scope="module", params=list(C_EXP), ids=lambda v: v or "main")
+def ccfg(request):
+    return config.load(variant=request.param)
 
 
 @pytest.fixture(scope="module")
@@ -568,28 +580,33 @@ def cjob(ccfg):
 
 def test_c_legs_corners_and_stops(ccfg, cjob):
     """The C with ARES INSIDE (Samuel 2026-10-06): corners towards ARES, A on ARES's right and C on its left at
-    580 mm, B in front at 840 mm; ARES never turns inside the C (heading 0 at every stop)."""
+    580 mm, B in front at 840 mm; ARES never turns inside the C (heading 0 at every stop); per layout (C_EXP) which
+    leg runs through each corner, the build order and how far the free ends of A and C are apart."""
+    e = C_EXP[config.variant_of(ccfg)]
     wp = make_job.load_wallplan()
     legs = wp.legs(ccfg)
-    assert [(lg.name, lg.n0, lg.side, lg.dist) for lg in legs] == [("A", 5, "right", 580.0), ("B", 7, "front", 840.0),
-                                                                   ("C", 5, "left", 580.0)]
+    assert [(lg.name, lg.n0, lg.side, lg.dist) for lg in legs] == [("A", e["n0"][0], "right", 580.0),
+                                                                   ("B", e["n0"][1], "front", 840.0),
+                                                                   ("C", e["n0"][2], "left", 580.0)]
     assert ccfg["wall"]["shape"] == "C" and ccfg["wall"]["ares_inside"] is True
-    for prev, lg, th in zip(legs, legs[1:], ("prev", "next")):               # both corners towards ARES's side;
-        exp = wp.butt_corner(ccfg, prev, lg.n0, lg.name, towards_ares=True, through=th)   # A and C run through
+    for prev, lg, th in zip(legs, legs[1:], e["through"]):                   # both corners towards ARES's side
+        exp = wp.butt_corner(ccfg, prev, lg.n0, lg.name, towards_ares=True, through=th)
         assert (lg.x, lg.y, lg.theta) == pytest.approx((exp.x, exp.y, exp.theta), abs=0.01)
         assert wp.corner_of(ccfg, prev, lg)["through"] == th
     assert math.degrees(legs[2].theta) == pytest.approx(180.0) and legs[2].y > 0     # C runs back on ARES's side
-    A, C = legs[0], legs[2]                                  # 2026-10-07: the free ends of A and C line up
-    assert A.to_wall(0.0, 0.0)[0] == pytest.approx(C.to_wall(wp.leg_length(ccfg, C.n0), 0.0)[0], abs=1e-9)
+    A, C = legs[0], legs[2]                                  # the free ends of A and C (2026-10-07)
+    assert C.to_wall(wp.leg_length(ccfg, C.n0), 0.0)[0] - A.to_wall(0.0, 0.0)[0] == pytest.approx(e["ends_dx"],
+                                                                                                abs=1e-6)
     assert not any("butt corner" in w for w in cjob.meta["warnings"])
-    assert cjob.n_stones == sum(4 * lg.n0 + 2 for lg in legs) == 74                 # A 5 / B 7 / C 5 (2026-10-07)
+    assert any("closes between" in w for w in cjob.meta["warnings"]) == e["closes"]
+    n_layout = len(wp.layout_legs(ccfg, legs))
+    assert cjob.n_stones == n_layout == e["n"]
     assert sum(t.kind == "half" for t in cjob.stones()) == 12 and cjob.meta["shape"] == "C"
-    assert [s.leg for s in cjob.stops] == ["A", "C", "B", "B"]          # built A, C, B: C runs through its corner
-    assert cjob.meta["build_order"] == ["A", "C", "B"]                       # with B (wallplan.build_order)
-    by = {lg.name: lg for lg in legs}
+    assert [s.leg for s in cjob.stops] == e["stops"] and cjob.meta["build_order"] == e["build"]
+    assert min(len(s.stones) for s in cjob.stops) > 1                      # balanced stops (2026-10-07): no stop
+    by = {lg.name: lg for lg in legs}                                        # for a single stone
     lim = {d["name"]: d["a_limits_mm"] for d in cjob.meta["legs"]}
-    assert lim["B"] == pytest.approx([460.0, 940.0])                         # between A's and C's plates (C runs
-    # through beyond B's end since 2026-10-07: 940, was 820 with C butting against B)
+    assert lim["B"] == pytest.approx(e["lim_b"])                             # between A's and C's plates
     board_leg = {t["name"]: t["leg"] for t in ccfg["targets"] if t["parent"] == "wall"}
     for s in cjob.stops:
         lg = by[s.leg]
@@ -604,14 +621,15 @@ def test_c_legs_corners_and_stops(ccfg, cjob):
 
 
 def test_c_routes_and_floor(ccfg, cjob):
-    """Every move between stops (incl. both leg changes A -> C and C -> B) and every station trip is a validated route;
+    """Every move between stops (incl. both leg changes) and every station trip is a validated route;
     no ARES footprint at a stop touches a leg, plate or the table; inside the C every move between stops is ONE
     straight translation (no rotation), the leg changes are short; 840 mm in front / 580 mm on a side leave 110 mm to
     the plates."""
     from mauer.sequencer import route_problems
     assert route_problems(ccfg, cjob) == []
     rc = json.dumps(cjob.meta["route_check"])
-    assert "leg change stop 0 -> stop 1" in rc and "leg change stop 1 -> stop 2" in rc
+    e = C_EXP[config.variant_of(ccfg)]
+    assert all(f"leg change {c}" in rc for c in e["changes"])
     for st in cjob.stops[1:]:
         assert st.route and st.route[0] == cjob.stops[st.index - 1].ares and st.route[-1] == st.ares
         segs, _ = floor.segments(st.route)                                   # translations only, no turn; the last
@@ -621,8 +639,8 @@ def test_c_routes_and_floor(ccfg, cjob):
         assert math.isclose(math.atan2(last.end.y_mm - last.start.y_mm, last.end.x_mm - last.start.x_mm),
                             st.ares.theta_rad, abs_tol=1e-9)
     assert math.hypot(cjob.stops[1].ares.x_mm - cjob.stops[0].ares.x_mm,
-                      cjob.stops[1].ares.y_mm - cjob.stops[0].ares.y_mm) < 400.0     # leg change A -> C: sideways
-    # across the inside of the C (both stops at x = 120 mm, 580 mm from their leg)
+                      cjob.stops[1].ares.y_mm - cjob.stops[0].ares.y_mm) < e["d01"]  # the first move is short (main:
+    # A -> B at the corner; c_acb: A -> C sideways across the inside, both stops at x = 120 mm)
     p = ccfg["plates"]
     band = p["block_width"] / 2 + p["plate_depth"]
     for lg in make_job.load_wallplan().legs(ccfg):

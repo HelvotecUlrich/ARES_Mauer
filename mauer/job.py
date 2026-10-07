@@ -350,7 +350,7 @@ def to_dict(job: Job) -> dict:
     }
     if v2:
         d["magazine"]["initial_kinds"] = dict(job.magazine.initial_kinds)
-        d["legs"] = [{"name": str(lg["name"]), "n0": int(lg["n0"]), "T_wall_leg": _m(lg["T_wall_leg"])}
+        d["legs"] = [{"name": str(lg["name"]), "n0": _n0(lg["n0"]), "T_wall_leg": _m(lg["T_wall_leg"])}
                      for lg in job.legs]
     return d
 
@@ -387,7 +387,7 @@ def from_dict(d: Mapping) -> Job:
                                        str(s.get("kind", "full")), int(s.get("layer", 1)), str(s.get("stack") or ""))
                            for s in st["slots"]],
                           [str(i) for i in st["take_order"]], [_look_from(lk) for lk in st["looks"]])
-        legs = [{"name": str(lg["name"]), "n0": int(lg["n0"]), "T_wall_leg": _T(lg["T_wall_leg"])}
+        legs = [{"name": str(lg["name"]), "n0": _n0(lg["n0"]), "T_wall_leg": _T(lg["T_wall_leg"])}
                 for lg in d.get("legs") or []]
         return Job(stops, mag, station, _T(d["T_flange_tcp"]), _T(d["T_ares_base"]), _q(d["park_q_rad"]),
                    float(d["approach_mm"]), str(d.get("config_sha256", "")), list(d.get("depends_on") or []),
@@ -821,9 +821,20 @@ def reload_short(station: SlotState, full_station: SlotState, mag: SlotState, up
     return have < full
 
 
+def _n0(v) -> int | float:
+    """Stones in course 0 of a leg: an int, or x.5 for a leg ending with a half stone (robodk/wallplan.stones_n0)."""
+    f = float(v)
+    return int(round(f)) if abs(f - round(f)) < 1e-9 else f
+
+
 # ── config provenance ─────────────────────────────────────────────────────────
-def config_sha256(path: str | Path | None = None) -> str:
-    return hashlib.sha256(Path(path or STATION_TOML).read_bytes()).hexdigest()
+def config_sha256(path: str | Path | None = None, variant: str | None = None) -> str:
+    """sha256 of config/station.toml - and of the variant overlay after it, if the config is a variant."""
+    data = Path(path or STATION_TOML).read_bytes()
+    if variant:
+        from .config import variant_path
+        data += b"\n# variant " + variant.encode() + b"\n" + variant_path(variant).read_bytes()
+    return hashlib.sha256(data).hexdigest()
 
 
 _KEY = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
@@ -845,11 +856,24 @@ def _split_comment(rest: str) -> str:
     return ""
 
 
-def config_status(path: str | Path | None = None) -> dict[str, dict]:
+def config_status(path: str | Path | None = None, variant: str | None = None) -> dict[str, dict]:
     """Status tag of every key in station.toml: {"[section] key": {"status", "source"}}; [[targets]] entries as
     "[[targets]] <name>.<key>". The tag comes from the key's own inline comment, else from the comment lines that
-    continue it, else from the comment block of its section (or array of tables); "UNTAGGED" if none."""
-    lines = Path(path or STATION_TOML).read_text(encoding="utf-8").splitlines()
+    continue it, else from the comment block of its section (or array of tables); "UNTAGGED" if none. variant: the tags
+    of config/variants/<variant>.toml override those of its keys; an array of tables in the overlay (e.g.
+    [[wall.legs]]) replaces all entries of that array, as in mauer.config.merge."""
+    out = _status_of_file(Path(path or STATION_TOML))
+    if variant:
+        from .config import variant_path
+        over = _status_of_file(variant_path(variant))
+        arrays = {label.split(" ", 1)[0] for label in over if label.startswith("[[")}
+        out = {k: v for k, v in out.items() if k.split(" ", 1)[0] not in arrays}
+        out.update(over)
+    return out
+
+
+def _status_of_file(path: Path) -> dict[str, dict]:
+    lines = path.read_text(encoding="utf-8").splitlines()
     out: dict[str, dict] = {}
     section, sec_tag, array_tags = "", None, {}
     pending: list[str] = []            # comment block before the next header
@@ -949,8 +973,9 @@ def _label_match(label: str, pattern: str) -> bool:
 def depends_on(cfg: Mapping, patterns: Sequence[str], path: str | Path | None = None,
                statuses: Sequence[str] = ("PLACEHOLDER", "ASSUMPTION", "UNKNOWN", "UNTAGGED")) -> list[dict]:
     """Config keys matching the fnmatch `patterns` (e.g. "[ur5] *", "[[targets]] *") whose status is one of
-    `statuses`, with their current value - the provenance list a result or job must carry (CLAUDE.md)."""
-    st = config_status(path)
+    `statuses`, with their current value - the provenance list a result or job must carry (CLAUDE.md). The tags of
+    a variant config (cfg["_variant"]) include its overlay file."""
+    st = config_status(path, cfg.get("_variant"))
     out = []
     for label, info in st.items():
         if info["status"] in statuses and any(_label_match(label, p) for p in patterns):

@@ -104,45 +104,40 @@ reach_margin_mm = 20.0      # ASSUMPTION: legs plan - a stone counts as reachabl
 # leg B (heading 0 in the wall frame) and builds A on its RIGHT (side wall), B in FRONT, C on its LEFT (side wall),
 # then backs out (also for every station trip). Every next leg is perpendicular at the far end of the one before, on
 # its ARES side, with a vertical BUTT joint in every course (the 53 x 100.5 mm pin pattern is not square: a stone
-# turned by 90 deg never engages the sockets below): one leg runs through the corner (its course-0 end flush with the
-# BODY of the other leg's outer face), the other leg's flat end face stands rib_mm + corner_gap_mm off its ribbed face
-# (wallplan.butt_corner towards_ares). Since 2026-10-07 (Samuel: "the ends of the walls should line up") A and C run
-# through and B butts against both: corner A-B frame = T_wall_A @ transl(length * n0_A - width / 2, +(width / 2 +
-# rib_mm + corner_gap_mm), 0) @ rotz(+90 deg) (through="prev"); corner B-C frame = T_wall_B @ transl(length * n0_B +
-# width / 2 + rib_mm + corner_gap_mm, -width / 2, 0) @ rotz(+90 deg) (through="next").
-# Lengths (Samuel 2026-10-06: "2m, then 1.5 across and 1m back"; 2026-10-07: A = C = 5, ends lined up): A 5, B 7,
-# C 5 stones; 1.65 m over the outer faces of A and C, 1.41 m between their inside faces (was 1.52 / 1.28 m with C
-# butting against B; ARES is 0.6 m wide, 1.12 m long - with the wall in front of ARES it did not fit, study 2026-10-06). side / dist: on which side of ARES the leg is built and ARES centre -> leg centreline
-# (RoboDK reach table per side; side walls at 580 mm = ARES side 110 mm from the board plates, like the front at 840).
-# ARES stops only where it keeps [routes] clearance_mm from the other legs and their plates (tools/make_job.py
-# stop_limits: on B 460..820 mm). Status: lengths, inside and the sides CONFIRMED (Samuel), corner design and the
-# distances ASSUMPTION.
+# turned by 90 deg never engages the sockets below): the EARLIER leg runs through the corner (its course-0 end flush
+# with the BODY of the next leg's outer face), the next leg's flat end face stands rib_mm + corner_gap_mm off its
+# ribbed ARES-side face: frame = T_wall_prev @ transl(length * n0_prev - width / 2, +(width / 2 + rib_mm +
+# corner_gap_mm), 0) @ rotz(+90 deg) (wallplan.butt_corner towards_ares, through="prev"). Built A -> B -> C, every
+# stone placed against one neighbour only (no closure). Layout Samuel 2026-10-07 (main config; the layout with the
+# ends of A and C exactly lined up and B as the closure is config/variants/c_acb.toml): A 5 1/2 stones (1.10 m,
+# course 0 = 5 full + a half stone at the corner end, wallplan.layout_leg), B 7, C 5 - A one half stone longer than C
+# so that the free ends nearly line up (C's end 22.7 mm beyond A's start: 1100 - (120 + 1.69 + 1.0) - 1000).
+# Outer size 1.12 x 1.52 m, 1.28 m between the inside faces of A and C (ARES is 0.6 m wide, 1.12 m long - with the
+# wall in front of ARES it did not fit, study 2026-10-06). side / dist: on which side of ARES the leg is built and
+# ARES centre -> leg centreline (RoboDK reach table per side; side walls at 580 mm = ARES side 110 mm from the board
+# plates, like the front at 840). ARES stops only where it keeps [routes] clearance_mm from the other legs and their
+# plates (tools/make_job.py stop_limits). Status: lengths, inside and the sides CONFIRMED (Samuel), corner design and
+# the distances ASSUMPTION.
 [[wall.legs]]
 name = "A"
-n0 = 5                      # CONFIRMED: Samuel 2026-10-07 (the C's legs A and C the same length as the shorter one,
-                            # C; was 10 = "one length is 2m", 2026-10-06)
+n0 = 5.5                    # CONFIRMED: Samuel 2026-10-07 ("one side a little longer so that we can build A to C"; A
+                            # 5 1/2 chosen over A 6 / C 4 1/2); was 5 (2026-10-07 morning), 10 (2026-10-06)
 xyz_in_wall = [0.0, 0.0, 0.0]          # ASSUMPTION: leg A frame = wall frame (definition)
 rpy_in_wall_deg = [0.0, 0.0, 0.0]
 side = "right"              # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: ARES side 110 mm from the board plates (170 mm from the leg centreline)
 [[wall.legs]]
 name = "B"
-n0 = 7                      # CONFIRMED: Samuel 2026-10-06 ("1.5 across"; between A and C since 2026-10-07: 1.65 m over
-                            # the outer faces of A and C). Built LAST (A, C, B) and CLOSES between A and C in every
-                            # course: its last stone drops into a slot with 2 x corner_gap_mm play - the 7 stones' length
-                            # tolerance must fit into it (risk accepted by Samuel 2026-10-07; alternatives offered: B
-                            # through and built first, or A -> B -> C with the ends 123 mm apart)
-xyz_in_wall = [940.0, 62.69, 0.0]      # ASSUMPTION: butt corner at A's far end towards ARES (200 * 5 - 60, 60 + 1.69 + 1.0)
+n0 = 7                      # CONFIRMED: Samuel 2026-10-06 ("1.5 across": 1.52 m over the outer faces of A and C)
+xyz_in_wall = [1040.0, 62.69, 0.0]     # ASSUMPTION: butt corner at A's far end towards ARES (200 * 5.5 - 60,
+                            # 60 + 1.69 + 1.0)
 rpy_in_wall_deg = [0.0, 0.0, 90.0]
 side = "front"              # CONFIRMED: Samuel 2026-10-06 (B straight ahead of ARES driving into the C)
 dist = 840.0                # CONFIRMED: Samuel 2026-10-06 (front wall 840 mm, see [wall] dist_nominal)
 [[wall.legs]]
 name = "C"
 n0 = 5                      # CONFIRMED: Samuel 2026-10-06 ("1m back")
-runs_through = true         # CONFIRMED: Samuel 2026-10-07 ("the ends of the walls should line up"): C runs through its
-                            # corner with B (wallplan.butt_corner through="next"); without the key the earlier leg does
-xyz_in_wall = [1000.0, 1525.38, 0.0]   # ASSUMPTION (corner_gap_mm): beyond B's end, free end at x = 0 like A's start:
-                            # B + (60, 200 * 7 + 60 + 1.69 + 1.0)
+xyz_in_wall = [977.31, 1402.69, 0.0]   # ASSUMPTION: butt corner at B's far end towards ARES (B + (-62.69, 200 * 7 - 60))
 rpy_in_wall_deg = [0.0, 0.0, 180.0]
 side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: as leg A

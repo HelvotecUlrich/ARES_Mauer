@@ -293,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--real", action="store_true", help="real UR5 + ARES + IDS camera")
     mode.add_argument("--dry-run", action="store_true", help="print the plan only")
     ap.add_argument("--config", default=None, help="station.toml (default config/station.toml)")
+    ap.add_argument("--variant", default=None, help="config variant config/variants/<VARIANT>.toml (default: the "
+                                                    "variant the job file was built with)")
     ap.add_argument("--stops", default=None, help="'k' (one stop), 'a:b' (a..b inclusive), 'a:' (a to the end)")
     ap.add_argument("--log-dir", default=None, help="run log folder (default data/runs/<timestamp>/)")
     ap.add_argument("--save-images", action="store_true", help="store every image in the run log folder")
@@ -311,7 +313,13 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--quiet", action="store_true", help="no log warnings on the console")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.ERROR if args.quiet else logging.WARNING, format="%(levelname)s %(message)s")
-    cfg = mconfig.load(args.config)
+    variant = args.variant
+    if variant is None and args.job and not args.nominal:             # the job file knows its config variant
+        try:
+            variant = mjob.load(args.job).meta.get("config_variant") or None
+        except (OSError, ValueError, mjob.JobError):
+            variant = None
+    cfg = mconfig.load(args.config, variant)
     try:
         job = load_job(args, cfg)
     except (ValueError, mjob.JobError) as e:

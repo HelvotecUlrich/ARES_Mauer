@@ -209,3 +209,45 @@ def test_leg_side_and_distance_from_the_config(cfg):
     c["wall"]["legs"][1]["side"] = "inside"
     with pytest.raises(ValueError, match="side 'inside'"):
         wp.legs(c)
+
+
+def test_a_leg_of_five_and_a_half_stones(cfg):
+    """2026-10-07, main config: A 5 1/2 stones - even courses 5 full + a half stone at the end, odd courses a half
+    stone at the start + 5 full; length 1100 mm; 24 stones; the full stones of course 0 keep whole-pitch joints."""
+    A = wp.Leg("A", wp.stones_n0(5.5))
+    st = wp.layout_leg(cfg, A)
+    assert len(st) == 24 and wp.leg_length(cfg, A.n0) == pytest.approx(1100.0)
+    c0 = sorted((s.u, s.kind) for s in st if s.course == 0)
+    c1 = sorted((s.u, s.kind) for s in st if s.course == 1)
+    assert c0 == [(100.0, "full"), (300.0, "full"), (500.0, "full"), (700.0, "full"), (900.0, "full"), (1050.0, "half")]
+    assert c1 == [(50.0, "half"), (200.0, "full"), (400.0, "full"), (600.0, "full"), (800.0, "full"), (1000.0, "full")]
+    assert wp.stones_n0(5) == 5 and isinstance(wp.stones_n0(5.0), int)
+    for bad in (5.25, 0.5, "x"):
+        with pytest.raises(ValueError):
+            wp.stones_n0(bad)
+    with pytest.raises(ValueError, match="need half stones"):
+        wp.layout_leg(cfg, A, half_stones=False)
+    B = wp.butt_corner(cfg, A, 7, "B", towards_ares=True)
+    C = wp.butt_corner(cfg, B, 5, "C", towards_ares=True)
+    assert (B.x, B.y) == pytest.approx((1040.0, 62.69)) and (C.x, C.y) == pytest.approx((977.31, 1402.69))
+    assert C.to_wall(wp.leg_length(cfg, 5), 0.0)[0] == pytest.approx(-22.69)     # C's end 22.7 mm beyond A's start
+    assert [lg.name for lg in wp.build_order(cfg, [A, B, C])] == ["A", "B", "C"]
+    assert wp.check_legs(cfg, [A, B, C], wp.layout_legs(cfg, [A, B, C])) == []
+
+
+def test_balanced_stops_avoid_a_stop_for_a_single_stone(cfg):
+    """2026-10-07 (Samuel: ARES drives once more for one stone): leg B (7 stones) at 840 mm in front needs two stops
+    - its top course is 1.30 m long, the UR reaches +-0.62 m along the wall there - and the greedy plan put 29 + 1
+    stones on them; balancing moves the first stop back so that the second does real work."""
+    from mauer import reach_cache
+    tab = reach_cache.get(cfg, 840.0, side="front")
+    if tab is None:
+        pytest.skip("no cached reach table for the front at 840 mm (results/reach_table.json)")
+    reach, lo, hi, grid = wp.reach_fn(tab, margin_mm=20.0)
+    B = wp.Leg("B", 7)
+    own = wp.layout_leg(cfg, B)
+    greedy = wp.sequence_leg(cfg, own, reach, lo, hi, grid, 20.0, a_lim=(460.0, 940.0), balance=False)
+    best = wp.sequence_leg(cfg, own, reach, lo, hi, grid, 20.0, a_lim=(460.0, 940.0))
+    assert [len(b) for _, b in greedy] == [29, 1]
+    assert len(best) == 2 and min(len(b) for _, b in best) > 1 and sum(len(b) for _, b in best) == 30
+    assert wp.check_plan(dict(cfg), own, best) == []
