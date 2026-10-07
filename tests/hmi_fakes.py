@@ -7,6 +7,7 @@ config shape; its ADS address is the TEST-NET-1 address 192.0.2.10 (RFC 5737) - 
 
 from __future__ import annotations
 
+import functools
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
@@ -156,3 +157,42 @@ class Scheduler:
         todo, self.pending = self.pending, []
         for _ms, fn in todo:
             fn()
+
+
+# ── Mauer test jobs ───────────────────────────────────────────────────────────
+def make_job_tool():
+    """tools/make_job.py as a module (as tests/test_sequencer.py _tool)."""
+    import importlib.util
+
+    from mauer import REPO
+    spec = importlib.util.spec_from_file_location("tool_make_job", REPO / "tools" / "make_job.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@functools.lru_cache(maxsize=None)
+def straight_job10():
+    """(cfg, job): the straight-wall test config (conftest.straight_config) and its nominal job of 10 stones in
+    course 0 (2 stops), built once per session. Shared - never mutate them."""
+    from conftest import straight_config
+    cfg = straight_config()
+    return cfg, make_job_tool().build_nominal(cfg, length=10)
+
+
+def short_job(job, n0=6, n1=3, fill=None):
+    """First n0 stones of stop 0 and n1 of stop 1; fill = stones in the magazine at the start (the first `fill`
+    stones, each in a slot of its type) - as tests/test_sequencer.py short_job."""
+    import copy
+
+    from mauer import job as mjob
+    j = copy.deepcopy(job)
+    j.stops = j.stops[:2]
+    j.stops[0].stones = j.stops[0].stones[:n0]
+    j.stops[1].stones = j.stops[1].stones[:n1]
+    if fill is not None:
+        kinds = [t.kind for st in j.stops for t in st.stones][:fill]
+        plan = dict(mjob.fill_plan(mjob.SlotState.magazine(j.magazine, filled=[], kinds={}), kinds))
+        j.magazine.initial_fill = [sid for sid in j.magazine.take_order if sid in plan]
+        j.magazine.initial_kinds = plan
+    return j

@@ -44,6 +44,10 @@ comparison case for the simulation.
 Every measurement and decision goes to a JSON-lines run log (log_dir/run.jsonl, default data/runs/<timestamp>/),
 optionally with the images (save_images). Step mode: `confirm(description) -> bool` is called before every motion
 (each ARES command, each robot program); False aborts the run (SequencerAborted).
+Hooks for the Mauer HMI (hmi/, docs/HMI_DESIGN.md section 7): RunLog listeners get every record in the writer's
+thread (writes are serialised by a lock, so the GUI thread may call pause()); `on_shot(image, shot_record)` taps
+every camera image after its measurement; an `ares_cmd` record precedes every ARES command, `station_refilled`
+follows the operator's station refill.
 
 Real runs: `preflight_real()` refuses to start while safety-relevant values are PLACEHOLDER/unknown and lists all
 problems at once (tools/run_job.py --real; there is no override for real runs).
@@ -57,6 +61,7 @@ import datetime as _dt
 import json
 import logging
 import math
+import threading
 import time
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
@@ -184,7 +189,8 @@ def _jsonable(x: Any) -> Any:
 
 
 class RunLog:
-    """JSON-lines log: one object per line {"t": now(), "event": ..., ...}; flushed after every line."""
+    """JSON-lines log: one object per line {"t": now(), "event": ..., ...}; flushed after every line. Writes may come
+    from several threads (the run thread, the HMI's pause()); listeners get each record in the writer's thread."""
 
     def __init__(self, folder: Path, now: Callable[[], float] = time.time):
         self.folder = Path(folder)
@@ -193,11 +199,27 @@ class RunLog:
         self.now = now
         self._f = open(self.path, "a", encoding="utf-8")
         self.n_images = 0
+        self._lock = threading.Lock()
+        self._listeners: list[Callable[[dict], None]] = []
+
+    def add_listener(self, fn: Callable[[dict], None]) -> None:
+        """fn(record) after every write, in the writer's thread; its exceptions are logged and swallowed."""
+        self._listeners = [*self._listeners, fn]
+
+    def remove_listener(self, fn: Callable[[dict], None]) -> None:
+        self._listeners = [f for f in self._listeners if f != fn]
 
     def write(self, event: str, **data: Any) -> dict:
         rec = {"t": self.now(), "event": event, **_jsonable(data)}
-        self._f.write(json.dumps(rec) + "\n")
-        self._f.flush()
+        line = json.dumps(rec) + "\n"
+        with self._lock:
+            self._f.write(line)
+            self._f.flush()
+        for fn in self._listeners:
+            try:
+                fn(rec)
+            except Exception as e:                   # noqa: BLE001 - a listener must never stop the run
+                log.warning("run-log listener %r failed on %s: %s", fn, event, e)
         return rec
 
     def image(self, img: np.ndarray, name: str) -> str:
@@ -210,8 +232,9 @@ class RunLog:
         return rel
 
     def close(self) -> None:
-        if not self._f.closed:
-            self._f.close()
+        with self._lock:
+            if not self._f.closed:
+                self._f.close()
 
 
 def read_log(path: str | Path) -> list[dict]:
@@ -347,7 +370,8 @@ class Sequencer:
     def __init__(self, job: Job, cfg: Mapping, robot, ares, camera, intr, T_flange_cam: np.ndarray,
                  log_dir: str | Path | None = None, confirm: Callable[[str], bool] | None = None,
                  now: Callable[[], float] = time.time, *, camera_loop: bool = True, save_images: bool = False,
-                 on_station_empty: Callable[[], Any] | None = None, params: SequencerParams | None = None):
+                 on_station_empty: Callable[[], Any] | None = None, params: SequencerParams | None = None,
+                 on_shot: Callable[[np.ndarray, dict], None] | None = None):
         self.job, self.cfg = job, cfg
         self.robot, self.ares, self.camera = robot, ares, camera
         self.intr = intr
@@ -355,6 +379,7 @@ class Sequencer:
         self.confirm, self.now = confirm, now
         self.camera_loop, self.save_images = bool(camera_loop), bool(save_images)
         self.on_station_empty = on_station_empty
+        self.on_shot = on_shot                   # frame tap (image, 'shot' record), run thread, after the measurement
         self.p = params or SequencerParams.from_config(cfg)
         self.vcfg = dict(cfg.get("vision", {}))
         self.specs = board_specs(cfg)
@@ -494,6 +519,7 @@ class Sequencer:
 
     def _ares_cmd(self, kind: str, *args, why: str = "") -> Any:
         what = f"ARES {kind}{tuple(round(a, 2) for a in args)}"
+        self.log.write("ares_cmd", kind=kind, args=list(args), why=why, pose=self.pose_est, pose_src=self.pose_src)
         try:
             out = getattr(self.ares, kind)(*args)
         except (MoveRefused, AresNotReady) as e:               # nothing was written: ARES did not move
@@ -741,8 +767,13 @@ class Sequencer:
                     if b not in observed:
                         missing[b] = f"look {lk.name}{tag}: {bp.reason}"
                     boards[b] = {"ok": False, "reason": bp.reason, "n_corners": bp.n_corners}
-            self.log.write("shot", parent=parent, look=lk.name + tag, T_base_flange=shot.T_base_flange,
-                           image=img_rel, max_qd=getattr(shot, "max_qd", None), boards=boards)
+            rec = self.log.write("shot", parent=parent, look=lk.name + tag, T_base_flange=shot.T_base_flange,
+                                 image=img_rel, max_qd=getattr(shot, "max_qd", None), boards=boards)
+            if self.on_shot is not None:
+                try:
+                    self.on_shot(shot.frame.image, rec)
+                except Exception as e:               # noqa: BLE001 - a display tap must never stop the run
+                    log.warning("on_shot failed: %s", e)
             if any(v["ok"] for v in boards.values()):
                 obs = {b: Ts[-1] for b, Ts in observed.items()}
                 T_est = g.inv(fit_frame(obs, self.placements, self.specs, parent).T_base_parent)
@@ -900,6 +931,7 @@ class Sequencer:
                                      "(operator), then resume", k)
             self.on_station_empty()
             self.station = SlotState.station(st)
+            self.log.write("station_refilled", station=len(self.station))
         plan = reload_plan(self.magazine, self.station, upcoming)
         if not plan:
             raise SequencerError(f"pick-up station holds no {upcoming[0] if upcoming else ''} stone for the next "
