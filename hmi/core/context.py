@@ -22,7 +22,7 @@ class HmiContext(QObject):
     session_changed = Signal(object)          # JobSession | None (re-emitted RunController.session_loaded)
     ads_status = Signal(dict)                 # AdsWorker status (10 Hz), forwarded by MainWindow
     ads_connection = Signal(bool, str)
-    twin_state_changed = Signal(str, str)
+    twin_state_changed = Signal(str, str)     # (state, detail) of the RoboDK twin (TWIN feature)
 
     def __init__(self, station_cfg: dict, *, config_path: Path | None = None, ares_enabled: bool = False,
                  controller=None, runs_dir: Path | None = None, parent: QObject | None = None) -> None:
@@ -35,6 +35,7 @@ class HmiContext(QObject):
         self.last_ads_status: dict | None = None
         self.ads_connected = False
         self.twin_state: tuple[str, str] = ("off", "")
+        self.start_twin = False                   # --twin: the twin panel starts the twin with the first session
         self._hooks: list[Callable[[], Any]] = []
         if controller is None:
             from .run_controller import RunController

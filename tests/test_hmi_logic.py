@@ -279,3 +279,13 @@ def test_state_table_complete():
     assert C.move_result_text(29) == "Aborted: measured progress implausible (odometry)"
     assert set(C.MOVE_RESULTS) == {0, 1, 2, 10, 11, 12, 13} | set(range(20, 30))   # E_MoveResult complete
     assert all(math.isfinite(v) for v in (C.ROBOT_LENGTH_M, C.ROBOT_WIDTH_M))
+
+
+def test_run_lock_blocks_jog_and_go():
+    """Mauer HMI (2026-10-07): a Mauer REAL run locks jog and GO with a reason; the default keeps amr behaviour."""
+    assert L.jog_enabled(MANUAL_V2, True) and L.jog_enabled(MANUAL_V2, True, run_lock="")
+    assert not L.jog_enabled(MANUAL_V2, True, run_lock="Mauer REAL run active")
+    assert L.go_enabled(MANUAL_V2, True, pv.IF_V2) == (True, "")
+    assert L.go_enabled(MANUAL_V2, True, pv.IF_V2, run_lock="Mauer REAL run active") == \
+        (False, "Mauer REAL run active")
+    assert L.go_enabled(MANUAL_V2, False, pv.IF_V2, run_lock="x") == (False, "not connected")   # connection first

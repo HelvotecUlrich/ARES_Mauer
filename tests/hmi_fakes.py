@@ -289,3 +289,101 @@ class StubCamera:
     def close(self) -> None:
         self.closed = True
         self.order.append("camera.close")
+
+
+# ── Mauer GUI fakes ───────────────────────────────────────────────────────────
+class FakeRunController(QObject):
+    """RunController stand-in for widget tests: the same signals and attributes, settable state / mode / snapshot /
+    rig / session, every call recorded in `calls`; can() uses the real enable matrix."""
+
+    state_changed = Signal(str, str)
+    event = Signal(object)
+    snapshot_changed = Signal(object)
+    shot = Signal(object)
+    confirm_requested = Signal(object)
+    confirm_cleared = Signal(int)
+    preflight_done = Signal(object)
+    rig_changed = Signal(object)
+    session_loaded = Signal(object)
+    message = Signal(str, str)
+
+    def __init__(self, hmi: Optional[dict] = None, ares_enabled: bool = False) -> None:
+        super().__init__()
+        self.calls: List[Tuple[str, Any]] = []
+        self.state = "empty"
+        self.mode: Optional[str] = None
+        self.session = None
+        self.opts = None
+        self.snapshot = None
+        self.rig = None
+        self.preflight = None
+        self.halted = False
+        self.pending = None
+        self.step = False
+        self.sim_step_s = 0.3
+        self.ares_enabled = ares_enabled
+        self.sequencer = None
+        self.log_dir = None
+        self.odom = None
+
+    def set_state(self, state: str, detail: str = "", mode: Optional[str] = None) -> None:
+        if mode is not None:
+            self.mode = mode
+        self.state = state
+        self.state_changed.emit(state, detail)
+
+    def can(self, action: str, mode: Optional[str] = None) -> Tuple[bool, str]:
+        from hmi.core.run_controller import enables
+        seq = self.sequencer
+        return enables(self.state, mode or self.mode, ares_enabled=self.ares_enabled,
+                       preflight_ok=self.preflight is not None and self.preflight.ok, has_seq=seq is not None,
+                       pose_status=getattr(seq, "pose_status", "ok"), held=getattr(seq, "held", None) is not None,
+                       odom_moved=self.odom is not None)[action]
+
+    def odom_moved(self):
+        return self.odom
+
+    def set_session(self, session) -> None:
+        self.calls.append(("set_session", session))
+        self.session = session
+        self.session_loaded.emit(session)
+        self.set_state("loaded")
+
+    def ur_source(self):
+        from hmi.core.sources import UrSource
+        return UrSource(self.rig, self.session.job if self.session is not None else None)
+
+    def shutdown(self, timeout_s: float = 10.0) -> bool:
+        self.calls.append(("shutdown", timeout_s))
+        return True
+
+    def __getattr__(self, name: str):
+        if name in ("load_file", "build_from_config", "prepare", "recheck", "start", "resume", "confirm_pose",
+                    "set_pose", "apply_odometry", "clear_held", "grab", "release", "pause", "abort", "halt",
+                    "answer_confirm", "set_step", "set_sim_step_s", "set_shot_processor"):
+            return lambda *a, **k: self.calls.append((name, a))
+        raise AttributeError(name)
+
+    def of(self, name: str) -> List[Any]:
+        return [a for n, a in self.calls if n == name]
+
+
+def make_ctx(qapp, tmp_path, controller=None, ares_enabled: bool = False, station_cfg: Optional[dict] = None):
+    """HmiContext on config/station.toml (or station_cfg) with run logs under tmp_path."""
+    from hmi.core.context import HmiContext
+    from mauer import config
+    return HmiContext(station_cfg if station_cfg is not None else config.load(), ares_enabled=ares_enabled,
+                      controller=controller, runs_dir=tmp_path / "runs")
+
+
+def make_window(qapp, tmp_path, controller=None, ares_enabled: bool = False, station_cfg: Optional[dict] = None,
+                connect: bool = True):
+    """(MainWindow, FakeWorker, HmiContext); the fake worker reports a v2 PLC connection unless connect=False."""
+    from hmi.main_window import MainWindow
+    ctx = make_ctx(qapp, tmp_path, controller, ares_enabled, station_cfg)
+    fw = FakeWorker()
+    w = MainWindow(ctx, fw)
+    if connect:
+        fw.connection.emit(True, "connected")
+        fw.interface.emit(2, "ARES CX9240 v2 2026-09-25")
+    return w, fw, ctx

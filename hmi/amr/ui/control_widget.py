@@ -36,6 +36,7 @@ _BANNER_AMBER = "background:#4A3300;color:#FFDD88;font-weight:bold;padding:6px;b
 
 TAB_JOG = 0
 TAB_MOVE = 1
+RUN_LOCK_BANNER = "Mauer REAL run active - jog / GO locked"
 CONN_MSG_MAX = 60      # header: longer connection messages are elided (full text in the tooltip / status bar)
 
 
@@ -54,6 +55,7 @@ class ControlWidget(QWidget):
         self._connected = False
         self._if_version = 0
         self._status: Dict[str, Any] = {}
+        self._run_lock = ""                     # Mauer HMI: reason a Mauer REAL run locks jog / GO ("" = none)
         self._build_ui()
         self.setStyleSheet(GROUP_CSS)
         self._apply_enables()
@@ -127,7 +129,9 @@ class ControlWidget(QWidget):
         self._wd_banner.setStyleSheet(_BANNER_RED)
         self._mismatch_banner = QLabel("")        # full text of a PLC/HMI interface mismatch (not connected)
         self._mismatch_banner.setStyleSheet(_BANNER_RED)
-        for b in (self._ext_banner, self._legacy_banner, self._wd_banner, self._mismatch_banner):
+        self._run_banner = QLabel(RUN_LOCK_BANNER)  # Mauer HMI: a REAL run moves ARES
+        self._run_banner.setStyleSheet(_BANNER_AMBER)
+        for b in (self._ext_banner, self._legacy_banner, self._wd_banner, self._mismatch_banner, self._run_banner):
             b.setWordWrap(True)
             b.hide()
             lay.addWidget(b)
@@ -261,6 +265,23 @@ class ControlWidget(QWidget):
         self.sub_tabs.setCurrentIndex(TAB_MOVE)
         self.move.load_test_move()
 
+    # ── Mauer HMI locks ───────────────────────────────────────────────────────
+    def set_run_lock(self, reason: str) -> None:
+        """Lock jog and GO while a Mauer REAL run moves ARES ("" = unlock); releases a held jog."""
+        if reason == self._run_lock:
+            return
+        self._run_lock = reason
+        if reason:
+            self.release_jog()
+        self.move.set_run_lock(reason)
+        self._run_banner.setToolTip(reason)
+        self._run_banner.setVisible(bool(reason))
+        self._apply_enables()
+
+    def set_reset_lock(self, reason: str) -> None:
+        """Lock the odometry 'Reset pose' while a REAL run is loaded ("" = unlock)."""
+        self.odom.set_reset_lock(reason)
+
     # ── jog gating (called by MainWindow) ─────────────────────────────────────
     def release_jog(self, send: bool = True) -> None:
         self.jog.release_all(send=send)
@@ -346,7 +367,7 @@ class ControlWidget(QWidget):
         for i, b in enumerate(self._badges):
             b.set_mode("done" if i < step else ("current" if i == step else "pending"))
         set_text(self._hint, startup_hint(s, safety_run) if self._connected else "Not connected to the PLC.")
-        self.jog.set_jog_enabled(jog_enabled(self._status, self._connected))
+        self.jog.set_jog_enabled(jog_enabled(self._status, self._connected, self._run_lock))
 
     def _update_drives(self, d: Dict[str, Any]) -> None:
         w = self._d

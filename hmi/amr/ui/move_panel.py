@@ -83,6 +83,7 @@ class MovePanel(QWidget):
         self._sent_req: Optional[MoveRequest] = None
         self._start_pose: Tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._feedback = ""
+        self._run_lock = ""                         # Mauer HMI: reason a REAL run locks GO ("" = none)
         self._build_ui()
         self._select_direction(F.FORWARD)
         self._refresh()
@@ -317,7 +318,14 @@ class MovePanel(QWidget):
 
     def go_state(self) -> Tuple[bool, str]:
         err = validate_move(self.current_request(), self._lim)
-        return go_enabled(self._status, self._connected, self._if_version, err, self._await_id is not None)
+        return go_enabled(self._status, self._connected, self._if_version, err, self._await_id is not None,
+                          run_lock=self._run_lock)
+
+    def set_run_lock(self, reason: str) -> None:
+        """Mauer HMI: lock GO while a Mauer REAL run moves ARES ("" = unlock); disarms a pending confirmation."""
+        self._run_lock = reason
+        self._disarm()
+        self._refresh()
 
     def on_go_clicked(self) -> None:
         ok, reason = self.go_state()

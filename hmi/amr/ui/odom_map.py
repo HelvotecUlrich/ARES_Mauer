@@ -250,14 +250,20 @@ class OdomPanel(QWidget):
         lay.addLayout(row)
         self._available = True
         self._move_active = False
+        self._reset_lock = ""                   # Mauer HMI: reason a loaded REAL run locks the reset ("" = none)
 
     @property
     def reset_allowed(self) -> bool:
-        return self._available and not self._move_active
+        return self._available and not self._move_active and not self._reset_lock
+
+    def set_reset_lock(self, reason: str) -> None:
+        """Mauer HMI: lock "Reset pose" while a REAL run is loaded (its resume check compares the odometry)."""
+        self._reset_lock = reason
+        self._apply_reset_enable()
 
     def _reset_pose(self) -> None:
         if not self.reset_allowed:          # defensive: a queued click after the move started
-            set_text(self._reset_hint, self.RESET_LOCK_HINT if self._move_active else "")
+            set_text(self._reset_hint, self._reset_lock or (self.RESET_LOCK_HINT if self._move_active else ""))
             return
         self._worker.pulse({}, ("bCmdOdomReset",), "odometry reset")
         self.map.set_target(None)
@@ -265,7 +271,8 @@ class OdomPanel(QWidget):
 
     def _apply_reset_enable(self) -> None:
         self._btn_reset.setEnabled(self.reset_allowed)
-        set_text(self._reset_hint, self.RESET_LOCK_HINT if (self._available and self._move_active) else "")
+        hint = self.RESET_LOCK_HINT if (self._available and self._move_active) else ""
+        set_text(self._reset_hint, (self._reset_lock if self._available else "") or hint)
 
     def set_available(self, available: bool) -> None:
         self._available = available

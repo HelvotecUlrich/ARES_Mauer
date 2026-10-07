@@ -237,19 +237,24 @@ def target_pose(start: Tuple[float, float, float], req: MoveRequest) -> Tuple[fl
 
 # ── Enable rules ───────────────────────────────────────────────────────────────
 
-def jog_enabled(status: Mapping[str, Any], connected: bool) -> bool:
-    """Jog only in MANUAL, not while ext (C6030) controls the robot and not while a relative move runs."""
+def jog_enabled(status: Mapping[str, Any], connected: bool, run_lock: str = "") -> bool:
+    """Jog only in MANUAL, not while ext (C6030) controls the robot and not while a relative move runs.
+    run_lock (Mauer HMI, 2026-10-07): reason why a Mauer REAL run locks jog; "" = no lock."""
     return (bool(connected)
+            and not run_lock
             and int(status.get("eAmrState", -1)) == C.ST_MANUAL
             and not bool(status.get("bExtActive", False))
             and not bool(status.get("bMoveActive", False)))
 
 
 def go_enabled(status: Mapping[str, Any], connected: bool, if_version: int,
-               param_error: Optional[str] = None, awaiting_ack: bool = False) -> Tuple[bool, str]:
-    """GO allowed? Returns (enabled, reason-if-not)."""
+               param_error: Optional[str] = None, awaiting_ack: bool = False,
+               run_lock: str = "") -> Tuple[bool, str]:
+    """GO allowed? Returns (enabled, reason-if-not). run_lock (Mauer HMI): reason of a Mauer REAL run lock."""
     if not connected:
         return False, "not connected"
+    if run_lock:
+        return False, run_lock
     if if_version < IF_V2:
         return False, "PLC without relative move (interface v1) - load PLC build v2"
     if bool(status.get("bExtActive", False)):
