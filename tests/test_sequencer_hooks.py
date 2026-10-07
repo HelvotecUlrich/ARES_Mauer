@@ -1,5 +1,6 @@
 """Sequencer hooks for the Mauer HMI (docs/HMI_DESIGN.md section 7) in the simulated world: run-log listeners and the
-write lock (H1), the frame tap (H2), the ares_cmd (H3) and station_refilled (H4) records."""
+write lock (H1), the frame tap (H2), the ares_cmd (H3) and station_refilled (H4) records, the held-stone guard (H5)
+and the catch-all run_error (H6)."""
 from __future__ import annotations
 
 import json
@@ -8,8 +9,9 @@ import threading
 import pytest
 
 from hmi_fakes import short_job, straight_job10
+from mauer.camera import CameraError
 from mauer.job import SlotState
-from mauer.sequencer import RunLog, Sequencer, read_log
+from mauer.sequencer import RunLog, Sequencer, SequencerAborted, SequencerError, SequencerPaused, read_log
 from mauer.simworld import SimWorld, WorldErrors
 
 pytestmark = pytest.mark.usefixtures("no_lab_network")
@@ -121,3 +123,113 @@ def test_station_refilled_follows_station_empty(tmp_path):
     assert names[i + 1] == "station_refilled" and names.index("reload_start") > i
     rec = next(e for e in read_log(seq.log.path) if e["event"] == "station_refilled")
     assert rec["station"] == len(job.station.take_order)
+
+
+# ── H5: held-stone guard ──────────────────────────────────────────────────────
+def _stones_conserved(w) -> int:
+    """Stones in the magazine + placed + in the jaws (the simulated world's own bookkeeping)."""
+    return len(w.mag_stones) + len(w.records) + (1 if w.robot.holding is not None else 0)
+
+
+def test_pause_at_a_place_finishes_the_place_then_pauses(tmp_path):
+    _, job10 = straight_job10()
+    job = short_job(job10, n0=2, n1=1)
+    holder = {}
+
+    def confirm(desc):
+        if desc.startswith("robot: place stone") and not holder.get("paused"):
+            holder["paused"] = True
+            holder["seq"].pause()                       # pressed while the place step is shown, then Go
+        return True
+
+    w, seq = sim(job, tmp_path, confirm=confirm)
+    holder["seq"] = seq
+    n0 = _stones_conserved(w)
+    with pytest.raises(SequencerPaused):
+        seq.run()
+    assert seq.result.state == "paused" and seq.held is None and w.robot.holding is None
+    assert len(w.records) == 1 and _stones_conserved(w) == n0          # placed, not lost
+    names = [e["event"] for e in read_log(seq.log.path)]
+    assert names.index("pause_requested") < names.index("placed") < names.index("run_paused")
+    seq.resume()
+    assert seq.run(seq.stop_k).state == "done"
+    keys = [r.key for r in w.records]
+    assert len(keys) == len(set(keys)) == 3 and _stones_conserved(w) == n0
+
+
+def test_pause_while_an_empty_jaw_step_waits_is_a_pause_not_a_decline(tmp_path):
+    _, job10 = straight_job10()
+    holder = {}
+
+    def confirm(desc):
+        if desc.startswith("robot: pick magazine"):
+            holder["seq"].pause()
+            return False                                 # the HMI releases the pending step on Pause
+        return True
+
+    w, seq = sim(short_job(job10, n0=1, n1=0), tmp_path, confirm=confirm)
+    holder["seq"] = seq
+    with pytest.raises(SequencerPaused):
+        seq.run(0, 0)
+    assert seq.result.state == "paused" and seq.held is None
+    assert "declined" not in [e["event"] for e in read_log(seq.log.path)]
+
+
+def test_decline_while_held_needs_clear_held_before_resume(tmp_path):
+    _, job10 = straight_job10()
+    job = short_job(job10, n0=2, n1=1)
+    w, seq = sim(job, tmp_path, confirm=lambda desc: not desc.startswith("robot: place stone"))
+    with pytest.raises(SequencerAborted):
+        seq.run()
+    assert seq.held == {"from": "magazine", "slot": seq.held["slot"], "kind": "full",
+                        "stone": list(job.stops[0].stones[0].key), "unknown": False}
+    assert w.robot.holding is not None
+    seq.confirm = None
+    with pytest.raises(SequencerError, match="stone may be in the jaws"):
+        seq.run(seq.stop_k)
+    w.robot.holding = None                               # the operator takes the stone out of the jaws
+    seq.clear_held()
+    assert seq.held is None and seq.run(seq.stop_k).state == "done"
+    keys = [r.key for r in w.records]
+    assert len(keys) == len(set(keys)) == 3
+    ev = read_log(seq.log.path)
+    assert any(e["event"] == "held_cleared" and e["held"]["slot"] for e in ev)
+
+
+@pytest.mark.parametrize("action, frm", [("pick_magazine", "magazine"), ("place_wall", "magazine")])
+def test_robot_error_with_the_jaws_involved_marks_them_unknown(tmp_path, action, frm):
+    _, job10 = straight_job10()
+    w, seq = sim(short_job(job10, n0=2, n1=0), tmp_path, fail_on={action: 2})
+    with pytest.raises(SequencerError, match="NOT parked"):
+        seq.run(0, 0)
+    assert seq.held is not None and seq.held["unknown"] is True and seq.held["from"] == frm
+    assert seq.held["slot"] is not None
+    with pytest.raises(SequencerError, match="stone may be in the jaws"):
+        seq.run(0, 0)
+
+
+def test_station_pick_error_marks_the_jaws_unknown(tmp_path):
+    _, job10 = straight_job10()
+    job = short_job(job10, n0=2, n1=0, fill=1)
+    w, seq = sim(job, tmp_path, fail_on={"pick_station": 1})
+    with pytest.raises(SequencerError):
+        seq.run(0, 0)
+    assert seq.held["from"] == "station" and seq.held["unknown"] and seq.held["slot"] in job.station.take_order
+
+
+# ── H6: catch-all ─────────────────────────────────────────────────────────────
+class _DeadCamera:
+    def grab(self):
+        raise CameraError("camera unplugged")
+
+
+def test_an_unexpected_exception_ends_the_run_as_error(tmp_path):
+    _, job10 = straight_job10()
+    w, seq = sim(short_job(job10, n0=1, n1=0), tmp_path)
+    seq.camera = _DeadCamera()
+    with pytest.raises(SequencerError, match="CameraError: camera unplugged") as ei:
+        seq.run(0, 0)
+    assert isinstance(ei.value.__cause__, CameraError)
+    assert seq.result.state == "error" and seq.result.error.startswith("CameraError")
+    last = read_log(seq.log.path)[-1]
+    assert last["event"] == "run_error" and last["kind"] == "CameraError"

@@ -35,6 +35,9 @@ Interruptions (pause, a declined step, an ARES or robot error) keep the route pr
   plates, table; mauer.floor.job_obstacles) and refused if it would cross an obstacle. A move that ended not ok
   (aborted by the PLC) updates the estimate from the odometry of the outcome and marks it unverified; an ARES error
   without an outcome marks the pose unknown - a resume then needs confirm_pose() / set_pose(pose) by the operator.
+Held stone (2026-10-07): `held` tracks the stone between pick and put-down; a pause takes effect only with empty
+  jaws (the place of a held stone still runs), a robot error during a pick or place marks the jaw state unknown, and
+  run() refuses to resume while a stone may be held until the operator calls clear_held().
 Rotations of more than `rotate_keep_dir_deg` keep the direction of the previous rotation (E003: ~1.2 deg loss after
 reversing the rotation direction, mauer/ares/ads.py AresAds.rotate).
 
@@ -405,6 +408,7 @@ class Sequencer:
         self.route_progress: RouteProgress | None = None
         self.pending_why: str | None = None      # limits of the next wall measurement after a finished route / return
         self.pose_status = "ok"                # "ok" | "odometry" (move not ok: odometry estimate) | "unknown"
+        self.held: dict | None = None            # stone in the jaws: {"from", "slot", "kind", "stone", "unknown"}
         self.board_leg = {str(t["name"]): t.get("leg") for t in cfg.get("targets", []) if t.get("parent") == "wall"}
         # the standoff the job's looks were checked for (tools/make_job.py); 0 = route ends at the stop (old jobs)
         self.standoff_mm = float((job.meta.get("route_check") or {}).get("arrival_standoff_mm", 0.0) or 0.0)
@@ -458,11 +462,23 @@ class Sequencer:
         self.log.write("warning", msg=msg, **data)
 
     def _confirm(self, desc: str) -> None:
-        if self.paused:
+        # a pause takes effect only with empty jaws: while a stone is held its place still runs (and is confirmed)
+        if self.paused and self.held is None:
             raise SequencerPaused("run paused", self.stop_k)
         if self.confirm is not None and not self.confirm(desc):
+            if self.paused and self.held is None:       # pause pressed while the step waited for the operator
+                raise SequencerPaused("run paused", self.stop_k)
             self.log.write("declined", what=desc)
             raise SequencerAborted(f"operator declined: {desc}", self.stop_k)
+
+    def _set_held(self, held: dict | None) -> None:
+        self.held = held
+        self.log.write("held", held=held)
+
+    def clear_held(self, source: str = "operator") -> None:
+        """Operator: the jaws are empty (stone taken out or placed by hand, arm parked) - lifts the resume refusal."""
+        self.log.write("held_cleared", held=self.held, source=source)
+        self.held = None
 
     # ── robot ────────────────────────────────────────────────────────────────
     def _robot(self, action: str, desc: str, *args) -> Any:
@@ -475,6 +491,13 @@ class Sequencer:
             return getattr(self.robot, action)(*args)
         except RobotError as e:
             self.log.write("robot_error", action=action, what=desc, error=str(e))
+            if action in ("pick_magazine", "pick_station"):        # the jaws may or may not hold the stone now
+                slot = next((a for a in args if hasattr(a, "id")), None)
+                kind = args[2] if action == "pick_magazine" and len(args) > 2 else getattr(slot, "kind", "full")
+                self._set_held({"from": "magazine" if action == "pick_magazine" else "station",
+                                "slot": getattr(slot, "id", None), "kind": kind, "stone": None, "unknown": True})
+            elif action.startswith("place_") and self.held is not None:
+                self._set_held({**self.held, "unknown": True})
             raise SequencerError(f"robot {action} failed ({desc}): {e} - the arm is NOT parked; ARES stays "
                                  "interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park "
                                  f"it, then resume from stop {self.stop_k}", self.stop_k) from e
@@ -960,9 +983,11 @@ class Sequencer:
         for sid, mid, kind in plan:
             self._robot("pick_station", f"pick station slot {sid} ({kind})", T_base_station, st.slot(sid))
             self.station.take(sid)
+            self._set_held({"from": "station", "slot": sid, "kind": kind, "stone": None, "unknown": False})
             self._robot("place_magazine", f"place magazine slot {mid} ({kind})", self.job.magazine.slot(mid),
                         self.T_base_ares, kind)
             self.magazine.fill(mid, kind)
+            self._set_held(None)
             n += 1
         self._park()
         self.log.write("reload_transfer", moved=n, wanted=n_need, magazine=len(self.magazine),
@@ -1035,11 +1060,13 @@ class Sequencer:
         self._robot("pick_magazine", f"pick magazine slot {mid} ({t.kind})", self.job.magazine.slot(mid),
                     self.T_base_ares, t.kind)
         self.magazine.take(mid)
+        self._set_held({"from": "magazine", "slot": mid, "kind": t.kind, "stone": list(t.key), "unknown": False})
         T_cmd = self.T_base_wall @ t.T_wall_tcp
         self._robot("place_wall", f"place stone {t.label} (u {t.u_mm:.0f} mm, top {t.z_top_mm:.0f} mm)",
                     self.T_base_wall, t)
         self.placed.add(t.key)
         self.result.placed.append(t.key)
+        self._set_held(None)                      # after placed: a snapshot at 'held' shows the stone in the wall
         self.log.write("placed", stop=k, stone=t.key, slot=mid, T_base_tcp=T_cmd, frame_src=self.pose_src)
 
     # ── run ──────────────────────────────────────────────────────────────────
@@ -1053,6 +1080,9 @@ class Sequencer:
             raise ValueError(f"start_stop {start_stop} / stop_after {stop_after} outside 0..{n - 1}")
         if self.paused:
             raise SequencerPaused("run is paused - resume() first", start_stop)
+        if self.held is not None:
+            raise SequencerError(f"a stone may be in the jaws ({self.held}) - take it out / check the gripper, park "
+                                 "the arm, then clear_held() and resume", start_stop)
         self.result.state = "running"
         self.result.error = None
         self.log.write("run_start", start_stop=start_stop, last_stop=last, camera_loop=self.camera_loop,
@@ -1133,6 +1163,10 @@ class Sequencer:
             self.result.state, self.result.error = "error", str(e)
             self.log.write("run_error", error=str(e), stop=self.stop_k, kind=type(e).__name__)
             raise SequencerError(str(e), self.stop_k) from e
+        except Exception as e:                        # anything else (CameraError, a bug): a defined end state
+            self.result.state, self.result.error = "error", f"{type(e).__name__}: {e}"
+            self.log.write("run_error", error=str(e), stop=self.stop_k, kind=type(e).__name__)
+            raise SequencerError(f"{type(e).__name__}: {e}", self.stop_k) from e
 
     def close(self) -> None:
         self.log.close()

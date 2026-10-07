@@ -253,6 +253,7 @@ def test_robot_block_error_stops_safely(cfg, job10, tmp_path):
     assert ev.index("robot_error") < ev.index("run_error") < ev.index("interlock") == len(ev) - 1
     # operator recovers: takes the stone out of the jaws, parks; resume places the rest without repeating any
     w.robot.holding = None
+    seq.clear_held()                                          # the operator confirms the jaws are empty
     w.robot.park()
     seq.run(start_stop=0)
     keys = [r.key for r in w.records]
