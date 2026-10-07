@@ -31,7 +31,8 @@ Routes (job v2: moves between stops, leg change between the legs of an L, statio
 Interruptions (pause, a declined step, an ARES or robot error) keep the route progress (route, next leg); run() with
   the same stop resumes it: an interrupted station trip continues to the station (and does the reload), an interrupted
   return or move between stops continues its remaining legs - never a straight line from wherever ARES stands to the
-  first waypoint of another route. The first move of a resume is checked against the floor model of the job (legs,
+  first waypoint of another route. A direct move between stops (no route) counts as a two-waypoint route while it
+  runs, so an interrupted one is driven to its end on resume (2026-10-07). The first move of a resume is checked against the floor model of the job (legs,
   plates, table; mauer.floor.job_obstacles) and refused if it would cross an obstacle. A move that ended not ok
   (aborted by the PLC) updates the estimate from the odometry of the outcome and marks it unverified; an ARES error
   without an outcome marks the pose unknown - a resume then needs confirm_pose() / set_pose(pose) by the operator.
@@ -1133,7 +1134,11 @@ class Sequencer:
                                            standoff_mm=self._standoff())
                         why = "after route"
                     else:
+                        # kept as a two-waypoint route while it runs: an interrupted direct move (declined, paused,
+                        # ARES error) is resumed like a route leg instead of measuring stop k from stop k - 1
+                        self.route_progress = RouteProgress("stop", k, [prev, stop.ares], f"stop {k - 1} -> stop {k}")
                         self._drive_to(stop.ares, prev, f"stop {k - 1} -> stop {k}")
+                        self.route_progress = None
                 if not (k == start_stop and measured):
                     self._measure_wall(k, why)
                 for t in stop.stones:

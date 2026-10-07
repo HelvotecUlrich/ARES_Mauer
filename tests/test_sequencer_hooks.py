@@ -233,3 +233,30 @@ def test_an_unexpected_exception_ends_the_run_as_error(tmp_path):
     assert seq.result.state == "error" and seq.result.error.startswith("CameraError")
     last = read_log(seq.log.path)[-1]
     assert last["event"] == "run_error" and last["kind"] == "CameraError"
+
+
+# ── resume of an interrupted direct move between stops ────────────────────────
+def test_declined_direct_move_between_stops_is_driven_on_resume(tmp_path):
+    """A straight job moves between stops without a route: declining that ARES move (step mode) and resuming must
+    drive it, not measure stop 1 from where ARES still stands (stop 0)."""
+    _, job10 = straight_job10()
+    job = short_job(job10, n0=1, n1=1)
+    declined = []
+
+    def confirm(desc):
+        if desc.startswith("ARES") and not declined:
+            declined.append(desc)
+            return False
+        return True
+
+    w, seq = sim(job, tmp_path, confirm=confirm)
+    with pytest.raises(SequencerAborted):
+        seq.run()
+    assert w.ares.moves == [] and seq.stop_k == 1 and seq.route_progress is not None
+    assert seq.route_progress.to_dict()["n_legs"] == 1
+    assert seq.run(seq.stop_k).state == "done"
+    assert len(w.records) == 2 and len(w.ares.moves) >= 1 and w.violations == []
+    ev = read_log(seq.log.path)
+    i = max(i for i, e in enumerate(ev) if e["event"] == "run_start")
+    names = [e["event"] for e in ev[i:]]
+    assert names.index("resume_route") < names.index("ares_move") < names.index("wall_frame")
