@@ -250,6 +250,7 @@ class URRobot:
                 if q_look is None:
                     raise RobotError("mauer_look: no IK solution for the look pose", action="mauer_look")
                 lines += self._guarded(q_look, "mauer_look")
+                q = q_look                           # the script's IK near the checked joints
             lines.append(self.script.look_pose(T, q, self.speeds.a_joint, self.speeds.v_joint, target="flange",
                                                T_flange_tcp=self.T_flange_tcp))
         return self._run("\n".join(lines), "mauer_look")
@@ -268,8 +269,11 @@ class URRobot:
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
         column = (T_base_frame @ np.asarray(T_frame_tcp, float))[:2, 3]
-        path = (self._guarded(self._q_above(T_base_frame, T_frame_tcp, q, name), name, vias, column)
-                if self.guard is not None else self._vias(vias))
+        if self.guard is not None:                   # the script's IK near the checked joints = the checked path
+            q = self._q_above(T_base_frame, T_frame_tcp, q, name)
+            path = self._guarded(q, name, vias, column)
+        else:
+            path = self._vias(vias)
         body = "\n".join([self._preamble(False), *path,
                           self.script.pick_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                  self.do_close, self.pulse_s, self.wait_s, do_open=self.do_open,
@@ -283,8 +287,11 @@ class URRobot:
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
         column = (T_base_frame @ np.asarray(T_frame_tcp, float))[:2, 3]
-        path = (self._guarded(self._q_above(T_base_frame, T_frame_tcp, q, name), name, vias, column)
-                if self.guard is not None else self._vias(vias))
+        if self.guard is not None:                   # the script's IK near the checked joints = the checked path
+            q = self._q_above(T_base_frame, T_frame_tcp, q, name)
+            path = self._guarded(q, name, vias, column)
+        else:
+            path = self._vias(vias)
         body = "\n".join([self._preamble(True), *path,
                           self.script.place_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                   self.do_open, self.pulse_s, self.wait_s, do_close=self.do_close,
