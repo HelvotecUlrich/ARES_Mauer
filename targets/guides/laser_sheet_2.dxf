@@ -785,7 +785,7 @@ ENGRAVE
 40
 5.0000
 1
-B5
+A3
 0
 LINE
 8
@@ -901,7 +901,7 @@ ENGRAVE
 40
 5.0000
 1
-B6
+A4
 0
 LINE
 8
@@ -1017,7 +1017,7 @@ ENGRAVE
 40
 5.0000
 1
-C0
+B0
 0
 LINE
 8
@@ -1133,7 +1133,7 @@ ENGRAVE
 40
 5.0000
 1
-C1
+B1
 0
 TEXT
 8
@@ -1149,7 +1149,7 @@ ENGRAVE
 40
 5.0000
 1
-plate W4 ->
+plate W1 ->
 0
 TEXT
 8
@@ -1165,7 +1165,7 @@ ENGRAVE
 40
 5.0000
 1
-plate W5 ->
+plate W2 ->
 0
 TEXT
 8
@@ -1181,7 +1181,7 @@ ENGRAVE
 40
 6.0000
 1
-B5-C1 (corner B/C)
+A3-B1 (corner A/B (A runs through))
 0
 LINE
 8

@@ -793,14 +793,17 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
     stones, plans = wp.plan_legs(cfg, legs_, tables[legs_[0].name], half_stones, margin, tables=tables,
                                  a_limits=limits)
     ctx = _Ctx(cfg, dist, max_looks, look_margin_mm)
+    runs = {str(d["name"]): bool(d.get("runs_through", False)) for d in cfg["wall"]["legs"]}
     for prev, lg in zip(legs_, legs_[1:]):
-        exps = [wp.butt_corner(cfg, prev, lg.n0, lg.name, towards_ares=t) for t in (False, True)]
+        th = "next" if runs.get(lg.name) else "prev"            # [[wall.legs]] runs_through (2026-10-07)
+        exps = [wp.butt_corner(cfg, prev, lg.n0, lg.name, towards_ares=t, through=th) for t in (False, True)]
         if not any(abs(e.x - lg.x) <= 1e-6 and abs(e.y - lg.y) <= 1e-6 and abs(e.theta - lg.theta) <= 1e-9
                    for e in exps):
             ctx.warnings.append(f"leg {lg.name} frame ({lg.x:.1f}, {lg.y:.1f}, {math.degrees(lg.theta):.1f} deg) is "
-                                f"not a butt corner of leg {prev.name} (away from ARES: ({exps[0].x:.1f}, "
-                                f"{exps[0].y:.1f}, {math.degrees(exps[0].theta):.1f} deg), towards ARES: "
-                                f"({exps[1].x:.1f}, {exps[1].y:.1f}, {math.degrees(exps[1].theta):.1f} deg))")
+                                f"not a butt corner of leg {prev.name} ({lg.name if th == 'next' else prev.name} "
+                                f"running through; away from ARES: ({exps[0].x:.1f}, {exps[0].y:.1f}, "
+                                f"{math.degrees(exps[0].theta):.1f} deg), towards ARES: ({exps[1].x:.1f}, "
+                                f"{exps[1].y:.1f}, {math.degrees(exps[1].theta):.1f} deg))")
     T_legs = mconfig.leg_frames(cfg)
     by_name = {lg.name: lg for lg in legs_}
     stops: list[mjob.Stop] = []

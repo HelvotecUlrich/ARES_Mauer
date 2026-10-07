@@ -574,17 +574,21 @@ def test_c_legs_corners_and_stops(ccfg, cjob):
     assert [(lg.name, lg.n0, lg.side, lg.dist) for lg in legs] == [("A", 5, "right", 580.0), ("B", 7, "front", 840.0),
                                                                    ("C", 5, "left", 580.0)]
     assert ccfg["wall"]["shape"] == "C" and ccfg["wall"]["ares_inside"] is True
-    for prev, lg in zip(legs, legs[1:]):                                     # both corners towards ARES's side
-        exp = wp.butt_corner(ccfg, prev, lg.n0, lg.name, towards_ares=True)
+    for prev, lg, th in zip(legs, legs[1:], ("prev", "next")):               # both corners towards ARES's side;
+        exp = wp.butt_corner(ccfg, prev, lg.n0, lg.name, towards_ares=True, through=th)   # A and C run through
         assert (lg.x, lg.y, lg.theta) == pytest.approx((exp.x, exp.y, exp.theta), abs=0.01)
+        assert wp.corner_of(ccfg, prev, lg)["through"] == th
     assert math.degrees(legs[2].theta) == pytest.approx(180.0) and legs[2].y > 0     # C runs back on ARES's side
+    A, C = legs[0], legs[2]                                  # 2026-10-07: the free ends of A and C line up
+    assert A.to_wall(0.0, 0.0)[0] == pytest.approx(C.to_wall(wp.leg_length(ccfg, C.n0), 0.0)[0], abs=1e-9)
     assert not any("butt corner" in w for w in cjob.meta["warnings"])
     assert cjob.n_stones == sum(4 * lg.n0 + 2 for lg in legs) == 74                 # A 5 / B 7 / C 5 (2026-10-07)
     assert sum(t.kind == "half" for t in cjob.stones()) == 12 and cjob.meta["shape"] == "C"
     assert [s.leg for s in cjob.stops] == ["A", "B", "B", "C"]
     by = {lg.name: lg for lg in legs}
     lim = {d["name"]: d["a_limits_mm"] for d in cjob.meta["legs"]}
-    assert lim["B"] == pytest.approx([460.0, 820.0])                         # between A's and C's plates
+    assert lim["B"] == pytest.approx([460.0, 940.0])                         # between A's and C's plates (C runs
+    # through beyond B's end since 2026-10-07: 940, was 820 with C butting against B)
     board_leg = {t["name"]: t["leg"] for t in ccfg["targets"] if t["parent"] == "wall"}
     for s in cjob.stops:
         lg = by[s.leg]

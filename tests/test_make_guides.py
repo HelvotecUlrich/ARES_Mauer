@@ -242,3 +242,18 @@ def test_kerf_compensation_of_the_cut_lines(data, tmp_path):
     dxf = mg.sheet_dxf(sheet, p, "t")
     radii = {round(float(e.split("\n40\n")[1].split("\n")[0]), 4) for e in dxf.ents if e.startswith("0\nCIRCLE\n8\nCUT")}
     assert radii == {round((p.peg_hole_d - p.kerf) / 2, 4)}
+
+
+def test_corner_where_c_runs_through_is_one_piece_and_the_ends_line_up(data):
+    """2026-10-07 (Samuel: the ends of A and C line up): C runs through its corner with B; the L-piece B5-C1 covers
+    B's last stone, the filled corner gap and C's first stones, and A's start lies on the line of C's end."""
+    pc = next(pc for pc in data["leg_pieces"] if pc.name == "B5-C1")
+    assert "C runs through" in pc.notes
+    poly = [pc.to_wall(q) for q in pc.outline]
+    legs = {lg.name: lg for lg in data["legs"]}
+    A, B, C = legs["A"], legs["B"], legs["C"]
+    P = data["params"].pitch
+    for q in (B.to_wall(B.n0 * P - 1.0, 0.0), B.to_wall(B.n0 * P + 1.5, 0.0),     # B's end, the corner gap
+              C.to_wall(P / 2, 0.0), C.to_wall(1.5 * P, 0.0)):                    # C's first two stones
+        assert _inside(q, poly), q
+    assert A.to_wall(0.0, 0.0)[0] == pytest.approx(C.to_wall(C.n0 * P, 0.0)[0], abs=1e-9)

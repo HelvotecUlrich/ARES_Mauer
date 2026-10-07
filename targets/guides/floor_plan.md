@@ -12,10 +12,10 @@ Marking points: lay out leg A's outer edge first (O -> A end), then place the ot
   B start, ARES-side corner                     x    880.0   y    122.7
   B end, outer corner                           x   1000.0   y   1522.7
   B end, ARES-side corner                       x    880.0   y   1522.7
-  C start, outer corner                         x    877.3   y   1522.7
-  C start, ARES-side corner                     x    877.3   y   1402.7
-  C end, outer corner                           x   -122.7   y   1522.7
-  C end, ARES-side corner                       x   -122.7   y   1402.7
+  C start, outer corner                         x   1000.0   y   1645.4
+  C start, ARES-side corner                     x   1000.0   y   1525.4
+  C end, outer corner                           x      0.0   y   1645.4
+  C end, ARES-side corner                       x      0.0   y   1525.4
   station, front-left corner (ARES side)        x  -1837.5   y   1530.0
   station, front-right corner (ARES side)       x   -362.5   y   1530.0
   station, back-right corner                    x   -362.5   y   1810.0
@@ -24,15 +24,15 @@ Marking points: lay out leg A's outer edge first (O -> A end), then place the ot
   ARES dock                                     x  -1100.0   y    900.0   heading   90.0 deg
   ARES stop 0                                   x    120.0   y    640.0   heading    0.0 deg
   ARES stop 1                                   x    100.0   y    762.7   heading    0.0 deg
-  ARES stop 2                                   x    100.0   y    922.7   heading    0.0 deg
-  ARES stop 3                                   x     37.3   y    882.7   heading    0.0 deg
+  ARES stop 2                                   x    100.0   y    962.7   heading    0.0 deg
+  ARES stop 3                                   x    120.0   y   1005.4   heading    0.0 deg
 
 Diagonals (tape measure, mm):
   A start, outer corner -> A end, outer corner: 1000
   A start, outer corner -> B start, outer corner: 1007
   A start, outer corner -> B end, outer corner: 1822
-  A start, outer corner -> C start, outer corner: 1757
-  A start, outer corner -> C end, outer corner: 1528
+  A start, outer corner -> C start, outer corner: 1925
+  A start, outer corner -> C end, outer corner: 1645
   A start, outer corner -> station, front-left corner (ARES side): 2391
   A start, outer corner -> station, front-right corner (ARES side): 1572
   A start, outer corner -> station, back-right corner: 1846
@@ -43,4 +43,4 @@ Guides + station: 2839 x 1812 mm; including every ARES position, route and rotat
 Parts: 4 MDF sheets 800 x 600 x 4 mm (5 guide pieces, 2 station pieces), 50 locating cones (2 per stone on the guides; print a few spares), carpet tape.
 ```
 
-Laser sheets: 1: A3-B1, A0-A2; 2: B5-C1, B2-B4; 3: station1, station2; 4: C2-C4
+Laser sheets: 1: B5-C1, A0-A2; 2: A3-B1, B2-B4; 3: station1, station2; 4: C2-C4

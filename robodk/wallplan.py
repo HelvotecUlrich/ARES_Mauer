@@ -19,8 +19,11 @@ also the corners") a leg is a RECTANGLE in running bond: even courses n full sto
 half, so both leg ends are vertical. Without half stones (`half_stones=False`) a leg falls back to the trapezoid.
 Legs are independent: no stone is supported across legs (the pin pattern 53 x 100.5 mm is not square - a stone
 turned by 90 deg can never engage the sockets of a stone below), the corner is a vertical BUTT joint
-(`butt_corner`): the next leg's flat end face stands [brick] rib_mm (ribs on the long faces) + [wall] corner_gap_mm
-off the previous leg's body. `check_legs` checks the cross-leg footprints over the ribs (`stone_footprint(rib=True)`).
+(`butt_corner`): one leg runs through the corner, the other's flat end face stands [brick] rib_mm (ribs on the long
+faces) + [wall] corner_gap_mm off its body - the earlier leg runs through (through="prev", every corner until
+2026-10-07) or the next one (through="next": the C since 2026-10-07, A and C run through, B butts against both, so the
+free ends of A and C line up); `corner_of` tells which. `check_legs` checks the cross-leg footprints over the ribs
+(`stone_footprint(rib=True)`).
 
 Sequencing: ARES stops at leg positions a_j (leg coordinate of the ARES centre). At each stop the wall is continued
 where it ends: of all reachable stones that satisfy both rules, the one closest to the start of the leg is placed
@@ -158,17 +161,44 @@ def corner_gap(cfg: Mapping) -> float:
 
 
 def butt_corner(cfg: Mapping, prev: Leg, n0: int, name: str, towards_ares: bool = False, side: str = "",
-                dist: float | None = None) -> Leg:
+                dist: float | None = None, through: str = "prev") -> Leg:
     """The next leg: perpendicular at the far end of `prev`, on the side away from prev's ARES side (-y of prev; ARES
     works OUTSIDE the corner - the L / C of 2026-10-05/06) or, towards_ares, on prev's ARES side (+y; ARES works
-    INSIDE the corner - the inside C of 2026-10-06). prev runs through the corner (its course-0 end is flush with the
-    body of the new leg's outer face), the new leg starts at the face of prev it meets (vertical butt joint) - beyond
-    prev's ribs and the corner gap: origin = prev (length - width/2, -+(width/2 + rib_mm + corner_gap_mm)), heading
-    prev -+ 90 deg. side / dist: see Leg."""
+    INSIDE the corner - the inside C of 2026-10-06), heading prev -+ 90 deg. side / dist: see Leg.
+    through="prev": prev runs through the corner (its course-0 end is flush with the body of the new leg's outer
+    face), the new leg starts at the face of prev it meets, beyond prev's ribs and the corner gap: origin = prev
+    (length - width/2, -+(width/2 + rib_mm + corner_gap_mm)).
+    through="next" (2026-10-07): the new leg runs through, prev's flat end face stands rib_mm + corner_gap_mm off the
+    new leg's body; the new leg starts flush with prev's face away from the turn: origin = prev (length + width/2 +
+    rib_mm + corner_gap_mm, +-width/2)."""
     W = float(cfg["brick"]["width"])
     sgn = 1.0 if towards_ares else -1.0
-    x, y = prev.to_wall(leg_length(cfg, prev.n0) - W / 2.0, sgn * (W / 2.0 + rib(cfg) + corner_gap(cfg)))
+    L = leg_length(cfg, prev.n0)
+    if through == "prev":
+        x, y = prev.to_wall(L - W / 2.0, sgn * (W / 2.0 + rib(cfg) + corner_gap(cfg)))
+    elif through == "next":
+        x, y = prev.to_wall(L + W / 2.0 + rib(cfg) + corner_gap(cfg), -sgn * W / 2.0)
+    else:
+        raise ValueError(f"butt_corner: through must be 'prev' or 'next', not {through!r}")
     return Leg(name, int(n0), x, y, _wrap(prev.theta + sgn * math.pi / 2.0), side, dist)
+
+
+def corner_of(cfg: Mapping, prev: Leg, nxt: Leg, tol_mm: float = 1e-6) -> dict | None:
+    """The butt corner prev -> nxt as built by butt_corner (any corner gap): {"through": "prev" | "next",
+    "towards_ares": bool, "gap_mm": clearance between the butting leg's flat end face and the rib crests of the leg
+    that runs through}; None if nxt is not perpendicular at prev's far end in one of these two ways."""
+    W, r = float(cfg["brick"]["width"]), rib(cfg)
+    L = leg_length(cfg, prev.n0)
+    u, v = prev.from_wall(nxt.x, nxt.y)
+    dth = _wrap(nxt.theta - prev.theta)
+    if abs(abs(dth) - math.pi / 2.0) > 1e-6:
+        return None
+    sgn = 1.0 if dth > 0 else -1.0
+    if abs(u - (L - W / 2.0)) <= tol_mm and sgn * v > W / 2.0:
+        return {"through": "prev", "towards_ares": sgn > 0, "gap_mm": sgn * v - (W / 2.0 + r)}
+    if abs(v + sgn * W / 2.0) <= tol_mm and u > L + W / 2.0:
+        return {"through": "next", "towards_ares": sgn > 0, "gap_mm": u - L - (W / 2.0 + r)}
+    return None
 
 
 # ── layout ────────────────────────────────────────────────────────────────────

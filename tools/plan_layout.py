@@ -62,17 +62,20 @@ CAP_BOARDS = 4                    # boards per stop counted for robustness
 def with_legs(cfg: dict, n0s) -> dict:
     """Copy of cfg with [[wall.legs]] = A (wall frame, n0s[0]) and every further leg the butt corner of the one before
     (B = n0s[1], C = n0s[2], ...): away from ARES's side, or towards it with [wall] ares_inside (ARES works inside the
-    corners). A leg keeps the side / dist of the config's leg of the same name."""
+    corners). A leg keeps the side / dist / runs_through of the config's leg of the same name (runs_through: the leg
+    runs through its corner with the one before, wallplan.butt_corner through="next")."""
     wp = mj.load_wallplan()
     c = copy.deepcopy(cfg)
     inside = bool(c["wall"].get("ares_inside", False))
+    old = {str(d["name"]): d for d in cfg["wall"].get("legs") or []}
     legs_ = [wp.Leg(LEG_NAMES[0], int(n0s[0]))]
     for name, n in zip(LEG_NAMES[1:], n0s[1:]):
-        legs_.append(wp.butt_corner(c, legs_[-1], int(n), name, towards_ares=inside))
-    old = {str(d["name"]): d for d in cfg["wall"].get("legs") or []}
+        through = "next" if old.get(name, {}).get("runs_through") else "prev"
+        legs_.append(wp.butt_corner(c, legs_[-1], int(n), name, towards_ares=inside, through=through))
     c["wall"]["legs"] = [{"name": lg.name, "n0": lg.n0, "xyz_in_wall": [round(lg.x, 6), round(lg.y, 6), 0.0],
                           "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(lg.theta), 9)],
-                          **{k: old[lg.name][k] for k in ("side", "dist") if k in old.get(lg.name, {})}}
+                          **{k: old[lg.name][k] for k in ("side", "dist", "runs_through")
+                             if k in old.get(lg.name, {})}}
                          for lg in legs_]
     return c
 

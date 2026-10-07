@@ -15,7 +15,8 @@ carpet tape, V-tabs for the existing board plates, station on the floor in one r
 - Pieces: a strip is cut [guides] cut_offset after a stone joint (the tab stays whole) into pieces of at most
   segment_max; consecutive pieces join with a dovetail on the centre line (tail on the downstream piece, socket on the
   upstream one, wall order A -> B -> C). The last corner_arm_stones stones of a leg and the first of the next form
-  one L-piece across the corner (the 3 mm butt-joint gap filled), so the corner offset is cut, not measured.
+  one L-piece across the corner (the 3 mm butt-joint gap filled), so the corner offset is cut, not measured - either
+  leg may run through the corner (wallplan.butt_corner through; the C since 2026-10-07: A and C run through).
 - Locating cone (printed): the stone's socket cone (STEP: r socket_r_mouth at the face -> socket_r_bottom at
   socket_depth) minus [guides] socket_clearance, locator_h high, with a peg into the strip's peg hole. The STL is
   oriented for printing (narrow top on the bed, peg up: no supports; the wall overhangs 25 deg from vertical).
@@ -275,16 +276,21 @@ def _split(items: list[int], kmax: int) -> list[list[int]]:
     return out
 
 
-def corner_geometry(a, b, h: float, L: float) -> float:
-    """v of leg b's origin in leg a's frame (a's length L) for a butt corner turning towards a's +v (ARES side, the
-    inside of the C/L): b starts at u = L - h beside a's ARES-side face. ValueError for any other corner."""
+def corner_geometry(a, b, h: float, L: float) -> tuple[str, float]:
+    """Butt corner a -> b turning towards a's +v (ARES side, the inside of the C/L), b's origin in a's frame (a's
+    length L): ("prev", v0) - a runs through, b starts at u = L - h beside a's ARES-side face at v = v0; or ("next",
+    u0) - b runs through (2026-10-07), its centre line at u = u0 beyond a's end face, starting flush with a's outer
+    face (v = -h). ValueError for any other corner."""
     u, v = a.from_wall(b.x, b.y)
     dth = (b.theta - a.theta + math.pi) % (2 * math.pi) - math.pi
-    if abs(dth - math.pi / 2) > 1e-6 or abs(u - (L - h)) > 1e-6 or v < h - 1e-6 or v > h + 20.0:
-        raise ValueError(f"corner {a.name}->{b.name}: only butt corners turning towards the ARES side are supported "
-                         f"(+90 deg, {b.name} starting at u = L - {h:g} beside {a.name}'s ARES-side face; got "
-                         f"{math.degrees(dth):.1f} deg, u {u:.1f}, v {v:.1f} mm)")
-    return v
+    if abs(dth - math.pi / 2) <= 1e-6:
+        if abs(u - (L - h)) <= 1e-6 and h - 1e-6 <= v <= h + 20.0:
+            return "prev", v
+        if abs(v + h) <= 1e-6 and L + h - 1e-6 <= u <= L + h + 20.0:
+            return "next", u
+    raise ValueError(f"corner {a.name}->{b.name}: only butt corners turning towards the ARES side are supported "
+                     f"(+90 deg; {b.name} starting at u = L - {h:g} beside {a.name}'s ARES-side face, or running "
+                     f"through beyond {a.name}'s end; got {math.degrees(dth):.1f} deg, u {u:.1f}, v {v:.1f} mm)")
 
 
 def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece]:
@@ -317,23 +323,36 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
             pieces.append(pc)
         if i < nl - 1:
             nb = legs[i + 1]
-            v0 = corner_geometry(lg, nb, h, L)
+            kind, c0 = corner_geometry(lg, nb, h, L)
             u_cut = (lg.n0 - p.arm) * P + off
             arm_end = nb.n0 * P if (i + 1 == nl - 1 and p.arm == nb.n0) else p.arm * P + off
-            v_end = v0 + arm_end
-            poly = [(u_cut, -h), (L, -h), (L, v_end), (L - 2 * h, v_end), (L - 2 * h, h), (u_cut, h)]
-            feats = {5: [(h, "tail")],
-                     4: [((L - 2 * h) - k * P, "tab") for k in range(1, lg.n0)
-                         if u_cut < k * P < L - 2 * h - p.vtab[0]],
-                     3: [(v_end - (v0 + k * P), "tab") for k in range(1, nb.n0) if 0 < k * P < arm_end - off / 2]}
+            if kind == "prev":                         # lg runs through, nb starts beside its ARES-side face
+                v0 = c0
+                v_end = v0 + arm_end
+                poly = [(u_cut, -h), (L, -h), (L, v_end), (L - 2 * h, v_end), (L - 2 * h, h), (u_cut, h)]
+                feats = {5: [(h, "tail")],
+                         4: [((L - 2 * h) - k * P, "tab") for k in range(1, lg.n0)
+                             if u_cut < k * P < L - 2 * h - p.vtab[0]],
+                         3: [(v_end - (v0 + k * P), "tab") for k in range(1, nb.n0) if 0 < k * P < arm_end - off / 2]}
+
+                def to_a(q: Pt, L=L, v0=v0) -> Pt:             # leg nb frame -> leg lg frame
+                    return L - h - q[1], v0 + q[0]
+            else:                                      # nb runs through beyond lg's end (the gap is filled)
+                u0 = c0
+                v_end = -h + arm_end
+                poly = [(u_cut, -h), (u0 + h, -h), (u0 + h, v_end), (u0 - h, v_end), (u0 - h, h), (u_cut, h)]
+                feats = {5: [(h, "tail")],
+                         4: [((u0 - h) - k * P, "tab") for k in range(1, lg.n0) if u_cut < k * P < L],
+                         3: [(arm_end - k * P, "tab") for k in range(1, nb.n0)
+                             if 2 * h + p.vtab[0] < k * P < arm_end - off / 2]}
+
+                def to_a(q: Pt, u0=u0) -> Pt:                  # leg nb frame -> leg lg frame
+                    return u0 - q[1], -h + q[0]
             if not (i + 1 == nl - 1 and arm_end >= nb.n0 * P):
                 feats[2] = [(h, "socket")]
             pc = Piece(f"{lg.name}{lg.n0 - p.arm}-{nb.name}{p.arm - 1}", (lg.x, lg.y, lg.theta), decorate(p, poly, feats),
-                       notes=f"corner {lg.name}/{nb.name}")
+                       notes=f"corner {lg.name}/{nb.name} ({(lg if kind == 'prev' else nb).name} runs through)")
             _stones(p, pc, lg.name, range(lg.n0 - p.arm, lg.n0), lambda q: q, 0.0, plate_at)
-
-            def to_a(q: Pt, L=L, v0=v0) -> Pt:                 # leg nb frame -> leg lg frame
-                return L - h - q[1], v0 + q[0]
             _stones(p, pc, nb.name, range(0, p.arm), to_a, math.pi / 2, plate_at)
             pieces.append(pc)
     return pieces
@@ -927,10 +946,10 @@ def plan_md(cfg: dict, data: dict, sheets: list, sc: int) -> list[str]:
     lines.append("Marking points: lay out leg A's outer edge first (O -> A end), then place the others by x / y; check "
                  "the diagonals.")
     for name, q in fm.marks:
-        x, y = fm.to_map(q)
+        x, y = (round(v, 1) + 0.0 for v in fm.to_map(q))              # + 0.0: no "-0.0"
         lines.append(f"  {name:45s} x {x:8.1f}   y {y:8.1f}")
     for name, a in fm.ares:
-        x, y = fm.to_map((a.x_mm, a.y_mm))
+        x, y = (round(v, 1) + 0.0 for v in fm.to_map((a.x_mm, a.y_mm)))
         lines.append(f"  ARES {name:40s} x {x:8.1f}   y {y:8.1f}   heading {math.degrees(a.theta_rad - fm.x_axis):6.1f} deg")
     lines.append("")
     lines.append("Diagonals (tape measure, mm):")

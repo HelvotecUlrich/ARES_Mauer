@@ -1209,10 +1209,12 @@ def static_findings(cfg: dict) -> dict:
     legs = wallplan.legs(cfg)
     corners = []
     for A, B in zip(legs, legs[1:]):
-        # the next leg's course-0 start face (u = 0) in the earlier leg's frame: v of its origin; the earlier leg's
-        # ribbed inside face at -(W/2 + rib)
-        x, y = A.from_wall(B.x, B.y)
-        corners.append({"prev": A.name, "next": B.name, "origin_v_mm": y, "gap_mm": abs(y) - (W / 2 + rib)})
+        # the butting leg's flat end face against the ribbed face of the leg that runs through (wallplan.corner_of,
+        # with the rib height measured on the mesh)
+        c = wallplan.corner_of({**cfg, "brick": {**cfg["brick"], "rib_mm": rib}}, A, B)
+        if c is None:
+            raise ValueError(f"legs {A.name} -> {B.name}: not a butt corner (wallplan.corner_of)")
+        corners.append({"prev": A.name, "next": B.name, "through": c["through"], "gap_mm": c["gap_mm"]})
     gap = min((c["gap_mm"] for c in corners), default=None)
     return {"rib_mm": rib, "corner_gap_mm": gap, "corners": corners, "volume_cm3": vol, "volume_signed_raw_cm3": raw,
             "flipped_faces": flipped, "faces": len(F)}
@@ -1529,11 +1531,11 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
     sf = info["static"]
     w(f"- Stone ribs on the long faces: {sf['rib_mm']:.2f} mm high (`cad/stone_full_2026-10-01.stl` bbox).")
     for c in sf.get("corners", []):
-        w(f"- Butt corner {c['prev']}-{c['next']}: leg {c['next']}'s course-0 end face lies {abs(c['gap_mm']):.2f} mm "
-          + (f"INSIDE leg {c['prev']}'s rib envelope" if c["gap_mm"] < 0 else f"clear of leg {c['prev']}'s ribs")
-          + f" ({c['next']} origin at v = {c['origin_v_mm']:.1f} mm in leg {c['prev']}'s frame, the ribbed face at "
-          f"-{cfg['brick']['width'] / 2 + sf['rib_mm']:.2f} mm). "
-          "The RoboDK collision models are shrunk (see Inputs) and do not see it.")
+        run, butt = ((c["prev"], c["next"]) if c.get("through", "prev") == "prev" else (c["next"], c["prev"]))
+        w(f"- Butt corner {c['prev']}-{c['next']} (leg {run} runs through): leg {butt}'s course-0 end face lies "
+          f"{abs(c['gap_mm']):.2f} mm "
+          + (f"INSIDE leg {run}'s rib envelope" if c["gap_mm"] < 0 else f"clear of leg {run}'s ribs")
+          + ". The RoboDK collision models are shrunk (see Inputs) and do not see it.")
     w(f"- Full stone mesh volume: {sf['volume_cm3']:.0f} cm3 with consistent face orientation (ray casting gives the "
       f"same); the signed volume of the raw STL is {sf['volume_signed_raw_cm3']:.0f} cm3 because "
       + (f"{sf['flipped_faces']} of its {sf['faces']} faces are flipped" if sf["flipped_faces"] else "-")
