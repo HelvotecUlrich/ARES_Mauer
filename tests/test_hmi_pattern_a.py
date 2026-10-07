@@ -92,3 +92,26 @@ def test_hmi_halt_aborts_the_clients_move(plc_hmi, qapp):
     wait_until(lambda: False, 0.5, qapp)                      # the worker resets the pulse after 300 ms
     assert plc.T["bCmdMoveAbort"] is False
     assert plc.written_names("client") <= ads.WRITABLE
+
+
+def test_heartbeat_keeps_its_window_while_a_sim_run_loads_the_cpu(plc_hmi, qapp, tmp_path):
+    """The heartbeat is a QTimer in the ads-worker thread; a CPU-heavy run thread (image rendering, board detection,
+    frame fits) shares the GIL with it. Every gap must stay below the AresAds window (and far below the PLC's
+    500 ms move watchdog)."""
+    from hmi.core.run_controller import RunController, RunOptions
+    from hmi_fakes import short_sim_session
+    plc, worker, status, cfg = plc_hmi
+    c = RunController(cfg["hmi"], runs_dir=tmp_path / "runs")
+    try:
+        c.set_session(short_sim_session(30, 4))              # the whole 10-stone wall: 34 stones, reloads
+        c.prepare(RunOptions("sim", scenario="none", sim_step_s=0.0))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp)
+        t0 = plc.clock()
+        c.start()
+        assert wait_until(lambda: c.state == "done", 120.0, qapp), c.state
+        t1 = plc.clock()
+    finally:
+        assert c.shutdown(15.0)
+    assert t1 - t0 > 1.0                                    # the run really loaded the CPU for a while
+    gaps = heartbeat_gaps(plc, t0)
+    assert len(gaps) >= 8 and max(gaps) < HB_GAP_MAX_S, max(gaps)

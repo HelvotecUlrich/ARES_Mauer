@@ -209,3 +209,83 @@ def short_job(job, n0=6, n1=3, fill=None):
         j.magazine.initial_fill = [sid for sid in j.magazine.take_order if sid in plan]
         j.magazine.initial_kinds = plan
     return j
+
+
+@functools.lru_cache(maxsize=None)
+def short_sim_session(n0: int = 2, n1: int = 1):
+    """JobSession of the short straight-wall test job: n0 stones at stop 0, n1 at stop 1 (3 by default), the
+    magazine as planned for the full job (no reload). Shared - never mutate it."""
+    from hmi.core.session import JobSession
+    cfg, job10 = straight_job10()
+    return JobSession(cfg, None, short_job(job10, n0=n0, n1=n1), None, "test", f"short_{n0}_{n1}")
+
+
+# ── REAL rig stand-ins (no network: RealFactories fakes) ──────────────────────
+class StubLink:
+    """URLink stand-in: start / stop / abort are recorded, state() returns a URState from the given values, every
+    robot program is refused (no motion in the HMI tests)."""
+
+    def __init__(self, *, q_deg=(0.0, -90.0, 90.0, -90.0, -90.0, 0.0), robot_mode: int = 7, safety_mode: int = 1,
+                 runtime_state: int = 1, status_bits: int = 0x1, controller_version=(3, 15, 8, 0), age_s: float = 0.0,
+                 digital_outputs: int = 0, start_error: Exception | None = None, order: list | None = None) -> None:
+        import numpy as np
+        self.q = np.radians(q_deg)
+        self.robot_mode, self.safety_mode, self.runtime_state = robot_mode, safety_mode, runtime_state
+        self.status_bits, self.age_s, self.digital_outputs = status_bits, age_s, digital_outputs
+        self.controller_version = tuple(controller_version) if controller_version else None
+        self.start_error = start_error
+        self.rtde_error = None
+        self.missing_fields: list = []
+        self.calls: List[str] = []
+        self.order = order if order is not None else self.calls
+
+    def start(self):
+        self.calls.append("start")
+        if self.start_error is not None:
+            raise self.start_error
+        return self
+
+    def stop(self) -> None:
+        self.calls.append("stop")
+        self.order.append("link.stop")
+
+    def abort(self, dashboard: bool = True) -> str:
+        self.calls.append("abort")
+        return "stub: stopl + dashboard stop"
+
+    def state(self):
+        import numpy as np
+
+        from mauer.ur.link import URState
+        z = np.zeros(6)
+        return URState(time.time() - self.age_s, 100.0, self.q.copy(), z, np.array([0.3, 0.1, 0.4, 0.0, 3.14, 0.0]),
+                       self.robot_mode, self.safety_mode, self.runtime_state, self.status_bits, 0, 0, 0,
+                       digital_outputs=self.digital_outputs, tool_output_voltage=24)
+
+    def state_age_s(self) -> float:
+        return self.age_s
+
+    def run_block(self, *a, **k):
+        raise AssertionError("no robot program in the HMI tests")
+
+
+class StubCamera:
+    """Camera stand-in: grab() returns a black Frame of the given size; close() is recorded."""
+
+    def __init__(self, width: int = 2472, height: int = 2064, order: list | None = None) -> None:
+        self.width, self.height = width, height
+        self.grabs = 0
+        self.closed = False
+        self.order = order if order is not None else []
+
+    def grab(self):
+        import numpy as np
+
+        from mauer.camera.base import Frame
+        self.grabs += 1
+        t = time.time()
+        return Frame(np.zeros((self.height, self.width), np.uint8), t, t + 0.01, {"stub": True})
+
+    def close(self) -> None:
+        self.closed = True
+        self.order.append("camera.close")
