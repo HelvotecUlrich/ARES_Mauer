@@ -128,8 +128,9 @@ def test_space_while_a_step_waits_halts_and_releases_it(real_win, qapp, monkeypa
     assert _key(w, Qt.Key_Space) is True
     assert fw.of("halt") == [None]                         # the ADS HALT first
     assert wait_until(lambda: not w.confirm_bar.isVisibleTo(w), 1.0, qapp)
-    assert wait_until(lambda: c.state == "aborted", 30.0, qapp) and c.halted and w.mauer.halted_lbl.isVisibleTo(w)
-    assert w.mauer.step.isChecked()                        # step mode forced on for the resume
+    assert wait_until(lambda: c.state == "aborted", 30.0, qapp) and c.halted
+    assert wait_until(lambda: w.mauer.state_lbl.text() == "ABORTED", 5.0, qapp)        # queued state signal
+    assert w.mauer.halted_lbl.isVisibleTo(w) and w.mauer.step.isChecked()   # step mode stays on for the resume
 
 
 def test_space_in_an_hmi_child_window_is_halt(fake_win, qapp, monkeypatch):

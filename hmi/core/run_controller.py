@@ -666,6 +666,7 @@ class RunController(QObject):
         if self._rig is None:
             return
         self._halted = True
+        self.state_changed.emit(self._state, "HALT")      # widgets show the HALTED badge at once
         if isinstance(self._rig, RealRig):
             rig = self._rig
             threading.Thread(target=self._halt_helper, args=(rig,), name="mauer-halt", daemon=True).start()
