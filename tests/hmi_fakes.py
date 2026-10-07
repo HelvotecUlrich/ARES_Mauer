@@ -8,6 +8,7 @@ config shape; its ADS address is the TEST-NET-1 address 192.0.2.10 (RFC 5737) - 
 from __future__ import annotations
 
 import functools
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
@@ -157,6 +158,18 @@ class Scheduler:
         todo, self.pending = self.pending, []
         for _ms, fn in todo:
             fn()
+
+
+def wait_until(pred: Callable[[], Any], timeout_s: float, qapp, step_s: float = 0.01) -> bool:
+    """Process Qt events until pred() is true (True) or timeout_s passed (False)."""
+    end = time.monotonic() + timeout_s
+    while True:
+        qapp.processEvents()
+        if pred():
+            return True
+        if time.monotonic() >= end:
+            return False
+        time.sleep(step_s)
 
 
 # ── Mauer test jobs ───────────────────────────────────────────────────────────
