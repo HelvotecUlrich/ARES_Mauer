@@ -730,7 +730,7 @@ def test_c_leg_change_b_to_c_and_station_trip_from_c(ccfg, cjob, tmp_path):
     the outside of C) and a station trip from leg C, with realistic errors - every stone seated, the true ARES path
     clear of legs, plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
     j = copy.deepcopy(cjob)
-    b, c = j.stops[3], j.stops[4]
+    b, c = j.stops[2], j.stops[3]
     assert (b.leg, c.leg) == ("B", "C")
     b.stones, c.stones = b.stones[:2], c.stones[:4]                         # B's last stop may hold only 1 stone
     n = len(b.stones) + len(c.stones)

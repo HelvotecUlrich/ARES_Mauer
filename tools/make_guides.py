@@ -80,6 +80,7 @@ class GuideParams:
     vtab: tuple[float, float]
     dovetail: tuple[float, float, float]
     joint_c: float
+    kerf: float                 # laser kerf: cut outlines drawn kerf/2 larger, holes / windows kerf/2 smaller
     cut_offset: float
     arm: int
     seg_max: float
@@ -104,6 +105,7 @@ def params(cfg: dict) -> GuideParams:
         clearance=float(gd["socket_clearance"]), peg_d=float(gd["peg_d"]), peg_len=float(gd["peg_len"]),
         peg_hole_d=float(gd["peg_hole_d"]), vtab=tuple(float(v) for v in gd["vtab"]),
         dovetail=tuple(float(v) for v in gd["dovetail"]), joint_c=float(gd["joint_clearance"]),
+        kerf=float(gd.get("kerf_mm", 0.0)),
         cut_offset=float(gd["cut_offset"]), arm=int(gd["corner_arm_stones"]), seg_max=float(gd["segment_max"]),
         sheet=tuple(float(v) for v in gd["sheet"]), sheet_margin=float(gd["sheet_margin"]),
         window_c=float(gd["window_clearance"]))
@@ -474,6 +476,27 @@ def nest(pieces: list[Piece], p: GuideParams, gap: float = 6.0) -> list[list[tup
     return [sh["items"] for sh in sheets]
 
 
+def offset_polygon(poly: list[Pt], d: float) -> list[Pt]:
+    """Polygon offset by d along the outward normals (CCW polygon: d > 0 grows it, d < 0 shrinks it), mitred corners -
+    the laser kerf compensation (d = +-kerf/2 is a fraction of a millimetre, far below any edge length)."""
+    n = len(poly)
+    P = [np.asarray(q, float) for q in poly]
+    out = []
+    for i in range(n):
+        a, b, c = P[i - 1], P[i], P[(i + 1) % n]
+        e1, e2 = (b - a) / np.linalg.norm(b - a), (c - b) / np.linalg.norm(c - b)
+        n1, n2 = np.array([e1[1], -e1[0]]), np.array([e2[1], -e2[0]])
+        out.append(tuple(b + d * (n1 + n2) / (1.0 + float(n1 @ n2))))
+    return out
+
+
+def cut_geometry(pc: "Piece", p: GuideParams) -> tuple[list[Pt], list[tuple[Pt, float]], list[list[Pt]]]:
+    """What the laser follows: the outline kerf/2 outside, holes and windows kerf/2 inside the nominal geometry."""
+    k = p.kerf / 2.0
+    return (offset_polygon(pc.outline, k), [(c, dia - p.kerf) for c, dia in pc.holes],
+            [offset_polygon(w, -k) for w in pc.windows])
+
+
 def _place(q: Pt, rot: bool, off: Pt) -> Pt:
     x, y = (q if not rot else (-q[1], q[0]))
     return x + off[0], y + off[1]
@@ -482,12 +505,14 @@ def _place(q: Pt, rot: bool, off: Pt) -> Pt:
 def sheet_dxf(items: list[tuple[Piece, bool, Pt]], p: GuideParams, label: str) -> mp.Dxf:
     d = mp.Dxf()
     d.poly(SHEET, [(0.0, 0.0), (p.sheet[0], 0.0), (p.sheet[0], p.sheet[1]), (0.0, p.sheet[1])])
-    d.text(SHEET, (2.0, p.sheet[1] - 6.0), 4.0, label)
+    d.text(SHEET, (2.0, p.sheet[1] - 6.0), 4.0, label + (f" - CUT lines kerf-compensated for {p.kerf:g} mm" if p.kerf
+                                                       else ""))
     for pc, rot, off in items:
-        d.poly(mp.CUT, [_place(q, rot, off) for q in pc.outline])
-        for c, dia in pc.holes:
+        outline, holes, windows = cut_geometry(pc, p)
+        d.poly(mp.CUT, [_place(q, rot, off) for q in outline])
+        for c, dia in holes:
             d.circle(mp.CUT, _place(c, rot, off), dia / 2.0)
-        for w in pc.windows:
+        for w in windows:
             d.poly(mp.CUT, [_place(q, rot, off) for q in w])
         for name, c, ang, kind in pc.blocks:
             L, W = stone_size(p, kind)

@@ -117,7 +117,8 @@ reach_margin_mm = 20.0      # ASSUMPTION: legs plan - a stone counts as reachabl
 # distances ASSUMPTION.
 [[wall.legs]]
 name = "A"
-n0 = 10                     # CONFIRMED: Samuel 2026-10-06 ("one length is 2m")
+n0 = 5                      # CONFIRMED: Samuel 2026-10-07 (the C's legs A and C the same length as the shorter one,
+                            # C; was 10 = "one length is 2m", 2026-10-06)
 xyz_in_wall = [0.0, 0.0, 0.0]          # ASSUMPTION: leg A frame = wall frame (definition)
 rpy_in_wall_deg = [0.0, 0.0, 0.0]
 side = "right"              # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
@@ -125,14 +126,14 @@ dist = 580.0                # ASSUMPTION: ARES side 110 mm from the board plates
 [[wall.legs]]
 name = "B"
 n0 = 7                      # CONFIRMED: Samuel 2026-10-06 ("1.5 across": 1.52 m over the outer faces)
-xyz_in_wall = [1940.0, 62.69, 0.0]     # ASSUMPTION: butt corner at A's far end towards ARES (200 * 10 - 60, 60 + 1.69 + 1.0)
+xyz_in_wall = [940.0, 62.69, 0.0]      # ASSUMPTION: butt corner at A's far end towards ARES (200 * 5 - 60, 60 + 1.69 + 1.0)
 rpy_in_wall_deg = [0.0, 0.0, 90.0]
 side = "front"              # CONFIRMED: Samuel 2026-10-06 (B straight ahead of ARES driving into the C)
 dist = 840.0                # CONFIRMED: Samuel 2026-10-06 (front wall 840 mm, see [wall] dist_nominal)
 [[wall.legs]]
 name = "C"
 n0 = 5                      # CONFIRMED: Samuel 2026-10-06 ("1m back")
-xyz_in_wall = [1877.31, 1402.69, 0.0]  # ASSUMPTION: butt corner at B's far end towards ARES (B + (-62.69, 200 * 7 - 60))
+xyz_in_wall = [877.31, 1402.69, 0.0]   # ASSUMPTION: butt corner at B's far end towards ARES (B + (-62.69, 200 * 7 - 60))
 rpy_in_wall_deg = [0.0, 0.0, 180.0]
 side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: as leg A
@@ -278,69 +279,62 @@ dictionary = "DICT_APRILTAG_36h11"
 # centre: u = 100 + 200 k (k = block index from the leg start, k < 0 / k >= n0 = spare block beyond a free leg end),
 # v = block face 60 + 55 = 115 mm. Origin = top-left board corner -> (u - 40, 115 + 32, MDF 4 + paper 0.1) in the leg
 # frame. The positions follow from the PLACEHOLDER block size in [plates].
-# C layout 2026-10-06, ARES inside (tools/plan_layout.py --evaluate, results/l_wall_plan.md; the L layout of
-# 2026-10-05 in tests/conftest.py L_BOARDS): the 8 existing boards (Samuel: no new markers / boards; the engraved
-# "u = ..." on the plates is now wrong, the names/ids are what count) on the INSIDE faces of the legs (ARES side), no
-# spare block, plates clear of each other, the other legs, ARES at its stops and the routes. A stop only looks at
-# boards of its OWN leg, with looks clear of the wall built by the end of the stop, of the ARES chassis and of a full
-# magazine (tools/make_job.py, mauer.armcheck; RoboDK 2026-10-06: looks to boards behind the UR5 hit the full
-# magazine, looks beside ARES put the gripper into it): A 4 boards, B 2, C 2 -> 3, 2, 2, 2, 2 usable boards at the 5
-# stops (+-50 mm ARES margin and the arrival standoff), worst baseline 600 mm. Boards of legs B / C are in their leg frame, so they follow the corner
-# offsets (rib + corner gap).
+# C layout A 5 / B 7 / C 5 (2026-10-07, tools/plan_layout.py --evaluate --legs 5,7,5; the L layout of 2026-10-05 in
+# tests/conftest.py L_BOARDS): 7 of the 8 existing boards (Samuel: no new markers / boards; the engraved "u = ..." on
+# the plates is wrong, the names/ids are what count; W7 (ids 100-109) stays a spare - with A at 5 stones no further
+# plate fits without overlapping its neighbour) on the INSIDE faces of the legs (ARES side), no spare block, plates
+# clear of each other, the other legs, ARES at its stops and the routes. A stop only looks at boards of its OWN leg,
+# with looks clear of the wall built by the end of the stop, of the ARES chassis and of a full magazine
+# (tools/make_job.py, mauer.armcheck): A 2 boards, B 3, C 2 -> 2, 3, 3, 2 usable boards at the 4 stops (+-50 mm
+# ARES margin and the arrival standoff), worst baseline 600 mm. Boards of legs B / C are in their leg frame, so they
+# follow the corner offsets (rib + corner gap).
 [[targets]]
 name = "W0"
 parent = "wall"
-leg = "A"                   # block k = 1 of leg A (u 300)
+leg = "A"           # block k = 0 of leg A (u 100)
 first_id = 30
-xyz = [260.0, 147.0, 4.1]
+xyz = [60.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W1"
 parent = "wall"
-leg = "A"                   # block k = 3 (u 700)
+leg = "A"           # block k = 3 (u 700)
 first_id = 40
 xyz = [660.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W2"
 parent = "wall"
-leg = "A"                   # block k = 5 (u 1100)
+leg = "B"           # block k = 1 of leg B (u 300)
 first_id = 50
-xyz = [1060.0, 147.0, 4.1]
+xyz = [260.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W3"
 parent = "wall"
-leg = "A"                   # block k = 8 (u 1700)
+leg = "B"           # block k = 3 (u 700)
 first_id = 60
-xyz = [1660.0, 147.0, 4.1]
+xyz = [660.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W4"
 parent = "wall"
-leg = "B"                   # block k = 1 of leg B (u 300)
+leg = "B"           # block k = 5 (u 1100)
 first_id = 70
-xyz = [260.0, 147.0, 4.1]
+xyz = [1060.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W5"
 parent = "wall"
-leg = "B"                   # block k = 4 (u 900)
+leg = "C"           # block k = 1 of leg C (u 300)
 first_id = 80
-xyz = [860.0, 147.0, 4.1]
+xyz = [260.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W6"
 parent = "wall"
-leg = "C"                   # block k = 1 of leg C (u 300)
+leg = "C"           # block k = 4 (u 900, C's free end)
 first_id = 90
-xyz = [260.0, 147.0, 4.1]
-rpy_deg = [180.0, 0.0, 0.0]
-[[targets]]
-name = "W7"
-parent = "wall"
-leg = "C"                   # block k = 4 (u 900, C's free end)
-first_id = 100
 xyz = [860.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
@@ -395,7 +389,11 @@ segment_max = 760.0         # ASSUMPTION: longest piece along x on the 800 x 600
 sheet = [800.0, 600.0]      # CONFIRMED: Trotec bed (Samuel 2026-10-06)
 sheet_margin = 10.0         # ASSUMPTION
 dovetail = [24.0, 12.0, 6.0]  # ASSUMPTION: dovetail joint neck width, depth, flare per side [mm]
-joint_clearance = 0.1       # ASSUMPTION: per side in the dovetail (laser kerf compensated by the cutter software)
+joint_clearance = 0.05      # ASSUMPTION: per side in the dovetail (2026-10-07: 0.1 + uncompensated kerf gave ~0.8 mm
+                            # play, Samuel's first test cut -> tighter, and the kerf compensated below)
+kerf_mm = 0.3               # ASSUMPTION: Trotec kerf in 4 mm MDF, from that play: 0.8 / 2 - 0.1 = 0.3 mm. The DXF cut
+                            # lines are compensated (outlines kerf/2 outside, holes / windows kerf/2 inside the nominal
+                            # geometry). The board plates of 2026-10-05 (tools/make_plates.py) were cut uncompensated
 cut_offset = 20.0           # ASSUMPTION: piece joints 20 mm after a stone joint (the V-tab at the joint stays whole)
 corner_arm_stones = 2       # ASSUMPTION: stones per arm of a corner L-piece (2 + 2 fit 800 x 600)
 pin_along = 100.5           # CONFIRMED: STEP, socket (= pin) centres 100.5 mm apart along the stone (y -49.75 / -150.25)

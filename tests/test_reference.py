@@ -13,11 +13,12 @@ from mauer import geometry as g
 from mauer.reference import (PARENTS, Pose2D, after_rotation, after_translation, ares_pose, board_centre, fit_frame,
                              placements, relative_move, T_base_parent_from, T_wall_ares, tilt_deg, wrap_angle)
 from mauer.vision.targets import board_specs, corners_obj
+from conftest import c10_config
 
 
 @pytest.fixture(scope="module")
 def cfg():
-    return config.load()
+    return c10_config()                          # the C of 2026-10-06: 8 boards, the spread the numbers below assume
 
 
 @pytest.fixture(scope="module")

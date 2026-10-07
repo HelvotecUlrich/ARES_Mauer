@@ -60,7 +60,7 @@ def test_with_legs_reproduces_the_l_and_shape_names():
 def test_with_legs_inside_c_turns_towards_ares_and_keeps_sides():
     cfg = config.load()
     assert cfg["wall"]["ares_inside"] is True
-    c = pl.with_legs(cfg, (10, 7, 5))
+    c = pl.with_legs(cfg, (5, 7, 5))                                         # the C since 2026-10-07
     legs = c["wall"]["legs"]
     assert [lg["rpy_in_wall_deg"][2] for lg in legs] == pytest.approx([0.0, 90.0, 180.0])     # C back above A
     assert legs[1]["xyz_in_wall"][1] > 0 and legs[2]["xyz_in_wall"][1] > legs[1]["xyz_in_wall"][1]

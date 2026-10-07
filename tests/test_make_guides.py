@@ -98,7 +98,7 @@ def test_every_first_course_stone_has_two_cones_in_diagonal_sockets(data):
                       for s in (-1, 1))
         assert holes[lg.name] == pytest.approx(want, abs=1e-6), lg.name
     names = [pc.name for pc in data["leg_pieces"]]
-    assert names == ["A0-A2", "A3-A5", "A6-A7", "A8-B1", "B2-B4", "B5-C1", "C2-C4"]
+    assert names == ["A0-A2", "A3-B1", "B2-B4", "B5-C1", "C2-C4"]                 # A 5 / B 7 / C 5
 
 
 def _tab_apexes(data):
@@ -221,3 +221,24 @@ def test_cli_writes_everything(tmp_path):
         assert (tmp_path / f).stat().st_size > 0, f
     dxf = (tmp_path / "laser_sheet_1.dxf").read_text()
     assert dxf.startswith("0\nSECTION") and "CUT" in dxf and "ENGRAVE" in dxf and dxf.rstrip().endswith("EOF")
+
+
+def test_kerf_compensation_of_the_cut_lines(data, tmp_path):
+    """2026-10-07: ~0.8 mm play in the first test cut's dovetail (0.1 mm clearance per side + the uncompensated kerf)
+    -> the DXF cut lines are offset by kerf/2: outlines outside, holes / windows inside the nominal geometry."""
+    p = data["params"]
+    assert p.kerf > 0 and p.joint_c < 0.1
+    sq = [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)]
+    big = np.asarray(mg.offset_polygon(sq, 0.15))
+    assert big.min(axis=0) == pytest.approx((-0.15, -0.15)) and big.max(axis=0) == pytest.approx((100.15, 50.15))
+    small = np.asarray(mg.offset_polygon(sq, -0.15))
+    assert small.min(axis=0) == pytest.approx((0.15, 0.15)) and small.max(axis=0) == pytest.approx((99.85, 49.85))
+    pc = data["leg_pieces"][0]
+    outline, holes, windows = mg.cut_geometry(pc, p)
+    for q, n in zip(outline, pc.outline):                                   # every vertex moved outwards by >= kerf/2
+        assert math.dist(q, n) >= p.kerf / 2 - 1e-9 and not _inside(q, pc.outline)
+    assert [d for _, d in holes] == pytest.approx([d - p.kerf for _, d in pc.holes])
+    sheet = mg.nest([pc], p)[0]
+    dxf = mg.sheet_dxf(sheet, p, "t")
+    radii = {round(float(e.split("\n40\n")[1].split("\n")[0]), 4) for e in dxf.ents if e.startswith("0\nCIRCLE\n8\nCUT")}
+    assert radii == {round((p.peg_hole_d - p.kerf) / 2, 4)}
