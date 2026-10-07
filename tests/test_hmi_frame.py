@@ -1,7 +1,7 @@
 """Direction / sign mapping (spec 5.4): physical operator direction -> PLC frame, jog bit choice.
 
-Copied 2026-10-07 from MA 10_robot/hmi/amr_hmi/tests/test_frame.py (commit 5935c5b); the shipped config is the
-amr config.yaml frame section (hmi_fakes.AMR_CFG) instead of the YAML file."""
+Copied 2026-10-07 from MA 10_robot/hmi/amr_hmi/tests/test_frame.py (commit 5935c5b); the shipped config is
+config/station.toml [hmi.frame] (hmi.core.config.amr_cfg) instead of config.yaml."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ import math
 import pytest
 
 from hmi.amr import frame as F
-from hmi_fakes import AMR_CFG
+from hmi.core.config import amr_cfg
+from mauer import config
 
 pytestmark = pytest.mark.usefixtures("no_lab_network")
 
@@ -104,7 +105,7 @@ def test_from_config_defaults_and_values():
 
 def test_code_default_follows_config_yaml_default():
     """FrameConfig(), from_config() without keys and the shipped config give the same mapping."""
-    shipped = AMR_CFG
+    shipped = amr_cfg(config.load())
     assert shipped["frame"]["plus_y_is_left"] is True
     assert shipped["frame"]["plus_omega_is_ccw"] is True
     assert shipped["frame"]["verified"] is True        # direction test with PLC v2.1 passed 28.09.2026 (D21)
@@ -112,6 +113,7 @@ def test_code_default_follows_config_yaml_default():
     assert d == F.FrameConfig.from_config({})
     assert (d.plus_y_is_left, d.plus_omega_is_ccw) == (sh.plus_y_is_left, sh.plus_omega_is_ccw)
     assert d.verified is False                          # code default stays conservative
+    assert config.load()["ares_ads"]["min_plc_build"] == "2.1"     # the mapping needs PLC >= v2.1 (D21)
 
 
 def test_default_jog_bits_plc_v21():

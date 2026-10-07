@@ -2,7 +2,7 @@
 
 amr_hmi part: copied 2026-10-07 from MA 10_robot/hmi/amr_hmi/tests/fakes.py (commit 5935c5b) - fake pyads
 connection, fake ADS worker, scheduler. AMR_CFG = the values of the amr config.yaml (MA commit 5935c5b) in the amr
-config shape.
+config shape; its ADS address is the TEST-NET-1 address 192.0.2.10 (RFC 5737) - the tests never name the lab one.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from hmi.amr import plc_vars as pv
 
 # amr_hmi config.yaml (MA commit 5935c5b) as the dict MainWindow / AdsWorker / the panels read
 AMR_CFG: Dict[str, Any] = {
-    "ads": {"ams_net_id": "192.168.1.10.1.1", "ads_port": 851, "host_ip": "192.168.1.10", "timeout_ms": 1000},
+    "ads": {"ams_net_id": "192.0.2.10.1.1", "ads_port": 851, "host_ip": "192.0.2.10", "timeout_ms": 1000},
     "plc": {"prefix": "", "to_plc_struct": "GVL_HMI.stToPlc", "from_plc_struct": "GVL_HMI.stFromPlc"},
     "hmi": {"poll_interval_ms": 100, "heartbeat_interval_ms": 100, "reconnect_interval_s": 5, "jog_speed_mms": 200.0,
             "jog_rot_speed_degs": 20.0, "default_speed_limit_mms": 500.0, "jog_accel_mms2": 1000.0,
