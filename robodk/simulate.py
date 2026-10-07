@@ -1756,6 +1756,7 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     if not args.no_report:
         write_report(args.report or L_REPORT, cfg, job, sim, info)
         print(f"wrote {args.report or L_REPORT}", flush=True)
+    robodk_stamp(sim, job, args, info, cfg)
     if args.json:
         Path(args.json).write_text(json.dumps({"stones": sim.stone_log, "routes": sim.route_log,
                                                "looks": sim.look_log, "trips": sim.trip_log,
@@ -1768,6 +1769,50 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
           f"{len(sim.trip_log)} station trips, {sim.planner.tests} collision tests, "
           f"{(time.time() - t_start) / 60:.1f} min", flush=True)
     return 0 if n_ok == job.n_stones and n_tr == len(sim.transfer_log) else 2
+
+
+def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | None = None) -> Path | None:
+    """Write the job as verified by this RoboDK run - meta reach_check "robodk" + robodk_sim (what was checked) - to
+    data/jobs/nominal_<shape>[_<variant>]_robodk.json when the run was complete and clean: the whole wall from stop 0
+    with station trips, every stone placed and every station transfer moved with collision-checked motion, no
+    colliding route sample, every PLANNED look seen with the job's own pose in every state, the job's park pose free.
+    mauer.sequencer.preflight_real accepts such a job for the real robot (with mauer.motionguard on the backend, which
+    plans the actual joint paths). None (reasons printed) otherwise."""
+    from mauer import config as mconfig
+    from mauer import job as mjob
+    reasons = []
+    if args.from_stop or args.max_stones or not args.trips:
+        reasons.append("partial run (--from-stop / --max-stones / --no-trips)")
+    if len(sim.stone_log) != len(job.stones()) or not all(r["ok"] for r in sim.stone_log):
+        reasons.append("not every stone placed with motion")
+    if not all(r["ok"] for r in sim.transfer_log):
+        reasons.append("a station transfer failed")
+    if any(r["hits"] for r in sim.route_log):
+        reasons.append("colliding route samples")
+    for e in sim.look_log:
+        for n in e["planned"]:
+            r = e["res"].get(n)
+            if r is None or not r["ok"] or r.get("source") != "job":
+                reasons.append(f"planned look {n} at stop {e['stop']} ({e['state']}) not seen with the job's pose")
+    if getattr(sim, "park_q", None) is None:
+        reasons.append("the job's park pose is not free in RoboDK")
+    if reasons:
+        print("job NOT stamped as RoboDK-verified: " + "; ".join(list(dict.fromkeys(reasons))[:6]), flush=True)
+        return None
+    stamped = copy.deepcopy(job)
+    stamped.meta["reach_check"] = "robodk"
+    rep = Path(args.report)
+    stamped.meta["robodk_sim"] = {
+        "date": time.strftime("%Y-%m-%d %H:%M"), "robodk": info.get("robodk"),
+        "report": rep.relative_to(REPO).as_posix() if rep.resolve().is_relative_to(REPO) else rep.name,
+        "stones": len(sim.stone_log), "transfers": len(sim.transfer_log), "routes": len(sim.route_log),
+        "checked": "every place / pick / station transfer / look / park and every ARES route with RoboDK collision "
+                   "checks (robodk/simulate.py, motion.Planner incl. the tool-vs-arm model); the real robot plans "
+                   "its own joint paths with mauer.motionguard"}
+    path = (out_dir or REPO / "data" / "jobs") / f"nominal_{cfg['wall'].get('shape') or 'legs'}{mconfig.suffix(cfg)}_robodk.json"
+    mjob.save(stamped, path)
+    print(f"stamped job (RoboDK-verified): {path}", flush=True)
+    return path
 
 
 def problems_of(sim: LSim, info: dict) -> list:
