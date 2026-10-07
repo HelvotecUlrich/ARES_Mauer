@@ -376,6 +376,7 @@ class Sequencer:
         self.last_rot_sign = 0.0
         self.stop_k: int | None = None
         self.at_station = False
+        self.T_base_station: np.ndarray | None = None      # measured at the dock (motion guard world)
         self.route_progress: RouteProgress | None = None
         self.pending_why: str | None = None      # limits of the next wall measurement after a finished route / return
         self.pose_status = "ok"                # "ok" | "odometry" (move not ok: odometry estimate) | "unknown"
@@ -442,6 +443,9 @@ class Sequencer:
     def _robot(self, action: str, desc: str, *args) -> Any:
         self._confirm(f"robot: {desc}")
         self.log.write("robot", action=action, what=desc)
+        guard = getattr(self.robot, "guard", None)
+        if guard is not None:                        # mauer.motionguard: what the arm must not touch right now
+            guard.set_world(self._guard_world())
         try:
             return getattr(self.robot, action)(*args)
         except RobotError as e:
@@ -449,6 +453,22 @@ class Sequencer:
             raise SequencerError(f"robot {action} failed ({desc}): {e} - the arm is NOT parked; ARES stays "
                                  "interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park "
                                  f"it, then resume from stop {self.stop_k}", self.stop_k) from e
+
+    def _guard_world(self):
+        """The world of mauer.motionguard: magazine slots holding a stone, the stones placed so far in the wall frame
+        of the current ARES pose estimate, docked: the measured station frame and the station slots holding a
+        stone."""
+        from .motionguard import GuardWorld
+        # the wall frame of the CURRENT pose estimate (measured, or predicted after a move - the looks are aimed with
+        # it); self.T_base_wall is stale after a route until the next wall measurement
+        T_bw = (T_base_parent_from(self.pose_est, self.T_ares_base) if self.pose_est is not None
+                else self.T_base_wall)
+        docked = self.at_station and self.T_base_station is not None
+        return GuardWorld(magazine=[self.job.magazine.slot(sid) for sid in self.magazine.filled],
+                          wall_stones=[t for t in self.job.stones() if t.key in self.placed],
+                          legs=list(self.job.legs), T_base_wall=T_bw,
+                          station=[self.job.station.slot(sid) for sid in self.station.filled] if docked else [],
+                          T_base_station=self.T_base_station if docked else None)
 
     def _park(self) -> None:
         if not self.robot.is_parked():
@@ -903,6 +923,7 @@ class Sequencer:
                        "the path clear is the operator's responsibility")
             self._drive_to(dock, stop.ares if resume is None else None, f"stop {k} -> station", rotate_first=False)
         T_base_station = self._measure_station(k)
+        self.T_base_station = T_base_station
         n = 0
         for sid, mid, kind in plan:
             self._robot("pick_station", f"pick station slot {sid} ({kind})", T_base_station, st.slot(sid))

@@ -324,6 +324,11 @@ class _FakeLink:
         return BlockResult(ok="FAIL" not in body, block_id=len(self.blocks), name=name, error="boom")
 
 
+def _guard(cfg, job):
+    from mauer.motionguard import MotionGuard
+    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp)
+
+
 def test_ur_robot_programs(cfg, job10):
     c = copy.deepcopy(cfg)
     c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"] = 0.0, 3.0
@@ -333,8 +338,10 @@ def test_ur_robot_programs(cfg, job10):
     with pytest.raises(ValueError, match="mass_kg"):
         URRobot(_FakeLink(job10.park_q_rad), c, job10)
     c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"] = 1.5, 3.0
+    with pytest.raises(ValueError, match="motion guard"):                   # the real robot only with the guard
+        URRobot(_FakeLink(job10.park_q_rad), c, job10)
     link = _FakeLink(job10.park_q_rad)
-    r = URRobot(link, c, job10)
+    r = URRobot(link, c, job10, guard=_guard(c, job10))
     assert r.is_parked() and r.is_idle()
     T_base_wall = g.inv(job10.T_ares_base) @ g.inv(job10.stops[0].ares.T)
     stone = job10.stops[0].stones[0]
@@ -682,7 +689,7 @@ def test_ur_robot_payload_per_stone_type(lcfg, ljob):
     c = copy.deepcopy(lcfg)
     c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"], c["half_brick"]["mass_kg"] = 1.5, 3.0, 1.4
     link = _FakeLink(ljob.park_q_rad)
-    r = URRobot(link, c, ljob)
+    r = URRobot(link, c, ljob, guard=_guard(c, ljob))
     slot = ljob.magazine.slot(ljob.magazine.take_order[0])
     r.pick_magazine(slot, g.inv(ljob.T_ares_base), "half")
     half = next(t for t in ljob.stones() if t.kind == "half")
@@ -691,7 +698,7 @@ def test_ur_robot_payload_per_stone_type(lcfg, ljob):
     assert "set_payload(2.9," in pick and "set_payload(2.9," in place.splitlines()[1]
     c["half_brick"]["mass_kg"] = 0.0
     with pytest.raises(ValueError, match="half_brick"):
-        URRobot(_FakeLink(ljob.park_q_rad), c, ljob)
+        URRobot(_FakeLink(ljob.park_q_rad), c, ljob, guard=_guard(c, ljob))
 
 
 @pytest.mark.slow

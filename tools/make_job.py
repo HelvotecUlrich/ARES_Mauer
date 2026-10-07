@@ -209,7 +209,9 @@ def rolls(step: float = ROLL_STEP_DEG) -> list[float]:
 def find_look(T_base_board, spec, T_flange_cam, dist_mm, R_pref, q_ref, T_parent_base: np.ndarray | None = None,
               margin_mm: float = 0.0, arm=None, offsets: Sequence[tuple[float, float]] = ()
               ) -> tuple[np.ndarray, np.ndarray, float] | None:
-    """(T_base_flange, qnear, roll) of the first roll with a family IK solution, None if none. With margin_mm > 0 the
+    """(T_base_flange, qnear, roll) of the roll whose IK solution is closest to q_ref (smallest largest joint change;
+    2026-10-07: the first valid roll made the arm turn wrist 3 by up to 170 deg from the park pose and swing the
+    camera past the forearm - mauer.motionguard refused such looks), None if none. With margin_mm > 0 the
     look must also stay reachable when the sequencer re-aims it for ARES displaced by +-margin_mm along the parent
     x and y axes (T_parent_base = nominal UR base in the parent frame), also around every extra ARES displacement in
     `offsets` [(dx, dy) mm, parent frame] (the arrival standoff). arm = mauer.armcheck.ArmChecker (parent frame): every
@@ -222,11 +224,16 @@ def find_look(T_base_board, spec, T_flange_cam, dist_mm, R_pref, q_ref, T_parent
                 p = (ox + dx, oy + dy)
                 if p != (0.0, 0.0) and p not in shifts:
                     shifts.append(p)
+    best = None
+    q_ref = np.asarray(q_ref, float)
     for r in rolls():
         T = look_pose(T_base_board, spec, T_flange_cam, dist_mm, R_pref, r)
         q = ik_near(T, q_ref)
         if q is None:
             continue
+        key = (float(np.max(np.abs(np.asarray(q, float) - q_ref))), abs(r))
+        if best is not None and key >= best[0]:
+            continue                                   # the cheap key first: only check what could win
         if arm is not None and T_parent_base is not None and arm.hits(q, T_parent_base):
             continue
         ok = True
@@ -237,8 +244,8 @@ def find_look(T_base_board, spec, T_flange_cam, dist_mm, R_pref, q_ref, T_parent
                 ok = False
                 break
         if ok:
-            return T, q, r
-    return None
+            best = (key, (T, q, r))
+    return None if best is None else best[1]
 
 
 def choose_boards(cands: dict[str, tuple], centres: dict[str, np.ndarray], n: int) -> list[str]:

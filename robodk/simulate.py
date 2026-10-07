@@ -293,7 +293,7 @@ class Sim:
         P.z_safe = self.safe_z(full)
         j = self.robot.Joints().list()
         with P._planning():
-            jp = P.compact(0.0, j)
+            jp = self.park_q if getattr(self, "park_q", None) else P.compact(0.0, j)
         if jp is None:
             raise RuntimeError("park pose not reachable")
         path = P.transfer(j, jp)
@@ -1628,7 +1628,15 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     sim.setup()
     RDK.Render(False)
     sim.planner.z_safe = sim.safe_z(full=True)
-    sim.j_home = sim.planner.compact(0.0, [0, -100, 52, -42, -90, 0])
+    # the real park pose of the job ([ur] park_q_deg, the sequencer parks there) if RoboDK finds it free, else a compact
+    # pose (2026-10-07: the configured park pose before had the jaws in the forearm - mauer.motionguard)
+    j_park = [math.degrees(v) for v in job.park_q_rad]
+    with sim.planner._planning():
+        park_free = sim.planner.state_free(j_park)
+    sim.park_q = j_park if park_free else None
+    if not park_free:
+        sim.notes.append("job park pose [ur] park_q_deg in collision in RoboDK - parked at a compact pose instead")
+    sim.j_home = j_park if park_free else sim.planner.compact(0.0, [0, -100, 52, -42, -90, 0])
     if sim.j_home is None:
         raise SystemExit("no collision-free start pose found")
     sim.robot.setJoints(sim.j_home)

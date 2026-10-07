@@ -392,14 +392,17 @@ class SimRobot:
     arm has left the park pose), for failure tests."""
 
     def __init__(self, world: "SimWorld", seed: int = 0, check_ik: bool = True,
-                 fail_on: Mapping[str, int] | None = None):
+                 fail_on: Mapping[str, int] | None = None, guard=None):
         self.world = world
+        self.guard = guard                       # mauer.motionguard.MotionGuard (as URRobot) or None
+        self.guard_vias = 0                      # detour vias the guard inserted (statistics)
         self.rng = np.random.default_rng(seed + 7)
         self.check_ik = check_ik
         self.fail_on = dict(fail_on or {})
         self.calls: Counter = Counter()
         self.park_q = np.asarray(world.job.park_q_rad, float)
         self.q: np.ndarray | None = self.park_q.copy()
+        self.q_cmd = self.park_q.copy()          # commanded joints at the end of the last action (guard start)
         self.T_bf = ur5_fk(self.park_q)          # actual flange in the TRUE base frame [mm]
         self.parked = True
         self.holding: tuple[str, np.ndarray] | None = None
@@ -436,18 +439,53 @@ class SimRobot:
     def _move_tcp(self, T_base_tcp: np.ndarray, what: str) -> None:
         self._move_flange(np.asarray(T_base_tcp, float) @ g.inv(self.T_flange_tcp), what)
 
+    def _held_kind(self) -> str | None:
+        return None if self.holding is None else self.world.kind_of.get(self.holding[0], "full")
+
+    def _guard(self, q_target, what: str, column=None) -> None:
+        """mauer.motionguard check of the joint move q_cmd -> q_target (as URRobot._guarded); RobotError before the
+        move if refused."""
+        if self.guard is None or q_target is None:
+            return
+        v = self.guard.plan(self.q_cmd, q_target, self._held_kind(), (), column)
+        if not v.ok:
+            raise RobotError(f"{what}: refused by the motion guard: " + " | ".join(v.problems[-3:]), action=what)
+        self.guard_vias += len(v.vias)
+
+    def _guard_above(self, T_base_frame, T_frame_tcp, hint, what: str) -> None:
+        if self.guard is None:
+            return
+        T = (np.asarray(T_base_frame, float) @ g.transl(0.0, 0.0, float(self.world.job.approach_mm))
+             @ np.asarray(T_frame_tcp, float) @ g.inv(self.T_flange_tcp))
+        q = ik_near(T, np.asarray(hint if hint is not None else self.q_cmd, float))
+        if q is None:
+            raise RobotError(f"{what}: no IK solution for the approach pose", action=what)
+        column = (np.asarray(T_base_frame, float) @ np.asarray(T_frame_tcp, float))[:2, 3]
+        self._guard(q, what, column)
+        self.q_cmd = q
+
     def T_world_tcp(self) -> np.ndarray:
         return self.world.T_wall_base_true() @ self.T_bf @ self.T_flange_tcp
 
     # ── Robot interface ──────────────────────────────────────────────────────
     def park(self):
         self._call("park")
+        self._guard(self.park_q, "park")
+        self.q_cmd = self.park_q.copy()
         self.q = self.park_q.copy()
         self.T_bf = ur5_fk(self.q)
         self.parked = True
 
     def goto_look(self, look):
         self._call("goto_look")
+        if self.guard is not None:
+            q_look = (np.asarray(look.q_rad, float) if look.q_rad is not None
+                      else ik_near(np.asarray(look.T_base_flange, float),
+                                   np.asarray(look.qnear_rad if look.qnear_rad is not None else self.q_cmd, float)))
+            if q_look is None:
+                raise RobotError(f"look {look.name}: no IK solution", action="goto_look")
+            self._guard(q_look, f"look {look.name}")
+            self.q_cmd = q_look
         if look.q_rad is not None:
             self.T_bf = ur5_fk(look.q_rad) @ self._noise()
             self.q, self.parked = np.asarray(look.q_rad, float), False
@@ -481,6 +519,7 @@ class SimRobot:
 
     def pick_magazine(self, slot, T_base_ares, kind: str = "full"):
         self._call("pick_magazine")
+        self._guard_above(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, f"pick magazine {slot.id}")
         self._move_tcp(np.asarray(T_base_ares, float) @ slot.T_ares_tcp, f"pick magazine {slot.id}")
         sid, T_ares_stone = self.world.mag_stones.pop(slot.id, (None, None))
         if sid is None:
@@ -489,6 +528,7 @@ class SimRobot:
 
     def place_wall(self, T_base_wall, stone):
         self._call("place_wall")
+        self._guard_above(T_base_wall, stone.T_wall_tcp, stone.qnear_rad, f"place {stone.key}")
         self._move_tcp(np.asarray(T_base_wall, float) @ stone.T_wall_tcp, f"place {stone.key}")
         sid, T_wall_stone, T_tcp_stone = self._release()
         kind = self.world.kind_of.get(sid, "full")
@@ -498,6 +538,7 @@ class SimRobot:
 
     def pick_station(self, T_base_station, slot):
         self._call("pick_station")
+        self._guard_above(T_base_station, slot.T_station_tcp, slot.qnear_rad, f"pick station {slot.id}")
         self._move_tcp(np.asarray(T_base_station, float) @ slot.T_station_tcp, f"pick station {slot.id}")
         sid, T_st_stone = self.world.station_stones.pop(slot.id, (None, None))
         if sid is None:
@@ -506,6 +547,7 @@ class SimRobot:
 
     def place_magazine(self, slot, T_base_ares, kind: str = "full"):
         self._call("place_magazine")
+        self._guard_above(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, f"place magazine {slot.id}")
         self._move_tcp(np.asarray(T_base_ares, float) @ slot.T_ares_tcp, f"place magazine {slot.id}")
         sid, T_wall_stone, _ = self._release()
         true_kind = self.world.kind_of.get(sid, "full")
@@ -539,7 +581,7 @@ class SimWorld:
     def __init__(self, cfg: Mapping, job: Job, errors: WorldErrors | None = None, *, seed: int = 0,
                  start_stop: int = 0, intr=None, T_flange_cam=None, supersample: int = 2, noise_sigma: float = 1.0,
                  blur_sigma_px: float = 0.6, check_ik: bool = True, fail_on: Mapping[str, int] | None = None,
-                 capture_mm: float = 10.0, grasp_check: bool = True):
+                 capture_mm: float = 10.0, grasp_check: bool = True, guard: bool = False):
         self.cfg, self.job = cfg, job
         self.errors = errors or WorldErrors()
         self.rng = np.random.default_rng(seed)
@@ -596,7 +638,11 @@ class SimWorld:
             self.mag_stones[sid] = (self._new_stone("mag", kind), self._jitter(job.magazine.slot(sid).T_ares_tcp))
         self.station_stones: dict[str, tuple[str, np.ndarray]] = {}
         self.refill_station()
-        self.robot = SimRobot(self, seed, check_ik, fail_on)
+        mg = None
+        if guard:                                # the real robot's motion guard (mauer.motionguard)
+            from .motionguard import MotionGuard
+            mg = MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp)
+        self.robot = SimRobot(self, seed, check_ik, fail_on, mg)
         self.ares = SimAres(self, seed + 1)
         self.camera = SynthCamera(lambda: self.robot.T_bf, self.T_flange_cam_true, self.boards_for_camera, self.intr,
                                   supersample=supersample, noise_sigma=noise_sigma, blur_sigma_px=blur_sigma_px,

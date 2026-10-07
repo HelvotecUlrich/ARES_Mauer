@@ -127,10 +127,15 @@ class URRobot:
     """Robot backend on a started mauer.ur.link.URLink. `job` provides T_flange_tcp, park_q_rad and approach_mm.
 
     sim=True allows the unknown payload (URSim / simulation only; mauer.capture SIM_PAYLOAD_KG fallback) and is
-    never used for the real robot (tools/run_job.py --real refuses it)."""
+    never used for the real robot (tools/run_job.py --real refuses it).
+
+    guard (mauer.motionguard.MotionGuard, REQUIRED unless sim, 2026-10-07): every joint move to a look, a park or
+    the approach pose of a pick / place is checked from the actual joints first; a blocked move gets the guard's
+    detour vias, a move without a clear path is refused (RobotError) before anything moves. The sequencer sets the
+    guard's world (magazine, built wall, station) before every action."""
 
     def __init__(self, link, cfg: Mapping, job, *, sim: bool = False, timeout_s: float = 180.0,
-                 park_tol_rad: float = 0.01, idle_qd_rad_s: float = 0.01):
+                 park_tol_rad: float = 0.01, idle_qd_rad_s: float = 0.01, guard=None):
         from .ur import script                                   # local: keeps `import mauer.backends` light
         self.script = script
         self.link, self.cfg, self.job, self.sim = link, cfg, job, sim
@@ -167,6 +172,10 @@ class URRobot:
             self.payloads["half"] = stone_payload(self.tool_kg, self.tool_cog, half_kg, self.T_flange_tcp,
                                                   float(hb.get("height", b["height"])))
         self.held_kind = "full"
+        if guard is None and not sim:
+            raise ValueError("the real robot needs the motion guard (mauer.motionguard.MotionGuard) - refusing")
+        self.guard = guard
+        self.holding: str | None = None          # kind of the stone in the jaws (for the guard), None = empty
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _q_now(self) -> np.ndarray:
@@ -192,6 +201,29 @@ class URRobot:
     def _vias(self, vias) -> list[str]:
         return [self.script.movej_q(q, self.speeds.a_joint, self.speeds.v_joint) for q in (vias or [])]
 
+    def _guarded(self, q_target, name: str, vias=None, column=None) -> list[str]:
+        """movej lines of the checked path actual joints -> (vias) -> q_target (mauer.motionguard; without a guard:
+        the given vias unchecked - sim only). column: target TCP (x, y) of a place (MotionGuard.plan). RobotError if
+        the guard finds no clear path."""
+        if self.guard is None:
+            return self._vias(vias)
+        v = self.guard.plan(self._q_now(), q_target, self.holding, vias or (), column)
+        if not v.ok:
+            raise RobotError(f"{name}: refused by the motion guard (no clear path in the capsule model): "
+                             + " | ".join(v.problems[-3:]), action=name)
+        return self._vias(v.vias)
+
+    def _q_above(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, q_hint, name: str) -> np.ndarray:
+        """Joints of the approach pose (approach_mm along the frame z above the TCP pose), as the script's
+        get_inverse_kin(above, qnear) - nominal kinematics near the hint."""
+        from .simworld import ik_near
+        T = T_base_frame @ g.transl(0.0, 0.0, self.approach_mm) @ np.asarray(T_frame_tcp, float) @ \
+            g.inv(self.T_flange_tcp)
+        q = ik_near(T, np.asarray(q_hint, float))
+        if q is None:
+            raise RobotError(f"{name}: no IK solution for the approach pose", action=name)
+        return q
+
     def _run(self, body: str, name: str, settle_s: float = 0.0):
         res = self.link.run_block(body, name=name, timeout_s=self.timeout_s, settle_s=settle_s)
         if not res.ok:
@@ -200,17 +232,24 @@ class URRobot:
 
     # ── Robot interface ──────────────────────────────────────────────────────
     def park(self):
-        body = "\n".join([self._preamble(False), self.script.movej_q(self.park_q, self.speeds.a_joint,
-                                                                     self.speeds.v_joint)])
+        body = "\n".join([self._preamble(self.holding is not None), *self._guarded(self.park_q, "mauer_park"),
+                          self.script.movej_q(self.park_q, self.speeds.a_joint, self.speeds.v_joint)])
         return self._run(body, "mauer_park")
 
     def goto_look(self, look):
         lines = [self._preamble(False)]
         if look.q_rad is not None:
+            lines += self._guarded(np.asarray(look.q_rad, float), "mauer_look")
             lines.append(self.script.movej_q(look.q_rad, self.speeds.a_joint, self.speeds.v_joint))
         else:
             T = np.asarray(look.T_base_flange, float)
             q = self._qnear(look.qnear_rad, T @ self.T_flange_tcp)
+            if self.guard is not None:
+                from .simworld import ik_near
+                q_look = ik_near(T, np.asarray(q, float))
+                if q_look is None:
+                    raise RobotError("mauer_look: no IK solution for the look pose", action="mauer_look")
+                lines += self._guarded(q_look, "mauer_look")
             lines.append(self.script.look_pose(T, q, self.speeds.a_joint, self.speeds.v_joint, target="flange",
                                                T_flange_tcp=self.T_flange_tcp))
         return self._run("\n".join(lines), "mauer_look")
@@ -228,22 +267,32 @@ class URRobot:
         self.held_kind = kind
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
-        body = "\n".join([self._preamble(False), *self._vias(vias),
+        column = (T_base_frame @ np.asarray(T_frame_tcp, float))[:2, 3]
+        path = (self._guarded(self._q_above(T_base_frame, T_frame_tcp, q, name), name, vias, column)
+                if self.guard is not None else self._vias(vias))
+        body = "\n".join([self._preamble(False), *path,
                           self.script.pick_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                  self.do_close, self.pulse_s, self.wait_s, do_open=self.do_open,
                                                  contact_mm=self.contact_mm, open_first=True,
                                                  payload_after=self.payloads[kind])])
-        return self._run(body, name)
+        res = self._run(body, name)
+        self.holding = kind
+        return res
 
     def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str):
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
-        body = "\n".join([self._preamble(True), *self._vias(vias),
+        column = (T_base_frame @ np.asarray(T_frame_tcp, float))[:2, 3]
+        path = (self._guarded(self._q_above(T_base_frame, T_frame_tcp, q, name), name, vias, column)
+                if self.guard is not None else self._vias(vias))
+        body = "\n".join([self._preamble(True), *path,
                           self.script.place_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                   self.do_open, self.pulse_s, self.wait_s, do_close=self.do_close,
                                                   contact_mm=self.contact_mm,
                                                   payload_after=(self.tool_kg, self.tool_cog))])
-        return self._run(body, name)
+        res = self._run(body, name)
+        self.holding = None
+        return res
 
     def pick_magazine(self, slot, T_base_ares, kind: str = "full"):
         return self._pick(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_pick_mag", kind)
