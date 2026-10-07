@@ -62,7 +62,8 @@ with a stone held.
 - the ARES pose is not ok (an ARES move that ended not ok / an ARES error): **Confirm pose** (odometry estimate
   checked on the floor) or **Set pose** (x, y, theta in the wall frame);
 - REAL: the PLC odometry moved since the run stopped (ARES jogged while paused): **Apply odometry** (the estimate
-  follows the odometry) or **Set pose**; or the HMI's ADS worker is not connected (it cannot verify that);
+  follows the odometry) or **Set pose** (also takes the odometry of that moment as the new reference); or the
+  HMI's ADS worker is not connected (it cannot verify that);
 - REAL: the preflight has a blocking item (**Re-check** runs it again).
 
 After an error or a HALT the resume runs in step mode (the operator may switch it off). The run state lives in

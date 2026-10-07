@@ -1230,6 +1230,9 @@ implemented as specified.
 10. The heartbeat-under-load test runs the whole 10-stone straight test wall (34 stones, ~1.5 s): the 3-stone
     job finishes in well under a second at `sim_step_s = 0`.
 11. Extra test file `tests/test_hmi_session.py` (job files load their own variant, refusals, build from config).
+12. REAL `set_pose()` also records the current PLC odometry as the reference of the resume check (the operator vouches
+    for the pose at this moment); without it a resume with an unknown odometry at the stop could never pass.
+    A prepare that fails after the rig opened closes the rig again (nothing stays connected in state "loaded").
 
 **What exists for the feature steps** (all in the GUI thread unless noted)
 - `ctx` (`HmiContext`): `station_cfg`, `hmi` ([hmi] incl. the nested `frame` / `move` / `twin` tables), `amr_cfg`,
