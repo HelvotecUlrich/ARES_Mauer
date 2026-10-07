@@ -852,8 +852,9 @@ class LSim(Sim):
             return rec
         self.route_pairs(True)
         self.RDK.Render(animate)
-        de = (what.replace("leg change ", "Schenkelwechsel ").replace("station", "Abholstation")
-              .replace("stop ", "Halt ").replace("trip", "Fahrt"))
+        import re
+        de = re.sub(r"stop (\d+)", lambda m: f"Halt {int(m.group(1)) + 1}", what)    # 1-based like the captions
+        de = de.replace("leg change ", "Schenkelwechsel ").replace("station", "Abholstation").replace("trip", "Fahrt")
         self.caption(f"ARES fährt: {de}")
         try:
             for a, b in zip(route, route[1:]):
