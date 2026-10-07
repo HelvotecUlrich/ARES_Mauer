@@ -395,10 +395,20 @@ class RunController(QObject):
             else:
                 rig = RealRig(s.cfg, s.job, self._factories)
                 rig.open()
+            self._prepare_on(rig)
         except Exception:
+            # nothing may stay open (REAL: UR, ARES, camera connections) when the state falls back to "loaded"
+            if self._seq is not None:
+                self._seq.log.remove_listener(self._on_record)
+                self._seq.close()
             if rig is not None:
                 rig.close()
+            self._seq, self._tracker, self._rig, self._rig_info, self._preflight = None, None, None, None, None
+            self.rig_changed.emit(None)
             raise
+
+    def _prepare_on(self, rig: SimRig | RealRig) -> None:
+        s, o = self._session, self._opts
         self._rig, self._rig_info = rig, rig.info()
         self.rig_changed.emit(self._rig_info)
         self._preflight = self._report()
@@ -568,8 +578,16 @@ class RunController(QObject):
             self._submit(lambda: self._seq.confirm_pose(), "confirm pose")
 
     def set_pose(self, pose: Pose2D) -> None:
-        if not self._refuse("set_pose"):
-            self._submit(lambda: self._seq.set_pose(pose, "operator"), "set pose")
+        """The operator's ARES pose in the wall frame; REAL: the odometry at this moment becomes the reference of
+        the resume check (the operator vouches for the pose now)."""
+        if self._refuse("set_pose"):
+            return
+
+        def job() -> None:
+            self._seq.set_pose(pose, "operator")
+            if self.mode == "real":
+                self._odom_at_stop = odom_from_status(self._ads_status_fn())
+        self._submit(job, "set pose")
 
     def apply_odometry(self) -> None:
         """REAL: the pose estimate moved by the PLC odometry since the run stopped (ARES jogged while paused)."""

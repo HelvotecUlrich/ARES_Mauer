@@ -4,6 +4,7 @@ the fake PLC with an emulated HMI heartbeat, StubCamera, nominal calibration. No
 from __future__ import annotations
 
 import copy
+import math
 
 import numpy as np
 import pytest
@@ -176,5 +177,65 @@ def test_controller_real_prepare_refuses_start_and_releases_in_order(qapp, tmp_p
         c.release()
         assert wait_until(lambda: c.state == "loaded", 10.0, qapp)
         assert order[-4:] == ["seq.close", "camera.close", "ads.close", "link.stop"]
+    finally:
+        assert c.shutdown(10.0)
+
+
+def test_a_failed_prepare_closes_the_rig(qapp, tmp_path, plc):
+    s = short_sim_session()
+    order: list = []
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file where the run log folder should go")
+    c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs", ares_enabled=True,
+                      ads_status_fn=lambda: dict(MANUAL_STATUS), ads_connected_fn=lambda: True,
+                      real_factories=factories(plc, order))
+    msgs = []
+    c.message.connect(lambda lvl, t: msgs.append((lvl, t)))
+    try:
+        c.set_session(s)
+        c.prepare(RunOptions("real", log_dir=blocker / "run"))
+        assert wait_until(lambda: c.state == "loaded" and msgs, 30.0, qapp), (c.state, msgs)
+        assert msgs[-1][0] == "error" and "prepare failed" in msgs[-1][1]
+        assert c.rig is None and c.sequencer is None
+        assert order == ["camera.close", "ads.close", "link.stop"]       # nothing left open
+    finally:
+        assert c.shutdown(10.0)
+
+
+def test_real_resume_checks_follow_the_odometry(qapp, tmp_path, plc):
+    s = short_sim_session()
+    st = {"st": dict(MANUAL_STATUS)}
+    c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs", ares_enabled=True,
+                      ads_status_fn=lambda: st["st"], ads_connected_fn=lambda: True,
+                      real_factories=factories(plc, []))
+    msgs = []
+    c.message.connect(lambda lvl, t: msgs.append(t))
+    try:
+        c.set_session(s)
+        c.prepare(RunOptions("real"))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp)
+        c._state = "paused"                       # as after a REAL run that stopped (the preflight blocks a start)
+        c.sequencer.pose_est = s.job.stops[0].ares
+        c.resume()
+        assert wait_until(lambda: any("odometry at the stop is unknown" in t for t in msgs), 10.0, qapp)
+        assert wait_until(lambda: c.state == "paused", 5.0, qapp)
+        c.set_pose(s.job.stops[0].ares)          # the operator vouches for the pose: odometry reference = now
+        assert wait_until(lambda: c._odom_at_stop is not None, 5.0, qapp)
+        assert c.odom_moved() is None and not c.can("apply_odometry")[0]
+        st["st"] = {**MANUAL_STATUS, "fPosX_m": 0.05}                    # ARES jogged 50 mm forward (odometry x)
+        assert c.odom_moved() == pytest.approx((50.0, 0.0, 0.0)) and c.can("apply_odometry") == (True, "")
+        c.resume()
+        assert wait_until(lambda: any("ARES moved by (+50.0 mm" in t for t in msgs), 10.0, qapp)
+        assert wait_until(lambda: c.state == "paused", 5.0, qapp)
+        p0 = c.sequencer.pose_est
+        c.apply_odometry()
+        assert wait_until(lambda: c.sequencer.pose_est != p0, 5.0, qapp)
+        p1 = c.sequencer.pose_est
+        assert math.hypot(p1.x_mm - p0.x_mm, p1.y_mm - p0.y_mm) == pytest.approx(50.0, abs=1e-6)
+        assert wait_until(lambda: c.odom_moved() is None, 5.0, qapp)    # the job sets the new reference last
+        c.resume()                                # odometry ok now: the blocking preflight (job, PolyScope) refuses
+        assert wait_until(lambda: any("blocking problems" in t for t in msgs), 10.0, qapp)
+        assert wait_until(lambda: c.state == "paused", 5.0, qapp)
+        c._state = "ready"
     finally:
         assert c.shutdown(10.0)
