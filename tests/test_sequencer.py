@@ -18,6 +18,7 @@ import pytest
 from conftest import l_config, straight_config
 from mauer import REPO
 from mauer import geometry as g
+from mauer import job as mjob
 from mauer.ares.ads import MoveRefused
 from mauer.backends import RobotError, URRobot, stone_payload
 from mauer.sequencer import (FrameJumpError, InterlockError, MeasurementError, Sequencer, SequencerAborted,
@@ -49,13 +50,17 @@ def job10(cfg):
 
 
 def short_job(job, n0=6, n1=3, fill=None):
-    """First n0 stones of stop 0 and n1 of stop 1; fill = stones in the magazine at the start (bottom layer first)."""
+    """First n0 stones of stop 0 and n1 of stop 1; fill = stones in the magazine at the start: the first `fill` stones
+    of the short job, each in a slot of its type (mauer.job.fill_plan, as tools/make_job.py plan_slots)."""
     j = copy.deepcopy(job)
     j.stops = j.stops[:2]
     j.stops[0].stones = j.stops[0].stones[:n0]
     j.stops[1].stones = j.stops[1].stones[:n1]
     if fill is not None:
-        j.magazine.initial_fill = j.magazine.fill_order[:fill]
+        kinds = [t.kind for st in j.stops for t in st.stones][:fill]
+        plan = dict(mjob.fill_plan(mjob.SlotState.magazine(j.magazine, filled=[], kinds={}), kinds))
+        j.magazine.initial_fill = [sid for sid in j.magazine.take_order if sid in plan]
+        j.magazine.initial_kinds = plan
     return j
 
 

@@ -142,6 +142,7 @@ def self_clearance(q_rad: Sequence[float], cfg: Mapping, step_mm: float = 5.0) -
                 best = (d, t.name, a.name)
     return best
 
+
 def _samples(caps: Sequence[Capsule], step: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     pts, rad, idx = [], [], []
     for i, c in enumerate(caps):
@@ -244,7 +245,8 @@ def ares_boxes(cfg: Mapping, magazine_slots: Iterable = ()) -> list[Box]:
     a = cfg["ares"]
     L, W, H = float(a["length"]), float(a["width"]), float(a["deck_top_z"])
     out = [Box("ARES chassis", np.array([0.0, 0.0, H / 2.0]), np.eye(3), np.array([L / 2.0, W / 2.0, H / 2.0]))]
-    out += [_stone_box(cfg, f"magazine stone {s.id}", s.T_ares_tcp) for s in magazine_slots]
+    out += [_stone_box(cfg, f"magazine stone {s.id}", s.T_ares_tcp, getattr(s, "kind", "") or "full")
+            for s in magazine_slots]
     return out
 
 
@@ -273,6 +275,20 @@ class ArmChecker:
         near = [b for b in self.boxes
                 if float(np.linalg.norm(b.centre[:2] - base[:2]) - np.linalg.norm(b.half[:2])) < 1300.0]
         return collisions(caps, near, self.clearance)
+
+
+class SelfChecker:
+    """The tool against the arm's own links (self_clearance) as a checker: hits(q, _) -> [(tool part, link, shortfall
+    mm)] when the clearance at q is below min_mm. The planned pick / look poses of 2026-10-07 had the camera adapter
+    0.3 mm from wrist 1 at the magazine and the station (the real contact of 2026-10-06 was -3.7 mm in this model)."""
+
+    def __init__(self, cfg: Mapping, min_mm: float = SELF_CLEARANCE_MM):
+        self.cfg = cfg
+        self.min_mm = float(min_mm)
+
+    def hits(self, q_rad: Sequence[float], T_parent_base: np.ndarray | None = None) -> list[tuple[str, str, float]]:
+        d, part, link = self_clearance(q_rad, self.cfg)
+        return [(part, link, self.min_mm - d)] if d < self.min_mm else []
 
 
 class Checkers:

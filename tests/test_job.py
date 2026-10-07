@@ -74,11 +74,12 @@ def test_place_pose_convention(job):
 
 def test_magazine_pick_poses_and_order(job, cfg):
     """robodk/simulate.py:106-108: transl(x, y, deck + layer H + (layer - 1) bed joint) @ rotz(pi/2) @ rotx(pi),
-    emptied top layer first."""
+    turned by 180 deg about the vertical where that keeps the tool clearer of the arm (make_job.holder_pose,
+    2026-10-07: every slot), emptied top layer first."""
     deck = cfg["ares"]["deck_top_z"] + cfg["deck"]["holder_z"]
     x0 = cfg["ur5"]["mount_x"]
     s = job.magazine.slot("r1y2l2")
-    assert np.allclose(s.T_ares_tcp, g.transl(x0 - 433.6, 205.0, deck + 2 * 120.0 + 1.0) @ g.rotz(math.pi / 2)
+    assert np.allclose(s.T_ares_tcp, g.transl(x0 - 433.6, 205.0, deck + 2 * 120.0 + 1.0) @ g.rotz(-math.pi / 2)
                        @ g.rotx(math.pi), atol=1e-9)
     layers = [job.magazine.slot(i).layer for i in job.magazine.take_order]
     assert layers == sorted(layers, reverse=True)
@@ -525,7 +526,10 @@ def test_reload_plan_unit(ljob):
     # the station holds n_half half stones -> the batch ends before the (n_half + 1)-th half stone
     n = 3 + n_half - 1
     assert len(plan) == n and sorted(k for *_, k in plan) == sorted(up[:n])
-    assert [mid for _, mid, _ in plan] == mag.fill_order[:n]                  # fill order (bottom first)
+    idx = [mag.fill_order.index(mid) for _, mid, _ in plan]
+    assert idx == sorted(idx)                                                # fill order (bottom first)
+    slot_kind = {s.id: s.kind for s in ljob.magazine.slots}
+    assert all(slot_kind[mid] in ("", k) for _, mid, k in plan)              # typed slots: their type only
     for ssid, mid, kind in plan:
         assert ljob.station.slot(ssid).kind == kind
         st.take(ssid)                                                        # raises if a stone lies on it
@@ -533,7 +537,7 @@ def test_reload_plan_unit(ljob):
     got = []
     for k in up[:n]:
         sid = mag.next_take(kind=k)
-        assert sid == mag.next_take()                                        # the first takeable slot holds it
+        assert sid is not None and slot_kind[sid] in ("", k)                 # (untyped: test_magazine_typed.py)
         got.append(mag.take(sid))
     assert got == up[:n]
     with pytest.raises(ValueError):

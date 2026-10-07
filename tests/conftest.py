@@ -20,7 +20,8 @@ def straight_config():
     # stones pins up the first course stands 22 mm lower and the RoboDK reach of course 0 at 740 mm has an 80 mm gap
     # beside ARES (results/reach_table.json) - the greedy planner cannot step over it
     _wall_boards(cfg, {f"W{i}": (None, 60.0 + 800.0 * i) for i in range(8)})
-    return cfg
+    cfg["deck"].pop("half_positions", None)               # no half stones in a straight wall: untyped magazine as
+    return cfg                                            # simulated (robodk/simulate.py), not the C's half position
 
 
 def _wall_boards(cfg: dict, layout: dict) -> None:

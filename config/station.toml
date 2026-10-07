@@ -139,14 +139,19 @@ side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of 
 dist = 580.0                # ASSUMPTION: as leg A
 
 [deck]
-holder_z = 20.0             # PLACEHOLDER: stones on the deck stand on a 20 mm holder. ASSUMPTION: every holder also
-                            # takes a half stone centred on the slot. OPEN (pins up, 2026-10-06): locating cones like
-                            # [guides] would sit in two diagonal sockets of a full stone (+-50.25 mm along) - a half
-                            # stone centred on the slot has its sockets at the slot centre and would stand ON such a
-                            # cone; the deck holder needs its own design (e.g. side fences instead of cones)
+holder_z = 20.0             # PLACEHOLDER: the stones on the deck stand on a 20 mm holder. Design 2026-10-07 (Samuel):
+                            # every holder has 4 locating cones (all four sockets of a full stone, like a stone top):
+                            # it takes ONE full stone or TWO half stones end to end (their socket pairs lie 0.25 mm
+                            # off the cones, within the clearance). half_positions are used for half stones, the
+                            # others for full stones - tools/make_job.py types every slot
 layers = 2                  # PLACEHOLDER: stacked layers in the magazine (reach_study.py deck grid)
 magazine_rows_dx = [-653.6, -433.6]  # ASSUMPTION: magazine rows, x relative to the UR base [mm] (robodk/simulate.py:36)
 magazine_y = [-205.0, 0.0, 205.0]    # ASSUMPTION: stone centres along ARES y [mm] (robodk/simulate.py:37)
+half_positions = ["r1y0"]   # ASSUMPTION (2026-10-07): magazine position (row r, column y) holding half stones, two per
+                            # layer at +-50 mm along the stone axis -> 6 half + 12 full stones (row 0 layer 3 has no IK;
+                            # the station brings 4 + 12).
+                            # Holders BESIDE the UR (Samuel's first idea) blocked the camera looks at the side legs A / C
+                            # (tools/make_job.py, mauer.armcheck: no look at leg C with any holder at ARES y +240)
 magazine_layers = 3         # ASSUMPTION: layers per magazine stack as simulated (robodk/simulate.py:36; differs
                             # from layers = 2 above, which only drives the reach-study grid)
 

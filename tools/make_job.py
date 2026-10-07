@@ -25,19 +25,23 @@ joints and via points):
   ([camera.mount] PLACEHOLDER), flange orientation as for a place pose, rolled about the optical axis in 15 deg steps
   until the nominal UR5 kinematics (mauer.simworld.ik_near, robodk/motion.py family) has a solution that is also
   free of the BUILT wall (mauer.armcheck: UR5 links, gripper and camera as capsules vs. the stones placed by the end
-  of that stop - every measurement of the stop and a resumed run see at most those) - for ARES at the nominal stop,
+  of that stop - every measurement of the stop and a resumed run see at most those), of ARES with a full magazine and
+  of the arm itself (tool >= armcheck.SELF_CLEARANCE_MM from the links) - for ARES at the nominal stop,
   displaced by +-LOOK_MARGIN_MM and at the arrival standoff ([sequencer] arrival_standoff_mm, the first measurement
   after a route); per stop the pair of reachable boards with the longest baseline (heading). Coarse envelopes, no
   occlusion (robodk/simulate.py / look_study.py check those) -> meta.reach_check = "kinematic";
 - magazine: the slots of robodk/simulate.py MAG_ROWS / MAG_Y (simulate.py:32-38: rows at UR x - 653.6 / - 433.6 mm,
   y -205 / 0 / 205 mm, 3 layers; pick pose transl(x, y, deck + layer H) @ rotz(pi/2) @ rotx(pi), simulate.py:106-108,
-  deck = [ares] deck_top_z + [deck] holder_z) unless [deck] magazine_* keys exist; emptied top layer first
-  (simulate.py:132-149), filled bottom first; slots without a kinematic IK solution (pick or approach pose) dropped;
+  deck = [ares] deck_top_z + [deck] holder_z) unless [deck] magazine_* keys exist; [deck] half_positions hold two
+  half stones per layer (typed slots, 2026-10-07); emptied top layer first (simulate.py:132-149), filled bottom
+  first; grasp yaw per holder 0 or 180 deg about the vertical, whichever keeps the tool farther from the arm
+  (holder_pose); slots without a kinematic IK solution (pick or approach pose) or with the tool closer than
+  armcheck.SELF_CLEARANCE_MM to the arm in both yaws dropped;
 - pick-up station from [pickup_station]: station frame in the wall frame, docking pose, stacked holders at the
   slots_xy / half_slots_xy positions (stone length along the station x axis, TCP = stone top at table_z +
-  [pickup_station] holder_z (default 0) + layer x stone height), look poses for the station boards at the nominal
-  dock clear of a full station and the table (mauer.armcheck.station_boxes); unreachable slots and the slots stacked
-  on them dropped (warning), emptied top layer first;
+  [pickup_station] holder_z (default 0) + layer x stone height, grasp yaw as for the magazine), look poses for the
+  station boards at the nominal dock clear of a full station and the table (mauer.armcheck.station_boxes);
+  unreachable slots and the slots stacked on them dropped (warning), emptied top layer first;
 - park pose: [ur] park_q_deg if present, else the IK of the compact pose robodk/simulate.py:280 starts from (TCP
   300 mm ahead of the UR base at the transfer height over a full magazine, simulate.py:114-117, tool down, seed
   [0, -100, 52, -42, -90, 0] deg) - not collision-checked here;
@@ -363,14 +367,17 @@ class _Ctx:
             self._magazine = _magazine(self)
         return self._magazine
 
-    def ares_arm(self) -> "armcheck.ArmChecker":
-        """Arm check against the ARES chassis and a FULL magazine (mauer.armcheck.ares_boxes, fixed to ARES): every look
-        is taken with them (RoboDK 2026-10-06: looks of the C put the gripper / wrist into ARES and the forearm into
-        the full magazine)."""
+    def ares_arm(self) -> "armcheck.Checkers":
+        """Arm check against the ARES chassis and a FULL magazine (mauer.armcheck.ares_boxes, fixed to ARES) and of the
+        tool against the arm itself (armcheck.SelfChecker): every look is taken with them (RoboDK 2026-10-06: looks of
+        the C put the gripper / wrist into ARES and the forearm into the full magazine; 2026-10-07: a station look had
+        the camera adapter 7 mm from wrist 1)."""
         if self._ares_arm is None:
             m = self.magazine()
             full = [sl for sl in m.slots if sl.id in m.take_order]
-            self._ares_arm = armcheck.ArmChecker(self.cfg, armcheck.ares_boxes(self.cfg, full), on_ares=self.T_ares_base)
+            self._ares_arm = armcheck.Checkers(
+                armcheck.ArmChecker(self.cfg, armcheck.ares_boxes(self.cfg, full), on_ares=self.T_ares_base),
+                armcheck.SelfChecker(self.cfg))
         return self._ares_arm
 
 
@@ -439,36 +446,95 @@ def _stone_task(ctx: _Ctx, k: int, s, T_base_wall: np.ndarray, T_wall_leg: np.nd
             T_wt, flip = T_f, True
         else:
             ctx.warnings.append(f"stop {k} stone {s.key}: no kinematic IK solution for the place pose")
+    if q is not None and armcheck.self_clearance(q, ctx.cfg)[0] < armcheck.SELF_CLEARANCE_MM:
+        ctx.warnings.append(f"stop {k} stone {s.key}: tool {armcheck.self_clearance(q, ctx.cfg)[0]:.0f} mm from the "
+                            f"arm at the place pose (< {armcheck.SELF_CLEARANCE_MM:g})")
     leg = getattr(s, "leg", "") or None
     return mjob.StoneTask(s.course, s.index, float(s.u), float(s.z_top), T_wt, flip, None,
                           None if q is None else q.tolist(), [], leg, getattr(s, "kind", "full"),
                           float(s.length) if getattr(s, "length", 0.0) else None)
 
 
+def holder_pose(ctx: _Ctx, T_base_x: np.ndarray, T_x_tcp: np.ndarray) -> tuple[np.ndarray, np.ndarray | None, bool,
+                                                                               float]:
+    """Pick / put-down pose of a holder (frame x): T_x_tcp or its twin turned 180 deg about the vertical TCP axis -
+    stone and grasp are symmetric under that turn - whichever leaves more tool-vs-arm clearance
+    (mauer.armcheck.self_clearance) at the pose and at the approach above it. 2026-10-07: with one fixed yaw the
+    magazine picks had the camera adapter 0.3 .. -16.8 mm from wrist 1, the station picks down to -0.3 mm; turned
+    they have 40 mm. -> (T_x_tcp, q, ok = IK for pose and approach, clearance mm)"""
+    best = None
+    for T in (T_x_tcp, T_x_tcp @ g.rotz(math.pi)):
+        T_bf = T_base_x @ T @ g.inv(ctx.T_flange_tcp)
+        q = ik_near(T_bf, ctx.q_park)
+        qa = None if q is None else ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park)
+        c = (min(armcheck.self_clearance(q, ctx.cfg)[0], armcheck.self_clearance(qa, ctx.cfg)[0])
+             if qa is not None else -math.inf)
+        key = (q is not None, qa is not None, c)
+        if best is None or key > best[0]:
+            best = (key, T, q)
+    (has_q, has_qa, c), T, q = best
+    return T, q, bool(has_q and has_qa), float(c)
+
+
+def _drop_unusable(ctx: _Ctx, what: str, slots: list, clear: dict[str, float]) -> list:
+    """Usable holders: IK for pick and approach, tool-vs-arm clearance >= armcheck.SELF_CLEARANCE_MM, and every holder
+    below in the stack usable (a stone cannot lie on an empty holder)."""
+    no_ik = [s.id for s in slots if not s.ik_ok]
+    if no_ik:
+        ctx.warnings.append(f"{what} slots without a kinematic IK solution (dropped): {no_ik}")
+    tight = [s.id for s in slots if s.ik_ok and clear[s.id] < armcheck.SELF_CLEARANCE_MM]
+    if tight:
+        ctx.warnings.append(f"{what} slots with the tool closer than {armcheck.SELF_CLEARANCE_MM:g} mm to the arm in "
+                            f"both grasp yaws (dropped): {tight}")
+    good = {s.id for s in slots if s.ik_ok and clear[s.id] >= armcheck.SELF_CLEARANCE_MM}
+    stack = (lambda s: s.stack) if what == "magazine" else (lambda s: s.stack_id)
+    usable = []
+    for s in slots:
+        if s.id not in good:
+            continue
+        if any(o.id not in good for o in slots if stack(o) == stack(s) and o.layer < s.layer):
+            ctx.warnings.append(f"{what} slot {s.id} dropped: a slot below it is unusable")
+            continue
+        usable.append(s)
+    return usable
+
+
 def _magazine(ctx: _Ctx) -> mjob.Magazine:
+    """Deck magazine: holders in rows behind the UR ([deck] magazine_rows_dx x magazine_y, stacks of magazine_layers),
+    stones with their long axis across ARES (ARES y). Every holder has 4 locating cones (design 2026-10-07): it takes
+    one full stone, or two half stones end to end - the positions in [deck] half_positions ("r<row>y<column>") hold
+    half stones in two stacks <position>a / <position>b at -+ half length / 2 along ARES y, the others full stones
+    (typed slots); without half_positions the slots are untyped. Each holder gets the grasp yaw with the more
+    tool-vs-arm clearance (holder_pose)."""
     cfg = ctx.cfg
-    deck = cfg["ares"]["deck_top_z"] + cfg["deck"]["holder_z"]
+    dk = cfg["deck"]
+    deck = cfg["ares"]["deck_top_z"] + dk["holder_z"]
     x0 = ctx.T_ares_base[0, 3]
+    half_pos = [str(p) for p in dk.get("half_positions", [])]
+    positions = [f"r{ri}y{yi}" for ri in range(len(ctx.rows_dx)) for yi in range(len(ctx.mag_y))]
+    unknown = [p for p in half_pos if p not in positions]
+    if unknown:
+        raise ValueError(f"[deck] half_positions {unknown}: no such magazine position ({positions})")
+    typed = bool(half_pos)
+    off = float(cfg["half_brick"]["length"]) / 2.0
     slots: list[mjob.MagazineSlot] = []
+    clear: dict[str, float] = {}
+
+    def add(sid: str, stack: str, x: float, y: float, lay: int, kind: str) -> None:
+        T0 = g.transl(x, y, mconfig.stack_top_z(cfg, deck, lay, kind or "full")) @ g.rotz(math.pi / 2) @ g.rotx(math.pi)
+        T, q, ok, clear[sid] = holder_pose(ctx, ctx.T_base_ares, T0)
+        slots.append(mjob.MagazineSlot(sid, T, lay, stack, None if q is None else q.tolist(), ok, kind))
+
     for ri, dx in enumerate(ctx.rows_dx):
         for yi, y in enumerate(ctx.mag_y):
+            pos = f"r{ri}y{yi}"
             for lay in range(1, ctx.n_layers + 1):
-                T = g.transl(x0 + dx, y, mconfig.stack_top_z(cfg, deck, lay)) @ g.rotz(math.pi / 2) @ g.rotx(math.pi)
-                T_bf = ctx.T_base_ares @ T @ g.inv(ctx.T_flange_tcp)
-                q = ik_near(T_bf, ctx.q_park)
-                ok = q is not None and ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is not None
-                slots.append(mjob.MagazineSlot(f"r{ri}y{yi}l{lay}", T, lay, f"r{ri}y{yi}",
-                                               None if q is None else q.tolist(), bool(ok)))
-    usable = [s for s in slots if s.ik_ok]
-    dropped = [s.id for s in slots if not s.ik_ok]
-    if dropped:
-        ctx.warnings.append(f"magazine slots without a kinematic IK solution (dropped): {dropped}")
-    # a slot above an unusable one cannot be filled -> drop whole stacks above a gap
-    for s in list(usable):
-        below = [o for o in slots if o.stack == s.stack and o.layer < s.layer]
-        if any(not o.ik_ok for o in below):
-            usable.remove(s)
-            ctx.warnings.append(f"magazine slot {s.id} dropped: a slot below it is unusable")
+                if pos in half_pos:
+                    for sub, dy in (("a", -off), ("b", off)):
+                        add(f"{pos}{sub}l{lay}", f"{pos}{sub}", x0 + dx, float(y) + dy, lay, "half")
+                else:
+                    add(f"{pos}l{lay}", pos, x0 + dx, float(y), lay, "full" if typed else "")
+    usable = _drop_unusable(ctx, "magazine", slots, clear)
     take = [s.id for s in sorted(usable, key=lambda s: (-s.layer, float(np.sum(np.abs(np.asarray(s.qnear_rad) -
                                                                                         ctx.q_park))), s.id))]
     return mjob.Magazine(slots, take, list(reversed(take)), list(take))
@@ -477,8 +543,8 @@ def _magazine(ctx: _Ctx) -> mjob.Magazine:
 def _station(ctx: _Ctx) -> mjob.Station:
     """Station frame, dock, the stacked holders for full and half stones ([pickup_station] slots_xy / slot_layers,
     half_slots_xy / half_slot_layers, PLACEHOLDER), look poses for the station boards at the nominal dock. Slots
-    without a kinematic IK solution (pick or approach) are dropped, and with them every slot stacked on them; the
-    station is emptied top layer first (like the magazine)."""
+    without a kinematic IK solution (pick or approach) or too close to the arm in both grasp yaws (holder_pose) are
+    dropped, and with them every slot stacked on them; the station is emptied top layer first (like the magazine)."""
     cfg = ctx.cfg
     ps = cfg["pickup_station"]
     T_wall_station = g.pose_xyz_rpy(ps["xyz_in_wall"], ps["rpy_in_wall_deg"])
@@ -490,24 +556,16 @@ def _station(ctx: _Ctx) -> mjob.Station:
         hh = float(cfg.get("half_brick", {}).get("height", ctx.H))
         groups.append(("h", "half", hh, ps["half_slots_xy"], int(ps.get("half_slot_layers", 1))))
     z0 = float(ps["table_z"]) + float(ps.get("holder_z", 0.0))
+    clear: dict[str, float] = {}
     for prefix, kind, height, xys, layers in groups:
         for i, (x, y) in enumerate(xys):
             stack = f"{prefix}{i:02d}"
             for lay in range(1, layers + 1):
-                T = g.transl(float(x), float(y), mconfig.stack_top_z(cfg, z0, lay, kind)) @ g.rotx(math.pi)
-                T_bf = T_base_station @ T @ g.inv(ctx.T_flange_tcp)
-                q = ik_near(T_bf, ctx.q_park)
-                ok = q is not None and ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is not None
-                st_slots.append(mjob.StationSlot(f"{stack}l{lay}", T, None if q is None else q.tolist(), bool(ok),
-                                                 kind, lay, stack))
-    usable = [s for s in st_slots if s.ik_ok]
-    if len(usable) < len(st_slots):
-        ctx.warnings.append(f"station slots without a kinematic IK solution at the nominal dock (not used): "
-                            f"{[s.id for s in st_slots if not s.ik_ok]} - [pickup_station] layout is a PLACEHOLDER")
-    for s in list(usable):                        # a stone cannot lie on an unusable (empty) holder
-        if any(not o.ik_ok for o in st_slots if o.stack_id == s.stack_id and o.layer < s.layer):
-            usable.remove(s)
-            ctx.warnings.append(f"station slot {s.id} dropped: a slot below it is unusable")
+                T0 = g.transl(float(x), float(y), mconfig.stack_top_z(cfg, z0, lay, kind)) @ g.rotx(math.pi)
+                sid = f"{stack}l{lay}"
+                T, q, ok, clear[sid] = holder_pose(ctx, T_base_station, T0)
+                st_slots.append(mjob.StationSlot(sid, T, None if q is None else q.tolist(), ok, kind, lay, stack))
+    usable = _drop_unusable(ctx, "station", st_slots, clear)    # at the nominal dock; [pickup_station] is a PLACEHOLDER
     st_take = [s.id for s in sorted(usable, key=lambda s: (-s.layer, float(np.sum(np.abs(np.asarray(s.qnear_rad)
                                                                                          - ctx.q_park))), s.id))]
     if not st_take:
@@ -538,14 +596,9 @@ def plan_slots(stops: list[mjob.Stop], magazine: mjob.Magazine, station: mjob.St
     next stones; the operator tops the station up when it would bring fewer stones than a full one)."""
     stones = [t for st in stops for t in st.stones]
     kinds = [t.kind for t in stones]
-    init = mjob.SlotState.magazine(magazine, kinds={})
-    replay = init.copy()
-    initial_kinds: dict[str, str] = {}
-    for j in range(min(len(kinds), len(init))):
-        sid = replay.next_take()
-        replay.take(sid)
-        initial_kinds[sid] = kinds[j]
-    magazine.initial_fill = [s for s in magazine.initial_fill if s in initial_kinds]
+    n_init = len(magazine.initial_fill)           # stones in the magazine at the start (default: every usable slot)
+    initial_kinds = dict(mjob.fill_plan(mjob.SlotState.magazine(magazine, filled=[], kinds={}), kinds[:n_init]))
+    magazine.initial_fill = [s for s in magazine.take_order if s in initial_kinds]
     magazine.initial_kinds = initial_kinds
     mag = mjob.SlotState.magazine(magazine)
     full_station = mjob.SlotState.station(station)

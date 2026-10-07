@@ -40,7 +40,8 @@ JSON layout (format "ares-mauer-job", version 2; version 1 = the same without th
                  "qnear_rad": [6] | null,           # IK hint of the place pose
                  "via_q_rad": [[6], ...]}]}],       # joint waypoints of the transfer magazine -> wall (planner)
   "magazine": {"slots": [{"id": "m00", "T_ares_tcp": 4x4, "layer": 1, "stack": "r0y0",
-                          "qnear_rad": [6] | null, "ik_ok": true | false | null}],
+                          "qnear_rad": [6] | null, "ik_ok": true | false | null,
+                          "kind": "full" | "half"}],        # 2026-10-07: holder type (missing = either type)
                "take_order": [ids], "fill_order": [ids], "initial_fill": [ids],
                "initial_kinds": {id: "full" | "half"}},   # v2: stone type in each initially filled slot
   "station": {"T_wall_station": 4x4,                # nominal station frame in the wall frame
@@ -58,9 +59,11 @@ JSON layout (format "ares-mauer-job", version 2; version 1 = the same without th
 Magazine stacking: slots of one `stack` lie on top of each other (layer 1 = lowest). A slot can only be emptied when
 no filled slot lies above it and only be filled when the slot below holds a stone (`SlotState`); robodk/simulate.py
 empties the magazine layer by layer, highest first (simulate.py:122-149). Station holders stack the same way (v2
-`layer` / `stack`, one stone type per stack; a v1 file or a slot without them = layer 1 in its own stack). Every deck slot holds either stone type
-(full / half); `SlotState` tracks the type per filled slot and `reload_plan` fills the empty magazine with the types
-of the next stones in the order they will be taken (shared by tools/make_job.py and the sequencer).
+`layer` / `stack`, one stone type per stack; a v1 file or a slot without them = layer 1 in its own stack). Deck
+slots: since 2026-10-07 every slot has a `kind` (4-cone holders behind the UR: one full stone, or two half stones end
+to end in the [deck] half_positions); in an older file without kinds every slot holds either type. `SlotState` tracks the type per
+filled slot; `fill_plan` / `reload_plan` load the empty magazine with the next stones in placement order - as many as
+fit the free slots of each type and the station holds (shared by tools/make_job.py and the sequencer).
 
 Routes (v2): waypoint lists in the wall frame; consecutive waypoints differ by a pure translation or a pure rotation
 (PLC v2.9 relative move, mauer/floor.py). The sequencer drives the intermediate legs dead-reckoned (nominal relative
@@ -162,6 +165,7 @@ class MagazineSlot:
     stack: str
     qnear_rad: list[float] | None = None
     ik_ok: bool | None = None
+    kind: str = ""                         # 2026-10-07: stone type this holder takes ("" = either, older files)
 
 
 @dataclass
@@ -331,7 +335,8 @@ def to_dict(job: Job) -> dict:
         "park_q_rad": _q(job.park_q_rad), "approach_mm": float(job.approach_mm),
         "stops": [_stop_to(s, v2) for s in job.stops],
         "magazine": {"slots": [{"id": s.id, "T_ares_tcp": _m(s.T_ares_tcp), "layer": int(s.layer), "stack": s.stack,
-                                "qnear_rad": _q(s.qnear_rad), "ik_ok": s.ik_ok} for s in job.magazine.slots],
+                                "qnear_rad": _q(s.qnear_rad), "ik_ok": s.ik_ok, **({"kind": s.kind} if s.kind else {})}
+                               for s in job.magazine.slots],
                      "take_order": list(job.magazine.take_order), "fill_order": list(job.magazine.fill_order),
                      "initial_fill": list(job.magazine.initial_fill)},
         "station": {"T_wall_station": _m(job.station.T_wall_station), "dock": job.station.dock.to_dict(),
@@ -371,7 +376,8 @@ def from_dict(d: Mapping) -> Job:
                       _route_from(s.get("route_from_station"))) for s in d["stops"]]
         m = d["magazine"]
         mag = Magazine([MagazineSlot(str(s["id"]), _T(s["T_ares_tcp"]), int(s["layer"]), str(s["stack"]),
-                                     _q(s.get("qnear_rad")), s.get("ik_ok")) for s in m["slots"]],
+                                     _q(s.get("qnear_rad")), s.get("ik_ok"), str(s.get("kind") or ""))
+                        for s in m["slots"]],
                        [str(i) for i in m["take_order"]], [str(i) for i in m["fill_order"]],
                        [str(i) for i in m["initial_fill"]],
                        {str(k): str(v) for k, v in (m.get("initial_kinds") or {}).items()})
@@ -507,11 +513,17 @@ def validate(job: Job, boards: Iterable[str] | None = None) -> list[str]:
             p.append(f"magazine stack {k}: layers {sorted(layers)} not contiguous")
     if job.magazine.capacity == 0:
         p.append("magazine: no usable slot")
+    fixed = {s.id: s.kind for s in job.magazine.slots if s.kind}
+    for s in job.magazine.slots:
+        if s.kind and s.kind not in KINDS:
+            p.append(f"magazine slot {s.id}: kind {s.kind!r} not in {KINDS}")
     for sid, kind in job.magazine.initial_kinds.items():
         if sid not in job.magazine.initial_fill:
             p.append(f"magazine initial_kinds: slot {sid} is not in initial_fill")
         if kind not in KINDS:
             p.append(f"magazine initial_kinds: slot {sid} kind {kind!r} not in {KINDS}")
+        elif sid in fixed and fixed[sid] in KINDS and fixed[sid] != kind:
+            p.append(f"magazine initial_kinds: slot {sid} holds {fixed[sid]} stones, not {kind}")
     leg_names = [str(lg.get("name")) for lg in job.legs]
     if len(set(leg_names)) != len(leg_names):
         p.append(f"legs: duplicate names {leg_names}")
@@ -655,8 +667,10 @@ class SlotState:
     @classmethod
     def magazine(cls, mag: Magazine, filled: Iterable[str] | None = None,
                  kinds: Mapping[str, str] | None = None) -> "SlotState":
+        """Deck magazine; slots with a `kind` take only that stone type (2026-10-07), the others either."""
         return cls({s.id: (s.stack, s.layer) for s in mag.slots}, mag.take_order, mag.fill_order,
-                   mag.initial_fill if filled is None else filled, mag.initial_kinds if kinds is None else kinds)
+                   mag.initial_fill if filled is None else filled, mag.initial_kinds if kinds is None else kinds,
+                   {s.id: s.kind for s in mag.slots if s.kind})
 
     @classmethod
     def station(cls, st: Station, filled: Iterable[str] | None = None) -> "SlotState":
@@ -741,18 +755,36 @@ def _prefix(kinds: Sequence[str], n_max: int, supply: Mapping[str, int]) -> int:
     return n
 
 
-def reload_plan(mag: SlotState, station: SlotState, upcoming: Sequence[str]) -> list[tuple[str, str, str]]:
-    """One reload of the EMPTY magazine from the station: [(station slot, magazine slot, kind), ...] in fill order.
+def _loadable(mag: SlotState, upcoming: Sequence[str], supply: Mapping[str, int]) -> int:
+    """How many of the next stones the empty magazine takes: limited by the free slots (per type when the slots are
+    typed) and by `supply` (stones per type available)."""
+    if mag.fixed:
+        free = {k: sum(1 for s in mag.take_order if s not in mag.filled and mag.fixed.get(s) == k) for k in KINDS}
+        return _prefix(list(upcoming), len(upcoming), {k: min(free[k], supply.get(k, 0)) for k in KINDS})
+    return _prefix(list(upcoming), mag.n_free, supply)
 
-    The magazine takes as many of the next stones (`upcoming` = their types in placement order) as it has free slots
-    and the station holds, in order (a missing type ends the batch). The slots to fill are the next ones in fill order
-    (bottom first); each gets the type of the stone that will be taken from it: replaying the takes (first slot that
-    can be taken in take order), the j-th take meets the j-th upcoming type. Every deck slot holds either type."""
+
+def fill_plan(mag: SlotState, upcoming: Sequence[str], supply: Mapping[str, int] | None = None
+              ) -> list[tuple[str, str]]:
+    """Slots and types to fill the EMPTY magazine with the next stones (`upcoming` = their types in placement order),
+    [(magazine slot, kind), ...] in fill order (bottom first): as many stones as `_loadable` (supply None = unlimited,
+    the initial fill). Typed slots: each stone into a free slot of its type. Untyped slots (older jobs): the next slots
+    in fill order, each with the type of the stone the sequencer will take from it (replaying the takes - first slot
+    that can be taken in take order - the j-th take meets the j-th upcoming type)."""
     if not mag.empty():
-        raise ValueError("reload_plan: the magazine is not empty")
-    supply = {k: station.count(k) for k in KINDS}
-    n = _prefix(list(upcoming), mag.n_free, supply)
+        raise ValueError("fill_plan: the magazine is not empty")
+    supply = {k: len(upcoming) for k in KINDS} if supply is None else supply
+    n = _loadable(mag, upcoming, supply)
     m = mag.copy()
+    if mag.fixed:
+        out = []
+        for k in upcoming[:n]:
+            sid = m.next_fill(kind=k)
+            if sid is None:
+                break
+            m.fill(sid, k)
+            out.append((sid, k))
+        return sorted(out, key=lambda x: mag.fill_order.index(x[0]))
     slots = []
     for _ in range(n):
         sid = m.next_fill()
@@ -766,10 +798,15 @@ def reload_plan(mag: SlotState, station: SlotState, upcoming: Sequence[str]) -> 
         sid = t.next_take()
         t.take(sid)
         kind_of[sid] = upcoming[j]
+    return [(sid, kind_of[sid]) for sid in slots]
+
+
+def reload_plan(mag: SlotState, station: SlotState, upcoming: Sequence[str]) -> list[tuple[str, str, str]]:
+    """One reload of the EMPTY magazine from the station: [(station slot, magazine slot, kind), ...] in fill order -
+    `fill_plan` with the station's stones as the supply (a missing type ends the batch)."""
     st = station.copy()
     out = []
-    for sid in slots:
-        k = kind_of[sid]
+    for sid, k in fill_plan(mag, upcoming, {k: station.count(k) for k in KINDS}):
         ssid = st.next_take(kind=k)
         st.take(ssid)
         out.append((ssid, sid, k))
@@ -779,8 +816,8 @@ def reload_plan(mag: SlotState, station: SlotState, upcoming: Sequence[str]) -> 
 def reload_short(station: SlotState, full_station: SlotState, mag: SlotState, upcoming: Sequence[str]) -> bool:
     """True when the station as it is would bring fewer of the next stones than a refilled station - the operator
     tops it up before ARES drives there (with a station smaller than the magazine this is every time it is empty)."""
-    have = _prefix(list(upcoming), mag.n_free, {k: station.count(k) for k in KINDS})
-    full = _prefix(list(upcoming), mag.n_free, {k: full_station.count(k) for k in KINDS})
+    have = _loadable(mag, upcoming, {k: station.count(k) for k in KINDS})
+    full = _loadable(mag, upcoming, {k: full_station.count(k) for k in KINDS})
     return have < full
 
 
