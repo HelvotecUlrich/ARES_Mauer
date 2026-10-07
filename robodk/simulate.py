@@ -49,6 +49,7 @@ planner's job:
 
 Usage (Windows Python):
     py.exe robodk/simulate.py --animate             # the legs of the config incl. station trips (~25-35 min)
+    py.exe robodk/simulate.py --animate --video results/l_wall_sim.mp4    # + time-lapse MP4 (robodk/timelapse.py)
     py.exe robodk/simulate.py --length 16           # straight wall of 16 stones
     py.exe robodk/simulate.py --plan-only           # reach table + plan only
     py.exe robodk/simulate.py --from-stop 2         # L: stops before 2 built without motion, simulate from stop 2
@@ -509,7 +510,13 @@ class LSim(Sim):
         self.cam = None
         self.grid = None
         self.j_home = None
+        self.rec = None                     # timelapse.Recorder (--video)
         self.t0 = time.time()
+
+    def caption(self, text: str) -> None:
+        """Caption of the next time-lapse frames (--video)."""
+        if self.rec is not None:
+            self.rec.label = text
         self.motion_s = 0.0
 
     # ── setup ────────────────────────────────────────────────────────────────
@@ -845,6 +852,9 @@ class LSim(Sim):
             return rec
         self.route_pairs(True)
         self.RDK.Render(animate)
+        de = (what.replace("leg change ", "Schenkelwechsel ").replace("station", "Abholstation")
+              .replace("stop ", "Halt ").replace("trip", "Fahrt"))
+        self.caption(f"ARES fährt: {de}")
         try:
             for a, b in zip(route, route[1:]):
                 for p in interpolate(a, b):
@@ -855,6 +865,8 @@ class LSim(Sim):
                         time.sleep(0.02)
                     else:
                         self.RDK.Update()
+                    if self.rec is not None:
+                        self.rec.frame()
                     if self.RDK.Collisions():
                         rec["hits"].append({"x": round(p.x_mm), "y": round(p.y_mm), "theta_deg": round(p.theta_deg, 1),
                                             "pairs": self.pairs()})
@@ -879,11 +891,14 @@ class LSim(Sim):
         self.set_ares(self.job.station.dock_in_wall)
         self.RDK.Render(False)
         planned = {lk.boards[0]: lk for lk in self.job.station.looks}
+        self.caption(f"Fahrt {n}: Kamera misst die Tafeln der Abholstation")
         res = self.looks(k, f"station trip {n}", sorted(self.station_boards), planned, execute=True)
         trip["looks"] = {b: bool(r["ok"]) for b, r in res.items()}
         if image is not None:
             trip["image"] = station_image(self, image, n)
-        for ssid, mid, kind in ev["pairs"]:
+        for i, (ssid, mid, kind) in enumerate(ev["pairs"], 1):
+            self.caption(f"Fahrt {n}: Abholstation → Magazin, Stein {i}/{len(ev['pairs'])} "
+                         f"({'Halbstein' if kind == 'half' else 'Vollstein'})")
             rec = self.transfer(ssid, mid, kind)
             rec.update(trip=n, stop=k)
             self.transfer_log.append(rec)
@@ -1251,6 +1266,26 @@ def station_image(sim: LSim, path: Path, trip: int) -> str | None:
     return path.name
 
 
+def overview_view(cfg: dict, job) -> tuple[list, list]:
+    """Eye and target (wall frame) of the time-lapse camera (--video): the legs and the station in view, looking from
+    the open side of the C (-x) and from the side of leg A (-y), raised ~55 deg (chosen from 4 test views
+    2026-10-07)."""
+    np = _np()
+    pts = []
+    for lg in wallplan.legs(cfg):
+        L = wallplan.leg_length(cfg, lg.n0)
+        pts += [lg.to_wall(0.0, 0.0), lg.to_wall(L, 0.0)]
+    T = np.asarray(job.station.T_wall_station, float)
+    X, Y = (float(v) for v in cfg["pickup_station"]["table_size"])
+    pts += [tuple((T @ np.array([x, y, 0.0, 1.0]))[:2]) for x in (0.0, X) for y in (0.0, Y)]
+    P = np.array(pts, float)
+    c = (P.min(axis=0) + P.max(axis=0)) / 2.0
+    span = float(np.linalg.norm(P.max(axis=0) - P.min(axis=0)))
+    d = np.array([-0.3, -0.6, 1.2])
+    d = d / np.linalg.norm(d) * 1.0 * span
+    return [float(c[0] + d[0]), float(c[1] + d[1]), float(d[2])], [float(c[0]), float(c[1]), 400.0]
+
+
 def l_images(sim: LSim, look_shot: dict | None, res_dir: Path) -> list:
     """results/l_top.png, l_corner.png, l_last_stop.png (ARES at the stop of the last leg), l_camera_view.png."""
     import cv2
@@ -1607,6 +1642,11 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     if args.trips:
         sim.fill_station(station_before(job, events, first[start]))          # the operator filled it before the run
     sim.open_camera()
+    if args.video:
+        from timelapse import Recorder
+        eye, target = overview_view(cfg, job)
+        sim.rec = Recorder(RDK, args.video, eye, target, fps=args.video_fps)
+        sim.planner.on_move = sim.rec.frame
     RDK.Render(False)
     RDK.setSimulationSpeed(args.speed)
     sim.robot.setSpeed(400, 120, 1500, 600)
@@ -1627,6 +1667,7 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
                 sim.drive_route(route, what, animate=args.animate)
             sim.set_ares(st.ares)
             RDK.Render(False)
+            sim.caption(f"Halt {k + 1}/{len(job.stops)}, Schenkel {st.leg}: Kamera misst die Wandtafeln")
             sim.looks(k, "arrival", all_boards, planned, execute=True)
             n_trip = 0
             for i, t in enumerate(st.stones):
@@ -1648,7 +1689,10 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
                             sim.fill_slot(sid, kind)
                     sim.set_ares(here)
                     RDK.Render(False)
+                    sim.caption(f"Halt {k + 1}/{len(job.stops)}, Schenkel {st.leg}: Kamera misst die Wandtafeln")
                     sim.looks(k, f"after trip {n_trip}", sorted(planned), planned, execute=True)
+                sim.caption(f"Halt {k + 1}/{len(job.stops)}, Schenkel {st.leg}: Stein {gidx + 1}/{len(stones)} "
+                            f"({'Halbstein' if t.kind == 'half' else 'Vollstein'}, Lage {t.course + 1})")
                 rec = sim.lay(t)
                 rec["stop"] = k
                 sim.stone_log.append(rec)
@@ -1676,6 +1720,14 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     finally:
         RDK.Render(True)
         RDK.setSimulationSpeed(1)
+    if sim.rec is not None:
+        if sim.rec.labels:
+            sim.rec.label = "Mauer fertig"
+            for _ in range(2 * sim.rec.fps):                 # 2 s on the finished wall
+                sim.rec.frame()
+        info["video"] = sim.rec.write(f"ARES_Mauer - RoboDK-Simulation {time.strftime('%d.%m.%Y')} "
+                                      f"(Zeitraffer, ein Bild je Bewegung)")
+        print(f"video: {info['video']}", flush=True)
     images = [t["image"] for t in sim.trip_log if t.get("image")]
     if not args.no_images:
         try:
@@ -1792,6 +1844,9 @@ def main(argv: list | None = None) -> int:
     ap.add_argument("--json", type=Path, default=None, help="L: raw results as JSON")
     ap.add_argument("--save-looks", type=Path, default=None, help="L: write every valid look image to this folder")
     ap.add_argument("--out", type=Path, default=None, help=f"L: station .rdk (default {L_RDK.relative_to(REPO)})")
+    ap.add_argument("--video", type=Path, default=None,
+                    help="L: time-lapse MP4 of the run (robodk/timelapse.py: a frame after every move)")
+    ap.add_argument("--video-fps", type=int, default=30)
     args = ap.parse_args(argv)
     is_l = args.length is None and wallplan.is_l(cfg)
     if args.length is None:

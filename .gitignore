@@ -4,6 +4,8 @@ cad/*.step
 robodk/library/*.robot
 robodk/*.rdk
 results/*.png
+results/*.mp4
+results/*_frames/
 __pycache__/
 *.pyc
 reference/*/**

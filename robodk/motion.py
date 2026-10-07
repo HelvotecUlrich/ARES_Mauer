@@ -65,6 +65,7 @@ class Planner:
         self.z_safe = 900.0                  # TCP height for transfers over the magazine (updated by the caller)
         self.tests = 0
         self.self_rejects = 0                # poses / moves refused by the tool-vs-arm model only
+        self.on_move = None                  # called after every executed move (simulate.py --video: a frame)
         robot.setPoseFrame(f_ares)
         robot.setPoseTool(tool)
 
@@ -334,6 +335,8 @@ class Planner:
                 self.RDK.setCollisionActive(COLLISION_OFF)
                 self.robot.MoveL(target)
                 self.RDK.setCollisionActive(COLLISION_ON)
+            if self.on_move is not None:
+                self.on_move()
 
 
 def set_static(RDK, stone, others: list, ares) -> None:
