@@ -76,8 +76,9 @@ def test_sim_run_through_the_mauer_tab(real_win, qapp):
     assert " - SIM" in w.windowTitle()
     tab.start_btn.click()
     assert wait_until(lambda: c.state == "done", 60.0, qapp), c.state
-    assert wait_until(lambda: "placed 3/3" in tab.stone_lbl.text(), 5.0, qapp), tab.stone_lbl.text()
-    assert tab.state_lbl.text() == "DONE" and tab.release_btn.isEnabled() and not tab.pause_btn.isEnabled()
+    assert wait_until(lambda: tab.state_lbl.text() == "DONE", 5.0, qapp)               # the queued state signal
+    assert "placed 3/3" in tab.stone_lbl.text(), tab.stone_lbl.text()
+    assert tab.release_btn.isEnabled() and not tab.pause_btn.isEnabled()
     assert tab.plan._snap is not None and len(tab.plan._snap.placed) == 3
     lines = w.run_log.lines()
     assert any("  run_start  " in ln for ln in lines) and any("  run_done  " in ln for ln in lines)

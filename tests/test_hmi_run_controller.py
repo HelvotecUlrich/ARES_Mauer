@@ -37,6 +37,11 @@ class Rec:
     def names(self) -> list[str]:
         return [e["event"] for e in self.events]
 
+    def settled(self, state: str) -> bool:
+        """The GUI thread has received the state signal (emitted after every record of the run before it, so all
+        of those have arrived too)."""
+        return bool(self.states) and self.states[-1][0] == state
+
 
 @pytest.fixture
 def ctl(qapp, tmp_path):
@@ -50,7 +55,7 @@ def prepared(c: RunController, qapp, **opts) -> Rec:
     c.set_session(short_sim_session())
     assert c.state == "loaded"
     c.prepare(RunOptions("sim", scenario="none", sim_step_s=0.0, **opts))
-    assert wait_until(lambda: c.state == "ready", 30.0, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("ready"), 30.0, qapp), (c.state, rec.messages)
     return rec
 
 
@@ -69,7 +74,7 @@ def test_sim_run_end_to_end(ctl, qapp, tmp_path):
     assert all(not i.blocking for i in rec.reports[-1].items)
     assert c.rig.mode == "sim" and c.rig.world is not None and c.can("start") == (True, "")
     c.start()
-    assert wait_until(lambda: c.state == "done", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     assert wait_until(lambda: rec.events and rec.events[-1]["event"] == "run_done", 5.0, qapp)
     names = rec.names()
     assert names[0] == "run_start" and names[-1] == "run_done"
@@ -87,7 +92,7 @@ def test_sim_run_end_to_end(ctl, qapp, tmp_path):
     assert summary["mode"] == "sim" and summary["state"] == "done" and summary["sim"]["placement"]["n"] == 3
     assert summary["result"]["placed"] and summary["halted"] is False
     c.release()
-    assert wait_until(lambda: c.state == "loaded", 10.0, qapp) and c.rig is None
+    assert wait_until(lambda: rec.settled("loaded"), 10.0, qapp) and c.rig is None
 
 
 def test_log_dirs_are_never_reused(ctl):
@@ -110,11 +115,11 @@ def test_step_mode_decline_then_resume(ctl, qapp):
 
     answer_all(c, rec, decide)
     c.start()
-    assert wait_until(lambda: c.state == "aborted", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp), (c.state, rec.messages)
     assert declined and "declined" in rec.names()
     assert len(c.rig.world.records) == 2 and c.snapshot.stop_k == 1     # the ARES move to stop 1 was declined
     c.resume()
-    assert wait_until(lambda: c.state == "done", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     keys = [r.key for r in c.rig.world.records]
     assert len(keys) == len(set(keys)) == 3
     assert rec.cleared and set(rec.cleared) == {r.id for r in rec.requests}
@@ -134,12 +139,12 @@ def test_pause_at_a_place_pauses_after_the_place(ctl, qapp):
 
     answer_all(c, rec, decide)
     c.start()
-    assert wait_until(lambda: c.state == "paused", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("paused"), RUN_S, qapp), (c.state, rec.messages)
     names = rec.names()
     assert names.index("pause_requested") < names.index("placed") < names.index("run_paused")
     assert len(c.rig.world.records) == 1 and c.sequencer.held is None
     c.resume()
-    assert wait_until(lambda: c.state == "done", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     assert len(c.rig.world.records) == 3
 
 
@@ -155,12 +160,12 @@ def test_halt_releases_a_pending_request(ctl, qapp):
     c.halt()
     assert wait_until(lambda: req.id in rec.cleared, 1.0, qapp)
     assert time.monotonic() - t0 < 1.0
-    assert wait_until(lambda: c.state == "aborted", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp), (c.state, rec.messages)
     assert c.halted and c.step and c.opts.step                            # step forced on for the resume
     assert any(s == "aborted" and d.startswith("HALT") for s, d in rec.states)
     answer_all(c, rec)
     c.resume()
-    assert wait_until(lambda: c.state == "done", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     assert not c.halted and len(c.rig.world.records) == 3
 
 
@@ -178,7 +183,7 @@ def test_soft_abort_with_a_stone_held_waits_for_the_place(ctl, qapp):
 
     answer_all(c, rec, decide)
     c.start()
-    assert wait_until(lambda: c.state == "aborted", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp), (c.state, rec.messages)
     assert len(c.rig.world.records) == 1 and c.sequencer.held is None
     names = rec.names()
     assert names.index("placed") < names.index("declined") < names.index("run_aborted")
@@ -197,16 +202,16 @@ def test_resume_refused_while_held_until_jaws_empty(ctl, qapp):
 
     answer_all(c, rec, decide)
     c.start()
-    assert wait_until(lambda: c.state == "aborted", RUN_S, qapp)
+    assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp)
     assert c.sequencer.held is not None and c.can("clear_held") == (True, "")
     c.resume()
     assert wait_until(lambda: any("resume refused" in t and "jaws" in t for _, t in rec.messages), 10.0, qapp)
-    assert wait_until(lambda: c.state == "aborted", 5.0, qapp)
+    assert wait_until(lambda: rec.settled("aborted"), 5.0, qapp)
     c.clear_held()
     assert wait_until(lambda: c.sequencer.held is None, 5.0, qapp)
     assert c.rig.world.robot.holding is None
     c.resume()
-    assert wait_until(lambda: c.state == "done", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     keys = [r.key for r in c.rig.world.records]
     assert len(keys) == len(set(keys)) == 3
 
@@ -216,18 +221,18 @@ def test_resume_refused_while_the_pose_is_unknown_until_set_pose(ctl, qapp):
     rec = prepared(c, qapp, step=True)
     answer_all(c, rec, lambda req: not req.text.startswith("ARES"))
     c.start()
-    assert wait_until(lambda: c.state == "aborted", RUN_S, qapp)
+    assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp)
     seq = c.sequencer
     seq.pose_status, seq.pose_src = "unknown", "unknown (ARES error)"      # as after an ARES error without odometry
     assert c.can("confirm_pose")[0] and c.can("set_pose")[0]
     c.resume()
     assert wait_until(lambda: any("pose is unknown" in t for _, t in rec.messages), 10.0, qapp)
-    assert wait_until(lambda: c.state == "aborted", 5.0, qapp)
+    assert wait_until(lambda: rec.settled("aborted"), 5.0, qapp)
     c.set_pose(seq.pose_est)
     assert wait_until(lambda: seq.pose_status == "ok", 5.0, qapp)
     c.set_step(False)
     c.resume()
-    assert wait_until(lambda: c.state == "done", RUN_S, qapp), (c.state, rec.messages)
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     assert "pose_set" in rec.names()
 
 

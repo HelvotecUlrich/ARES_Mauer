@@ -157,8 +157,8 @@ def test_controller_real_prepare_refuses_start_and_releases_in_order(qapp, tmp_p
         reports = []
         c.preflight_done.connect(reports.append)
         c.prepare(RunOptions("real"))
-        assert wait_until(lambda: c.state == "ready", 30.0, qapp), c.state
-        assert c.rig.mode == "real" and c.sequencer is not None and reports and not reports[-1].ok
+        assert wait_until(lambda: c.state == "ready" and reports, 30.0, qapp), c.state
+        assert c.rig.mode == "real" and c.sequencer is not None and not reports[-1].ok
         ok, why = c.can("start")
         assert not ok and "no override" in why
         c.start()                                                           # refused: nothing runs

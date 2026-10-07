@@ -64,8 +64,8 @@ def test_controller_loads_in_the_run_thread(qapp, tmp_path, built):
     try:
         c.load_file(path)
         assert c.state == "loading" and not c.can("prepare", "sim")[0]
-        assert wait_until(lambda: c.state == "loaded", 30.0, qapp)
-        assert c.session.variant == "c_acb" and sessions and sessions[-1].name == "nominal_C_c_acb"
+        assert wait_until(lambda: c.state == "loaded" and sessions, 30.0, qapp)
+        assert c.session.variant == "c_acb" and sessions[-1].name == "nominal_C_c_acb"
         assert c.snapshot.n_stones == built["c_acb"].job.n_stones and c.snapshot.seq_state == "idle"
         c.load_file(tmp_path / "missing.json")
         assert wait_until(lambda: c.state == "loaded" and states[-1] == "loaded" and len(states) >= 4, 30.0, qapp)
