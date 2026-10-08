@@ -117,3 +117,6 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   odometry says ARES is not at stop k's mark), D8 c_acb; lab: measurements of T3 (half stone, mount z / rz,
   holder_z, payload COG, board print scale, settle time), park pose slowly, hand-eye on ARES, qnear on PolyScope 3.3
   (tools/calib_handeye.py plan --check), then the freeze (new stamp).
+- 2026-10-08: Samuel mounts the UR base 200 mm behind the ARES front edge, centred in y -> [ur5] mount_x 353.625 ->
+  360.0, mount_y CONFIRMED. Invalidates the reach tables, the jobs and the RoboDK stamp: rerun robodk/simulate.py
+  (main; c_acb if wanted) - NOT started yet (Samuel: "starte noch nichts").

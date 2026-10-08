@@ -15,9 +15,11 @@ width = 600.0               # CONFIRMED: chassis mesh y ±300
 
 [ur5]
 robot_file = "robodk/library/UR5.robot"   # RoboDK library, UR5 (CB3), downloaded 2026-10-02
-# Mount: "in axis with the front steering module, on top of the robot" (Samuel 2026-10-02).
-mount_x = 353.625           # CONFIRMED (axis of the front steering module); exact position follows (Samuel)
-mount_y = 0.0               # ASSUMPTION: on the centreline
+# Mount: "in axis with the front steering module, on top of the robot" (Samuel 2026-10-02); 2026-10-08: base centre
+# 200 mm behind the ARES front edge, centred in y (Samuel). Was 353.625 (steering axis) until 2026-10-08.
+mount_x = 360.0             # CONFIRMED: Samuel 2026-10-08 "200 mm von der Vorderkante" = 560 ([ares] length / 2,
+                            # chassis mesh front) - 200; measure after mounting (test plan T3)
+mount_y = 0.0               # CONFIRMED: Samuel 2026-10-08 "y in der Mitte"; measure after mounting (T3)
 mount_z = 333.6             # PLACEHOLDER: deck top, no adapter plate; exact height follows (Samuel)
 mount_rz = 0.0              # PLACEHOLDER: rotation of the UR base about z [deg]
 
