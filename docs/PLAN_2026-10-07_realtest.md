@@ -63,7 +63,9 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
       unsent pick leaves the jaws empty); 669 passed / 40 skipped; offscreen smoke SIM + twin ok
 - [x] D7 PolyScope 3.3 IK check ([ur] ik_check = "get_inverse_kin", 8894751; found by the test plan agent) + the IK
       error code into [ur] reg_error (was register 26); stamp carries the git state of the run start (87757fa)
-- [ ] D8 after D6: RoboDK reruns main + c_acb (both stamps are stale after D7 / D6), commit reports
+- [~] D8 after D6: RoboDK rerun main done (76/76 + 62/62, job stamped at 277d1e8, clean); c_acb rerun stopped on
+      request (Samuel wanted to wrap up) - its stamp is stale: `py.exe robodk/simulate.py --variant c_acb --animate
+      --video results/l_wall_sim_c_acb.mp4` (only for the variant; the real test uses main)
 - [x] D9 test plan Anhang C (software gaps found while writing it): C5 preflight blocks PLACEHOLDERs outside the camera
       loop (7d9459f), C7 [hmi*] tables out of the config hash / stamp (fce214f), C9 stale texts (c10d72a). C1-C4 go
       with D6 (HMI REAL start: magazine fill, jaws empty, start at stop k > 0, approach_mm, IK_GUARD_33). C6 (HMI test
@@ -110,3 +112,8 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   hmi/README.md, docs/TESTPLAN_REALTEST_ARES_DE.md). Jobs rebuilt (make_job main + c_acb; the config hash no longer
   counts [hmi*] and blank lines). D8 running: RoboDK main then c_acb with video, logs scratchpad rdk_main_d8.log /
   rdk_cacb_d8.log (task bj5tc78fm). After it: commit the reports, send the videos (phone copies), final report.
+- 2026-10-08 07:40: wrap-up on request. Main RoboDK rerun 76/76 + 62/62, stamp 277d1e8 (valid for the real test).
+  c_acb rerun stopped (open, D8). Cron auto-resume deleted. Open: C6 (HMI test drive button), C8 (warn when the PLC
+  odometry says ARES is not at stop k's mark), D8 c_acb; lab: measurements of T3 (half stone, mount z / rz,
+  holder_z, payload COG, board print scale, settle time), park pose slowly, hand-eye on ARES, qnear on PolyScope 3.3
+  (tools/calib_handeye.py plan --check), then the freeze (new stamp).
