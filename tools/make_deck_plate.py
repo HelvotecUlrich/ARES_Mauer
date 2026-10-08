@@ -87,12 +87,8 @@ def plates(cfg: dict) -> list[Plate]:
     note = f"UR axis {float(u['mount_x']) - xf:.0f} mm ahead of the front edge"
     arrow = [((xf - 15.0, 0.0), (xf - 30.0, 8.0)), ((xf - 15.0, 0.0), (xf - 30.0, -8.0))]
 
-    # magazine plate: rectangle with the front notch ([deck_plate] front_notch: side tabs, depth), sockets on the rear
-    # edge (walked downwards, from +y to -y)
-    n_side, n_depth = (float(v) for v in dp.get("front_notch", [0.0, 0.0]))
-    yn, xn = yh - n_side, xf - n_depth
-    front = [(xf, -yh), (xf, -yn), (xn, -yn), (xn, yn), (xf, yn), (xf, yh)] if n_depth > 0 else [(xf, -yh), (xf, yh)]
-    mag = [(xs, -yh)] + front + [(xs, yh)]
+    # magazine plate: rectangle, sockets on the rear edge (walked downwards, from +y to -y)
+    mag = [(xs, -yh), (xf, -yh), (xf, yh), (xs, yh)]
     for yc in reversed(ys):
         mag += dovetail(xs, yc, gd, female=True, downward=True)
     rows = sorted(float(u["mount_x"]) + float(dx) for dx in dk["magazine_rows_dx"])
@@ -100,13 +96,11 @@ def plates(cfg: dict) -> list[Plate]:
     w_logo = CAP_W * LOGO_H * 4
     logo = [centred("ARES", LOGO_H, x_gap, 0.0)] + [centred("HSLU", LOGO2_H, x_gap, s_ * (w_logo / 2 + 70.0))
                                                      for s_ in (-1, 1)]
-    xa = xf - n_depth                                    # FRONT arrow / label behind the notch
-    arrow_m = [((xa - 15.0, 0.0), (xa - 30.0, 8.0)), ((xa - 15.0, 0.0), (xa - 30.0, -8.0))]
     p_mag = Plate("magazine", mag, cones, side(dp["bolt_side_x"]), holders,
-                  [((xa - 35.0, -100.0), 7.0, "FRONT"), ((xs + 25.0, -230.0), 5.0, "ARES deck - magazine - " + note)]
+                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xs + 25.0, -230.0), 5.0, "ARES deck - magazine - " + note)]
                   + logo,
                   [((xs + 30.0, 0.0), (x_gap - LOGO_H / 2 - 8.0, 0.0)), ((x_gap + LOGO_H / 2 + 8.0, 0.0),
-                                                                         (xa - 15.0, 0.0))] + arrow_m)
+                                                                         (xf - 15.0, 0.0))] + arrow)
 
     # rear plate: rounded rear corners, tails on the front edge (walked upwards)
     rear = [(xs, -yh)]
@@ -217,27 +211,6 @@ def dxf(pl: Plate, cfg: dict) -> mp.Dxf:
     return d
 
 
-def notch_recut(cfg: dict) -> mp.Dxf:
-    """Recut of an already lasered magazine plate (Samuel 2026-10-08): only the three cut lines of the front notch,
-    plus the plate outline on layer REFERENCE (green, NOT to be cut) so the file's extents are the plate itself. Laser
-    coordinates: the plate's FRONT edge at the top, one side on the left - push the plate into the top-left corner of
-    the bed and place the job by its top-left corner. The lines run kerf/2 inside the scrap (the plate keeps its
-    nominal size) and start exactly on the front edge."""
-    a, dp, gd = cfg["ares"], cfg["deck_plate"], cfg["guides"]
-    W, Lp = float(a["width"]), float(dp["front_x"]) - float(dp["split_x"])
-    n_side, n_depth = (float(v) for v in dp["front_notch"])
-    k = float(gd.get("kerf_mm", 0.0)) / 2.0
-    mp.ACI.setdefault("REFERENCE", 3)
-    d = mp.Dxf()
-    d.poly("REFERENCE", [(0.0, 0.0), (W, 0.0), (W, -Lp), (0.0, -Lp)])   # top edge y = 0 = the plate's front edge
-    x0, x1, y1 = n_side + k, W - n_side - k, -n_depth + k
-    d.line(mp.CUT, (x0, 0.0), (x0, y1))
-    d.line(mp.CUT, (x0, y1), (x1, y1))
-    d.line(mp.CUT, (x1, y1), (x1, 0.0))
-    d.text("REFERENCE", (10.0, -Lp + 10.0), 6.0, f"magazine plate {W:g} x {Lp:g} - recut front notch: green NOT cut")
-    return d
-
-
 def preview(pls: list[Plate], cfg: dict, path: Path, px_mm: float = 1.0) -> None:
     """Top: magazine + rear as mounted on the deck (grey); bottom: onepiece."""
     from PIL import Image, ImageDraw
@@ -298,9 +271,6 @@ def main() -> int:
         print(f"written deck_plate_{pl.name}.dxf: x {min(xs):g}..{max(xs):g}, y {min(ys):g}..{max(ys):g} "
               f"({max(xs) - min(xs):g} x {max(ys) - min(ys):g} mm), {len(pl.cones)} peg holes, {len(pl.bolts)} M6")
     preview(pls, cfg, out / "deck_plates.png")
-    if cfg["deck_plate"].get("front_notch"):
-        notch_recut(cfg).write(out / "deck_plate_magazine_notch_recut.dxf")
-        print("written deck_plate_magazine_notch_recut.dxf (3 cut lines + green reference outline)")
     for b in bad:
         print("PROBLEM:", b)
     return 1 if bad else 0
