@@ -61,6 +61,10 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - [x] D7 PolyScope 3.3 IK check ([ur] ik_check = "get_inverse_kin", 8894751; found by the test plan agent) + the IK
       error code into [ur] reg_error (was register 26); stamp carries the git state of the run start (87757fa)
 - [ ] D8 after D6: RoboDK reruns main + c_acb (both stamps are stale after D7 / D6), commit reports
+- [x] D9 test plan Anhang C (software gaps found while writing it): C5 preflight blocks PLACEHOLDERs outside the camera
+      loop (7d9459f), C7 [hmi*] tables out of the config hash / stamp (fce214f), C9 stale texts (c10d72a). C1-C4 go
+      with D6 (HMI REAL start: magazine fill, jaws empty, start at stop k > 0, approach_mm, IK_GUARD_33). C6 (HMI test
+      drive button) and C8 (warn when the PLC odometry says ARES is not at stop k's mark) open
 
 ## Status log
 - 2026-10-07: plan written; decisions D1-D5.
