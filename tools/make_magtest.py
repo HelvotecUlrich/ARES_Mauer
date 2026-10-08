@@ -37,7 +37,7 @@ from mauer.config import STATION_TOML  # noqa: E402
 from mauer.magtest import KIND  # noqa: E402
 from mauer.reference import Pose2D  # noqa: E402
 
-DEPENDS_PATTERNS = ("[ur5] mount_*", "[ares] deck_top_z", "[tool] tcp_z", "[tool] adapter_z", "[brick] height",
+DEPENDS_PATTERNS = ("[ur5] mount_*", "[ares] deck_top_z", "[ares] controller_*", "[tool] tcp_z", "[tool] adapter_z", "[brick] height",
                     "[brick] bed_joint", "[brick] mass_kg", "[wall] base_z", "[deck] holder_z",
                     "[deck] magazine_rows_dx", "[deck] magazine_y", "[study] approach", "[ur] park_q_deg",
                     "[ur] payload_*", "[magtest] *")

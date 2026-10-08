@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import math
 import tempfile
 from pathlib import Path
 
@@ -39,7 +40,9 @@ from rdk_common import (REPO, STATION_NAME, as_mat, box_points, camera_body_poin
                         stone_points, stone_points_kind, tcp_pose, transform_points, transl, ur5_base_pose, wall_frame)
 from rdk_common import T_flange_cam as T_flange_cam_mat
 from robodk.robolink import COLLISION_OFF, COLLISION_ON, ITEM_TYPE_STATION, PROJECTION_ALONG_NORMAL
-from robodk.robomath import Mat, invH
+from robodk.robomath import Mat, invH, rotz
+
+from mauer.config import ares_controller_box
 
 GREY = [0.75, 0.75, 0.75, 1.0]
 STONE = [0.72, 0.30, 0.20, 1.0]
@@ -297,6 +300,18 @@ def build(RDK, cfg: dict, camera: bool = True, boards: bool = True, pickup: bool
         raise RuntimeError("ARES import failed")
     ares.setName("ARES_STEP_2026-09-23")
     ares.setColor(GREY)
+    # The UR sits at the vehicle REAR (Samuel 2026-10-08, [ares] frame_x_points_to): this repo's ARES frame (+x at the
+    # UR end) is base_link turned by 180 deg - the STEP (base_link coordinates) turned so that scanners, steering and
+    # covers sit at the physical ends
+    if str(cfg["ares"].get("frame_x_points_to", "front")) == "rear":
+        ares.setPose(rotz(math.pi))
+    ctl = ares_controller_box(cfg)
+    if ctl is not None:       # the UR control box at the far end: part of the ARES object, i.e. of every ARES pair
+        lo, hi = ctl
+        size, centre = hi - lo, (hi + lo) / 2.0
+        box = RDK.AddShape(as_mat(box_points(*size.tolist(), *centre.tolist())))     # station = ARES frame here
+        ares.AddGeometry(box, invH(ares.Pose()))
+        box.Delete()
 
     # Check the deck height at the mount position with vertical rays
     u = cfg["ur5"]
