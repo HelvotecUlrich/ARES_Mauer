@@ -12,6 +12,8 @@ steer_axis_x = 353.625      # CONFIRMED: steering axes at ±353.625 mm (PLC FB_A
 deck_top_z = 333.6          # CONFIRMED from STEP placement of 030250 Deckplatte (z axis down) – check with ray in RoboDK
 length = 1120.0             # CONFIRMED: chassis mesh x ±560 (MCD export 2026-09-22)
 width = 600.0               # CONFIRMED: chassis mesh y ±300
+deck_corner_r = 80.0        # CONFIRMED: deck top (z 333.6) of cad/2026-09-23_030718_A_1-AMR_SIM.stl is the full
+                            # 1120 x 600 rectangle with R 80 corners, no openings (fitted 2026-10-08)
 
 [ur5]
 robot_file = "robodk/library/UR5.robot"   # RoboDK library, UR5 (CB3), downloaded 2026-10-02
@@ -145,7 +147,9 @@ side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of 
 dist = 580.0                # ASSUMPTION: as leg A
 
 [deck]
-holder_z = 20.0             # PLACEHOLDER: the stones on the deck stand on a 20 mm holder. Design 2026-10-07 (Samuel):
+holder_z = 4.0              # ASSUMPTION (2026-10-08, Samuel: one MDF plate on the deck with the peg holes,
+                            # tools/make_deck_plate.py): the stones stand on the 4 mm plate ([plates] mdf_t) directly on
+                            # the deck - measure in T3. Was 20 mm (holder). Design 2026-10-07 (Samuel):
                             # every holder has 4 locating cones (all four sockets of a full stone, like a stone top):
                             # it takes ONE full stone or TWO half stones end to end (their socket pairs lie 0.25 mm
                             # off the cones, within the clearance). half_positions are used for half stones, the
@@ -160,6 +164,22 @@ half_positions = ["r1y0"]   # ASSUMPTION (2026-10-07): magazine position (row r,
                             # (tools/make_job.py, mauer.armcheck: no look at leg C with any holder at ARES y +240)
 magazine_layers = 3         # ASSUMPTION: layers per magazine stack as simulated (robodk/simulate.py:36; differs
                             # from layers = 2 above, which only drives the reach-study grid)
+
+[deck_plate]
+# Magazine plate on the ARES deck (tools/make_deck_plate.py -> targets/deck_plate/deck_plate.dxf, 2026-10-08): 4 mm
+# MDF ([plates] mdf_t) behind the UR with the peg holes ([guides] peg_hole_d) of the locating cones of every magazine
+# holder ([deck] magazine_rows_dx / magazine_y, 4 cones per holder at the sockets of a full stone), screwed with M6 /
+# slot nuts 20 mm from the ARES outer edge (Samuel 2026-10-08). The deck (1120 x 600) does not fit the 800 x 600
+# laser bed: the plate covers the magazine area only and is inset from the deck edge.
+inset_mm = 10.0             # ASSUMPTION: plate edge inside the deck edge at the sides and the rear (580 mm wide fits the
+                            # 600 mm bed with [guides] sheet_margin); its rear corners follow the deck's R 80 concentric
+front_x = 40.0              # ASSUMPTION: front edge of the plate in the ARES frame [mm] (front magazine stones end at
+                            # x = -12, the UR base starts at mount_x - 75)
+bolt_edge_mm = 20.0         # CONFIRMED: Samuel 2026-10-08 - M6 / slot nuts 20 mm from the ARES outer edge
+bolt_hole_d = 6.6           # ASSUMPTION: M6 clearance hole (finished, kerf-compensated like the peg holes)
+bolt_rear_y = [-150.0, 0.0, 150.0]   # ASSUMPTION: holes along the rear edge (x = -length/2 + bolt_edge_mm)
+bolt_side_x = [-440.0, -183.0, 20.0] # ASSUMPTION: holes along both sides (y = +-(width/2 - bolt_edge_mm)), outside the
+                                     # stone footprints (they overhang the sides by 5 mm)
 
 [camera]
 # Eye-in-hand camera on the tool flange beside the gripper, looking along the tool z axis (Samuel 2026-10-02). It
