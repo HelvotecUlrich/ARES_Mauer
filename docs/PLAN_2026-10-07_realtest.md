@@ -92,3 +92,14 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration. After it: merge main into hmi-integration (D6 notes above, also
   SimRig with guard=True, REAL start at stop k > 0: magazine fill + jaws-empty confirmation; hmi preflight IK_GUARD_33
   block -> [ur] ik_check), then into main.
+- 2026-10-08 03:40: HMI workflow wf_7a4d2776-741 COMPLETE (14 agents). Fix commits on hmi-integration (worktree
+  /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration, clean): 7ca642c URLink/AresAds HALT latch, d99f854 RunController
+  (HALT latch + HaltGate, state lock, Start/Resume checks), e0360de window close order / keyboard-HALT banner,
+  a443ba5 docs, 3c3fe08 docs/TESTPLAN_REALTEST_ARES_DE.md. Full workflow result:
+  /tmp/claude-1000/-mnt-c-Users-samue-ARES-Mauer/fc936a49-c30e-44a7-9ec4-c90055219217/tasks/wweshl7rm.output.
+  NEXT (D6): in the worktree `git merge main` (main has 8894751 ik_check, fce214f [hmi] out of the hash,
+  7d9459f preflight blockers, c10d72a texts); then: rigs.py MotionGuard(..., approach_mm=job.approach_mm); SimRig
+  guard=True (option, tests may switch it off); hmi/core/preflight.py IK_GUARD_33 -> only when [ur] ik_check is
+  "has_solution" on PolyScope 3.3; REAL start: show magazine fill (job.restart_fill / initial fill), confirm jaws empty
+  / magazine as listed / station full, start at stop k > 0 needs a run log (declare_placed) or "stop untouched";
+  update the test plan (S1, S2, S6, Anhang C done items); full suite; merge into main; then D8 (RoboDK reruns).
