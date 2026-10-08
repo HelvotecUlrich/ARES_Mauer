@@ -69,6 +69,8 @@ Lage 3 bei u = ±600 ist außer Reichweite (Hover-Pose 50 mm über der obersten 
 5. Hinter ARES (über die UR-Kante hinaus) ist alles frei: bis etwa 0,7 m hinter dem Heck und ±0,8 m seitlich.
    Niemand steht im Arbeitsraum, der Not-Halt ist in der Hand.
 
+**Sicherheitsbereich (Review 2026-10-08):** Beim Schwenken zwischen Magazin und Ablage ragt der Arm mit Stein bis etwa 0,65 m (Kamera bis ~0,95 m) seitlich über BEIDE Fahrzeugseiten neben dem UR hinaus, in Hüft- bis Brusthöhe. Rund um die UR-Basis etwa 1 m frei halten (beide Seiten und hinter dem Heck); niemand neben ARES am UR-Ende stehen. Die Start-Checkliste der HMI nennt bisher nur den Bereich hinter dem Heck.
+
 ## Ablauf in der HMI (Mauer-Tab)
 
 1. **SIM zuerst:** SIM wählen, Szenario `none`, Prepare, Start. Die Simulation plant jede Gelenkbewegung mit dem
