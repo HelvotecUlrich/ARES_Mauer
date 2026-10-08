@@ -73,12 +73,24 @@ class Stone:
 
 
 @dataclass(frozen=True)
+class Opening:
+    """A door or window in a leg (Samuel 2026-10-08): leg-frame u_from .. u_to along course 0 (on the half-stone grid)
+    in courses c_from .. c_to (0-based, inclusive) - no stone there."""
+    u_from: float
+    u_to: float
+    c_from: int
+    c_to: int
+    name: str = ""
+
+
+@dataclass(frozen=True)
 class Leg:
     """A straight leg of the wall: n0 stones in course 0 - a whole number of full stones, or x.5 (2026-10-07: A of
     5 1/2 stones): floor(n0) full stones and a half stone at the end of course 0 (half_stones_layout) - frame (x, y,
     theta) in the wall frame. side / dist: on which side of ARES the leg is built ("front", "left", "right", "rear")
     and at which distance ARES centre -> leg centreline [mm]; "" / None = the [wall] side / dist_nominal of the
-    config."""
+    config. openings: doors / windows (layout_leg cuts them out of the bond); start_half: course 0 starts with a half
+    stone (the bond of the leg shifted by half a stone, e.g. the piece beside a door, 2026-10-08)."""
     name: str
     n0: float
     x: float = 0.0
@@ -86,6 +98,8 @@ class Leg:
     theta: float = 0.0      # rad, heading of the leg x axis in the wall frame
     side: str = ""
     dist: float | None = None
+    openings: tuple = ()    # (Opening, ...)
+    start_half: bool = False
 
     def to_wall(self, u: float, v: float) -> tuple[float, float]:
         c, s = math.cos(self.theta), math.sin(self.theta)
@@ -163,8 +177,10 @@ def legs(cfg: Mapping) -> list[Leg]:
         side = str(d.get("side", ""))
         if side not in ("", "front", "left", "right", "rear"):
             raise ValueError(f"leg {d.get('name')!r}: side {side!r} not front / left / right / rear")
+        ops = tuple(Opening(float(o["u_from"]), float(o["u_to"]), int(o["courses"][0]), int(o["courses"][-1]),
+                            str(o.get("name", ""))) for o in d.get("openings", []) or [])
         out.append(Leg(str(d["name"]), stones_n0(d["n0"]), xyz[0], xyz[1], math.radians(rpy[2]), side,
-                       None if d.get("dist") is None else float(d["dist"])))
+                       None if d.get("dist") is None else float(d["dist"]), ops, bool(d.get("start_half", False))))
     names = [lg.name for lg in out]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate leg names {names}")
@@ -259,18 +275,43 @@ def layout(cfg: dict, n0: int) -> list:
     return stones
 
 
+def _opening_units(cfg: Mapping, leg: Leg, h: float, n_units: int) -> list[tuple[int, int, int, int]]:
+    """Openings of the leg in half-stone units: [(a, b, c_from, c_to)]; ValueError for one off the grid, outside the
+    leg or outside the courses."""
+    courses = int(cfg["wall"]["courses"])
+    out = []
+    for o in leg.openings:
+        what = f"leg {leg.name}: opening {o.name or (o.u_from, o.u_to)}"
+        if not o.u_from < o.u_to:
+            raise ValueError(f"{what}: needs u_from < u_to")
+        a, b = o.u_from / h, o.u_to / h
+        if abs(a - round(a)) > 1e-6 or abs(b - round(b)) > 1e-6:
+            raise ValueError(f"{what}: u {o.u_from:g} .. {o.u_to:g} mm not on the half-stone grid ({h:g} mm)")
+        if round(a) < 0 or round(b) > n_units:
+            raise ValueError(f"{what}: u {o.u_from:g} .. {o.u_to:g} mm outside the leg (0 .. {n_units * h:g} mm)")
+        if not 0 <= o.c_from <= o.c_to < courses:
+            raise ValueError(f"{what}: courses {o.c_from} .. {o.c_to} not within 0 .. {courses - 1}")
+        out.append((int(round(a)), int(round(b)), o.c_from, o.c_to))
+    return out
+
+
 def layout_leg(cfg: Mapping, leg: Leg, half_stones: bool = True) -> list[Stone]:
-    """Stones of one leg (leg frame u). half_stones: rectangle (half stones at both ends of odd courses; a leg of
-    x.5 stones: even courses floor(n0) full stones + a half stone at the END, odd courses a half stone at the START +
-    floor(n0) full stones - the full stones of course 0 keep their joints at whole pitches); else the trapezoid of
-    `layout`. ValueError if the half stone does not fit the bond (length + head joint = bond offset) or is not as
-    high as a full stone."""
+    """Stones of one leg (leg frame u). half_stones: every course is the leg's running bond - full stones on a grid
+    of whole pitches, shifted by the bond offset from course to course (start_half: shifted in course 0 already) - cut
+    by the leg ends and the openings; a piece of half a pitch is a half stone. A plain leg is thus a rectangle (half
+    stones at both ends of odd courses; a leg of x.5 stones: even courses floor(n0) full stones + a half stone at the
+    END, odd courses a half stone at the START + floor(n0) full stones - the full stones of course 0 keep their joints
+    at whole pitches); a door or window gets straight jambs and no joint over a joint. Else (half_stones False) the
+    trapezoid of `layout`. ValueError if the half stone does not fit the bond (length + head joint = bond offset) or
+    is not as high as a full stone, or an opening is off the half-stone grid."""
     b, w = cfg["brick"], cfg["wall"]
     L, hj = float(b["length"]), float(b["head_joint"])
     p = L + hj
     if not half_stones:
         if has_half_end(leg.n0):
             raise ValueError(f"leg {leg.name}: {leg.n0} stones need half stones (no trapezoid of x.5 stones)")
+        if leg.openings:
+            raise ValueError(f"leg {leg.name}: openings need half stones (no trapezoid)")
         return [replace(s, leg=leg.name, length=L) for s in layout(dict(cfg), leg.n0)]
     hb = cfg.get("half_brick", {})
     Lh = half_length(cfg)
@@ -280,18 +321,29 @@ def layout_leg(cfg: Mapping, leg: Leg, half_stones: bool = True) -> list[Stone]:
     if abs(float(hb.get("height", b["height"])) - float(b["height"])) > EPS:
         raise ValueError("half stone height differs from the full stone height: courses would not line up")
     stones = []
-    nf, end_half = full_stones(leg.n0), has_half_end(leg.n0)
+    n_units = int(round(2.0 * leg.n0))                    # half-stone units along course 0
+    ops = _opening_units(cfg, leg, shift, n_units)
     for k in range(int(w["courses"])):
         z = course_top(cfg, k)
-        if (k * float(w["bond_offset"])) % 1.0 < EPS:
-            row = [(L / 2 + i * p, FULL, L) for i in range(nf)]
-            if end_half:
-                row.append((nf * p + Lh / 2, HALF, Lh))
-        elif end_half:
-            row = [(Lh / 2, HALF, Lh)] + [(Lh + hj + L / 2 + i * p, FULL, L) for i in range(nf)]
-        else:
-            row = ([(Lh / 2, HALF, Lh)] + [(Lh + hj + L / 2 + i * p, FULL, L) for i in range(nf - 1)]
-                   + [(leg_length(cfg, leg.n0) - Lh / 2, HALF, Lh)])
+        parity = (0 if (k * float(w["bond_offset"])) % 1.0 < EPS else 1) ^ int(leg.start_half)   # full stones start
+        cut = sorted([(a, b_) for a, b_, c0, c1 in ops if c0 <= k <= c1])                       # at units of it
+        pieces, start = [], 0
+        for a, b_ in cut:
+            if a > start:
+                pieces.append((start, a))
+            start = max(start, b_)
+        if start < n_units:
+            pieces.append((start, n_units))
+        row = []
+        for a, b_ in pieces:
+            i = a
+            while i < b_:
+                if i % 2 != parity or b_ - i == 1:          # off the full-stone grid, or one unit left: a half stone
+                    row.append((i * shift + Lh / 2, HALF, Lh))
+                    i += 1
+                else:
+                    row.append((i * shift + L / 2, FULL, L))
+                    i += 2
         stones += [Stone(k, i, u, z, leg.name, kind, ln) for i, (u, kind, ln) in enumerate(row)]
     return stones
 
@@ -362,16 +414,38 @@ def _a_window(stones: Sequence[Stone], lo: Mapping, hi: Mapping, grid: float, ma
 
 
 # ── sequence ──────────────────────────────────────────────────────────────────
+def _pieces0(stones: Sequence[Stone], length: float, head_joint: float) -> dict:
+    """Course-0 stone key -> index of its contiguous piece (per leg; a door in course 0 splits a leg)."""
+    out, n = {}, 0
+    for leg in sorted({s.leg for s in stones if s.course == 0}):
+        row = sorted((s for s in stones if s.course == 0 and s.leg == leg), key=lambda s: s.u)
+        for i, s in enumerate(row):
+            if i and not adjacent(row[i - 1], s, length, head_joint):
+                n += 1
+            out[s.key] = n
+        n += 1
+    return out
+
+
+def _in_the_open(s: Stone, course0: Sequence[Stone], placed: set, piece: dict, length: float, head_joint: float
+                 ) -> bool:
+    """Rule 2: a course-0 stone placed without a placed neighbour although its piece has a placed stone already."""
+    if s.course != 0:
+        return False
+    mine = [t for t in course0 if t.key in placed and piece.get(t.key) == piece.get(s.key)]
+    return bool(mine) and not any(adjacent(t, s, length, head_joint) for t in mine)
+
+
 def _fill_stop(cfg: Mapping, stones: Sequence[Stone], by_course: dict, placed: set, reach, a: float) -> list:
     """Greedy batch at ARES position a (rules 1 + 2, staircase order). Mutates `placed`."""
     L = float(cfg["brick"]["length"])
     hj = float(cfg["brick"]["head_joint"])
+    piece = _pieces0(stones, L, hj)
     batch = []
     while True:
         cand = [s for s in stones if s.key not in placed and reach(s.course, s.u - a)
                 and all(p.key in placed for p in supports(s, by_course, L))
-                and (s.course > 0 or not any(t.key in placed for t in by_course[0])
-                     or any(adjacent(t, s, L, hj) for t in by_course[0] if t.key in placed))]
+                and not _in_the_open(s, by_course.get(0, []), placed, piece, L, hj)]
         if not cand:
             return batch
         nxt = min(cand, key=lambda s: (s.u, s.course))          # continue where the wall ends
@@ -493,6 +567,7 @@ def check_plan(cfg: dict, stones: list, plan: list) -> list:
     L = cfg["brick"]["length"]
     hj = cfg["brick"]["head_joint"]
     by_course = _by_course(stones)
+    piece = _pieces0(stones, L, hj)
     errors, placed = [], set()
     order = [s for _, batch in plan for s in batch]
     if sorted(s.key for s in order) != sorted(s.key for s in stones):
@@ -505,8 +580,7 @@ def check_plan(cfg: dict, stones: list, plan: list) -> list:
         for t in above:
             if t.key in placed:
                 errors.append(f"stone {s.key} would have to go under the already placed {t.key}")
-        if s.course == 0 and any(t.key in placed for t in by_course[0] if t.leg == s.leg) and not any(
-                adjacent(t, s, L, hj) for t in by_course[0] if t.key in placed and t.leg == s.leg):
+        if _in_the_open(s, by_course.get(0, []), placed, piece, L, hj):
             errors.append(f"stone {s.key} placed in the open (no neighbour in course 0)")
         placed.add(s.key)
     return errors

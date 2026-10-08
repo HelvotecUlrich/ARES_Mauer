@@ -251,3 +251,88 @@ def test_balanced_stops_avoid_a_stop_for_a_single_stone(cfg):
     assert [len(b) for _, b in greedy] == [29, 1]
     assert len(best) == 2 and min(len(b) for _, b in best) > 1 and sum(len(b) for _, b in best) == 30
     assert wp.check_plan(dict(cfg), own, best) == []
+
+
+# ── the C of 2026-10-08: openings (door, window), the back leg through both corners ─────────────────────────────
+def _rows(stones):
+    return {k: [(s.u, s.kind) for s in sorted((t for t in stones if t.course == k), key=lambda t: t.u)]
+            for k in sorted({s.course for s in stones})}
+
+
+def test_a_window_in_the_upper_courses_keeps_the_bond_and_straight_jambs(cfg):
+    """Samuel's photos 2026-10-08: leg A (5 stones) with a window 400 mm wide, 300 mm from both ends, in courses 3 + 4
+    (index 2, 3). The running bond of the leg is cut by the leg ends and the opening; 100 mm pieces are half stones -
+    the jambs are straight and every joint stays offset from the one below."""
+    A = wp.Leg("A", 5, openings=(wp.Opening(300.0, 700.0, 2, 3, "window"),))
+    st = wp.layout_leg(cfg, A)
+    F, H = "full", "half"
+    assert _rows(st) == {0: [(100.0, F), (300.0, F), (500.0, F), (700.0, F), (900.0, F)],
+                         1: [(50.0, H), (200.0, F), (400.0, F), (600.0, F), (800.0, F), (950.0, H)],
+                         2: [(100.0, F), (250.0, H), (750.0, H), (900.0, F)],
+                         3: [(50.0, H), (200.0, F), (800.0, F), (950.0, H)]}
+    by = wp._by_course(st)
+    assert all(wp.supports(s, by, 200.0) for s in st if s.course)
+    assert len({s.key for s in st}) == len(st) == 19
+    joints = {k: {round(s.u - s.length / 2) for s in st if s.course == k} - {0, 300, 700} for k in range(4)}
+    assert all(not (joints[k] & joints[k + 1]) for k in range(3))     # no joint over a joint (besides the jambs)
+
+
+def test_a_door_leaves_the_piece_at_the_free_end_and_start_half_flips_the_bond(cfg):
+    """Leg C: a door 600 mm wide next to the back leg (u 0..600, all courses) - only the 400 mm piece at the free end
+    stays; start_half: course 1 (index 0) half + full + half, course 2 two full stones, as in the photos."""
+    C = wp.Leg("C", 5, openings=(wp.Opening(0.0, 600.0, 0, 3, "door"),), start_half=True)
+    st = wp.layout_leg(cfg, C)
+    F, H = "full", "half"
+    assert _rows(st) == {0: [(650.0, H), (800.0, F), (950.0, H)], 1: [(700.0, F), (900.0, F)],
+                         2: [(650.0, H), (800.0, F), (950.0, H)], 3: [(700.0, F), (900.0, F)]}
+    plain = wp.layout_leg(cfg, wp.Leg("C", 5))
+    assert _rows(plain)[0] == [(100.0, F), (300.0, F), (500.0, F), (700.0, F), (900.0, F)]   # unchanged without
+
+
+def test_openings_and_start_half_from_the_config_and_validation(cfg):
+    c = copy.deepcopy(cfg)
+    c["wall"]["legs"][0]["openings"] = [{"name": "window", "u_from": 300.0, "u_to": 700.0, "courses": [2, 3]}]
+    c["wall"]["legs"][0]["start_half"] = True
+    lg = wp.legs(c)[0]
+    assert lg.openings == (wp.Opening(300.0, 700.0, 2, 3, "window"),) and lg.start_half
+    assert not wp.legs(cfg)[0].openings and not wp.legs(cfg)[0].start_half
+    for bad, msg in (({"u_from": 250.0, "u_to": 700.0, "courses": [2, 3]}, "half-stone grid"),
+                     ({"u_from": 300.0, "u_to": 99900.0, "courses": [2, 3]}, "outside the leg"),
+                     ({"u_from": 300.0, "u_to": 700.0, "courses": [2, 9]}, "courses"),
+                     ({"u_from": 700.0, "u_to": 300.0, "courses": [2, 3]}, "u_from < u_to")):
+        c["wall"]["legs"][0]["openings"] = [bad]
+        with pytest.raises(ValueError, match=msg):
+            wp.layout_leg(c, wp.legs(c)[0])
+
+
+def test_the_back_leg_runs_through_both_corners(cfg):
+    """The C of 2026-10-08: B (9 stones, 1.8 m) runs through both corners, A and C (5 stones) butt against its
+    inside face; the free ends of A and C line up; built B, A, C."""
+    A = wp.Leg("A", 5, openings=(wp.Opening(300.0, 700.0, 2, 3, "window"),))
+    B = wp.butt_corner(cfg, A, 9, "B", towards_ares=True, through="next")
+    C = wp.butt_corner(cfg, B, 5, "C", towards_ares=True, through="prev")
+    C = wp.Leg(C.name, C.n0, C.x, C.y, C.theta, openings=(wp.Opening(0.0, 600.0, 0, 3, "door"),), start_half=True)
+    gap = cfg["wall"]["corner_gap_mm"]
+    assert wp.corner_of(cfg, A, B) == pytest.approx({"through": "next", "towards_ares": True, "gap_mm": gap})
+    assert wp.corner_of(cfg, B, C) == pytest.approx({"through": "prev", "towards_ares": True, "gap_mm": gap})
+    assert [lg.name for lg in wp.build_order(cfg, [A, B, C])] == ["B", "A", "C"]
+    assert (B.x, B.y) == pytest.approx((1062.69, -60.0)) and (C.x, C.y) == pytest.approx((1000.0, 1680.0))
+    assert C.to_wall(wp.leg_length(cfg, 5), 0.0)[0] == pytest.approx(A.to_wall(0.0, 0.0)[0])     # free ends line up
+    st = wp.layout_legs(cfg, [A, B, C])
+    assert wp.check_legs(cfg, [A, B, C], st) == []
+    assert [sum(s.leg == n for s in st) for n in "ABC"] == [19, 38, 10]
+    assert sum(s.kind == "half" for s in st) == 14
+
+
+def test_a_door_in_the_middle_of_course_0_frees_the_first_stone_of_each_piece(cfg):
+    """Rule 2 per piece: a course-0 stone needs a placed neighbour unless it is the first of its contiguous piece
+    (a door in the middle splits course 0) - the plan does not get stuck and check_plan agrees."""
+    A = wp.Leg("A", 7, openings=(wp.Opening(600.0, 800.0, 0, 3, "door"),))
+    st = wp.layout_leg(cfg, A)
+    reach = lambda k, u: abs(u) <= 2000.0                                     # noqa: E731 - everything reachable
+    lo = {k: -2000.0 for k in range(4)}
+    hi = {k: 2000.0 for k in range(4)}
+    plan = wp.sequence_leg(cfg, st, reach, lo, hi, 20.0)
+    assert wp.check_plan(cfg, st, plan) == []
+    order = [s.key for _, b in plan for s in b]
+    assert sorted(order) == sorted(s.key for s in st)
