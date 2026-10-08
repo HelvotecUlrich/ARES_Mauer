@@ -277,7 +277,7 @@ def test_step_mode_confirms_every_motion(cfg, job10, tmp_path):
 
 
 # ── (v) real-run preflight ────────────────────────────────────────────────────
-def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
+def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch):
     no_host = copy.deepcopy(cfg)
     no_host["ur"]["host"] = ""                              # host, payload and stone mass are set since 2026-10-06
     no_host["ur"]["payload_tool_kg"] = 0.0
@@ -293,6 +293,7 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
     good["brick"]["mass_kg"] = 3.0
     j = copy.deepcopy(job10)
     j.meta.update(look_source="planner", reach_check="robodk")
+    monkeypatch.setattr(mjob, "stamp_problems", lambda job: [])          # code provenance: test_stamp_problems
     for f in ("i.json", "h.json"):
         (tmp_path / f).write_text("{}")
     assert preflight_real(good, j, intrinsics_file=tmp_path / "i.json", handeye_file=tmp_path / "h.json") == []
@@ -324,9 +325,21 @@ class _FakeLink:
         return BlockResult(ok="FAIL" not in body, block_id=len(self.blocks), name=name, error="boom")
 
 
+def test_stamp_problems():
+    """A RoboDK-verified job must carry the code commit it was verified with and come from a clean tree."""
+    j = SimpleJob = type("J", (), {})()
+    j.meta = {"robodk_sim": {"git_dirty": True, "git_commit": "abc"}}
+    assert "uncommitted" in mjob.stamp_problems(j)[0]
+    j.meta = {"robodk_sim": {}}
+    assert "no code commit" in mjob.stamp_problems(j)[0]
+    j.meta = {"robodk_sim": {"git_commit": "0000000000000000000000000000000000000000", "git_dirty": False}}
+    assert mjob.stamp_problems(j)                                            # unknown commit: not the code now
+    del SimpleJob
+
+
 def _guard(cfg, job):
     from mauer.motionguard import MotionGuard
-    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp)
+    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
 
 
 def test_ur_robot_programs(cfg, job10):

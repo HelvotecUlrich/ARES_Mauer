@@ -185,19 +185,21 @@ def collisions(caps: Sequence[Capsule], boxes: Sequence[Box], clearance_mm: floa
 def stone_boxes(cfg: Mapping, stones: Iterable, legs: Mapping[str, object] | None = None,
                 base_plates: bool = True) -> list[Box]:
     """Boxes (wall frame) of wallplan stones (u, z_top, length, leg) - width incl. the ribs of the long faces
-    ([brick] rib_mm) - and, if base_plates, the [wall] base_z plate under course 0 of every leg that has a stone.
+    ([brick] rib_mm), up to the pin tips when [brick] pins_up - and, if base_plates, the [wall] base_z plate under
+    course 0 of every leg that has a stone.
     legs: {name: wallplan.Leg} (to_wall, theta); a stone with leg "" (straight wall) uses the wall frame."""
     b = cfg["brick"]
     L, W, H = float(b["length"]), float(b["width"]), float(b["height"])
     rib = float(b.get("rib_mm", 0.0))
-    out, spans = [], {}
+    up = float(b.get("pin_length", 0.0)) if b.get("pins_up") else 0.0   # pins up (2026-10-06): the box reaches the
+    out, spans = [], {}                                                   # pin tips, as _stone_box (review 2026-10-07)
     for s in stones:
         lg = (legs or {}).get(getattr(s, "leg", "") or "")
         th = float(getattr(lg, "theta", 0.0)) if lg is not None else 0.0
         ln = float(getattr(s, "length", 0.0) or L)
         x, y = lg.to_wall(s.u, 0.0) if lg is not None else (s.u, 0.0)
-        out.append(Box(getattr(s, "label", str(s)), np.array([x, y, s.z_top - H / 2.0]), g.rotz(th)[:3, :3],
-                       np.array([ln / 2.0, W / 2.0 + rib, H / 2.0])))
+        out.append(Box(getattr(s, "label", str(s)), np.array([x, y, s.z_top - (H - up) / 2.0]), g.rotz(th)[:3, :3],
+                       np.array([ln / 2.0, W / 2.0 + rib, (H + up) / 2.0])))
         key = getattr(s, "leg", "") or ""
         lo, hi = spans.get(key, (math.inf, -math.inf))
         spans[key] = (min(lo, s.u - ln / 2.0), max(hi, s.u + ln / 2.0))

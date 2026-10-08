@@ -827,6 +827,54 @@ def _n0(v) -> int | float:
     return int(round(f)) if abs(f - round(f)) < 1e-9 else f
 
 
+def restart_fill(job: "Job", standing: Iterable[tuple]) -> list[tuple[str, str]]:
+    """[(magazine slot, kind), ...] the operator loads before a run that does not start with the job's first stone (a
+    later stop, or after `standing` stones of an interrupted run): the next stones in placement order by the
+    sequencer's fill rule (fill_plan) - not the job's initial fill, which belongs to its first stones."""
+    st = {tuple(k) for k in standing}
+    upcoming = [t.kind for t in job.stones() if t.key not in st]
+    return fill_plan(SlotState.magazine(job.magazine, filled=[], kinds={}), upcoming)
+
+
+# ── code provenance (RoboDK-verified jobs) ────────────────────────────────────
+STAMP_PATHS = ("mauer", "robodk", "tools/make_job.py", "cad", "config")   # what a RoboDK verification depends on
+
+
+def git_state(paths: Sequence[str] = STAMP_PATHS) -> dict:
+    """{"git_commit", "git_dirty"} of the repo for `paths` (dirty: uncommitted changes there); {} without git."""
+    import subprocess
+    from . import REPO
+    try:
+        commit = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                timeout=20, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--", *paths], capture_output=True,
+                               text=True, timeout=20, check=True).stdout.strip() != ""
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    return {"git_commit": commit, "git_dirty": dirty}
+
+
+def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS) -> list[str]:
+    """Why a RoboDK-verified job (meta reach_check "robodk") no longer matches the code: stamped from a dirty tree, or
+    the planning code / CAD / config changed since its commit; [] if it matches or git is not available."""
+    import subprocess
+    from . import REPO
+    rs = job.meta.get("robodk_sim") or {}
+    if rs.get("git_dirty"):
+        return ["the RoboDK-verified job was stamped from uncommitted changes - commit, rerun robodk/simulate.py"]
+    commit = rs.get("git_commit")
+    if not commit:
+        return ["the RoboDK-verified job has no code commit (stamped by an older simulate.py) - rerun it"]
+    try:
+        r = subprocess.run(["git", "-C", str(REPO), "diff", "--quiet", commit, "--", *paths], timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if r.returncode != 0:
+        return [f"the planning code / CAD / config changed since the RoboDK verification ({commit[:8]}) - rerun "
+                "robodk/simulate.py"]
+    return []
+
+
 # ── config provenance ─────────────────────────────────────────────────────────
 def config_sha256(path: str | Path | None = None, variant: str | None = None) -> str:
     """sha256 of config/station.toml - and of the variant overlay after it, if the config is a variant."""

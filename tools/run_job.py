@@ -230,10 +230,26 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
         print("--i-know is not accepted for --real: fix the listed problems in config/station.toml / calib/")
         return 2
     problems = preflight_real(cfg, job, config_path=args.config)
+    a, b = parse_stops(args.stops, len(job.stops))
+    if a > 0 and not args.resume_log and not args.stop_untouched:     # the motion guard must see the wall that stands
+        problems.append(f"start at stop {a}: give --resume-log RUN (stones of the interrupted run) or confirm with "
+                        f"--stop-untouched that no stone of stop {a} has been placed yet (stops < {a} count as built)")
     if problems:
         print("real run refused - every problem:")
         for p in problems:
             print(f"  - {p}")
+        return 2
+    standing = {t.key for st in job.stops[:a] for t in st.stones}
+    if args.resume_log:
+        from mauer.sequencer import read_log
+        standing |= {tuple(e["stone"]) for e in read_log(args.resume_log) if e.get("event") == "placed"}
+    fill = (mjob.restart_fill(job, standing) if standing
+            else [(sid, job.magazine.initial_kinds.get(sid, "full")) for sid in job.magazine.initial_fill])
+    print("load the magazine (slot: stone type), every other slot empty:\n  "
+          + ", ".join(f"{sid}: {kind}" for sid, kind in fill))
+    if input("gripper jaws EMPTY, the magazine loaded as listed and the pick-up station full? [y/N] "
+             ).strip().lower() != "y":
+        print("real run not started")
         return 2
     from mauer.ares import AresAds
     from mauer.backends import AdsAres, URRobot
@@ -263,11 +279,16 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
             return 2
         cam = open_camera(cfg)
         from mauer.motionguard import MotionGuard
-        robot = URRobot(link, cfg, job, guard=MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp))
+        robot = URRobot(link, cfg, job, guard=MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp,
+                                                          approach_mm=job.approach_mm))
         seq = Sequencer(job, cfg, robot, AdsAres(ads), cam, intr, X, log_dir=args.log_dir,
                         confirm=confirm if args.step else None, save_images=args.save_images,
                         on_station_empty=station_empty)
-        a, b = parse_stops(args.stops, len(job.stops))
+        if args.resume_log:
+            from mauer.sequencer import read_log
+            placed = [tuple(e["stone"]) for e in read_log(args.resume_log) if e.get("event") == "placed"]
+            seq.declare_placed(placed, source=f"run log {args.resume_log}")
+            print(f"{len(placed)} stones of the earlier run declared as standing")
         try:
             seq.run(a, b)
         except SequencerError as e:
@@ -300,6 +321,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--log-dir", default=None, help="run log folder (default data/runs/<timestamp>/)")
     ap.add_argument("--save-images", action="store_true", help="store every image in the run log folder")
     ap.add_argument("--step", action="store_true", help="--real: confirm every motion")
+    ap.add_argument("--resume-log", default=None,
+                    help="--real: run folder / run.jsonl of an interrupted run - its placed stones stand (motion guard)")
+    ap.add_argument("--stop-untouched", action="store_true",
+                    help="--real with --stops k > 0: confirms that no stone of stop k has been placed yet")
     ap.add_argument("--i-know", action="store_true", help="--sim --preflight only: continue despite problems")
     g = ap.add_argument_group("simulation")
     g.add_argument("--scenario", default="realistic", choices=("none", "e003", "slip", "realistic"),

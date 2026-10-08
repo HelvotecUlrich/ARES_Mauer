@@ -45,6 +45,9 @@ COMPACT_R_MM = (300.0, 250.0, 350.0, 200.0)   # compact transfer poses: TCP this
 COLUMN_TOL_MM = 5.0               # TCP this close (horizontally) to the target TCP: gripper and stone are in their
                                   # descent column, where butt joints and the 5 mm magazine gaps put them next to stones
 GRIPPER_PARTS = ("gripper", "jaw bar", "jaw +x", "jaw -x", "held stone")   # may touch (not overlap) there
+COLUMN_ABOVE_MM = 20.0            # ... up to the approach height + this,
+COLUMN_TILT_DEG = 3.0             # ... with the tool axis this close to the target's
+FLOOR_SLAB_MM, FLOOR_HALF_MM = 50.0, 4000.0   # the floor (ARES frame z <= 0) as a box in the world
 RRT_ITER = 1000                   # RRT-Connect fallback (robodk/motion.Planner.rrt): iterations,
 RRT_STEP_DEG = 15.0               # largest joint step of an extension,
 RRT_MARGIN_DEG = (120.0, 60.0, 60.0, 120.0, 60.0, 120.0)   # sampling box around start / goal per joint
@@ -97,7 +100,7 @@ class MotionGuard:
     ARES frame (job.T_ares_base), `park_q` = the park joints (job.park_q_rad)."""
 
     def __init__(self, cfg: Mapping, T_ares_base: np.ndarray, park_q: Sequence[float], T_flange_tcp: np.ndarray,
-                 step_deg: float = STEP_DEG):
+                 step_deg: float = STEP_DEG, approach_mm: float = 150.0):
         self.cfg = cfg
         self.T_ares_base = np.asarray(T_ares_base, float)
         self.park_q = np.asarray(park_q, float)
@@ -105,7 +108,8 @@ class MotionGuard:
         self.step = math.radians(step_deg)
         self.world = GuardWorld()
         self._checkers: list | None = None
-        self._column: np.ndarray | None = None     # target TCP xy (base frame) of the plan in progress
+        self._column: np.ndarray | None = None     # target TCP pose (base frame) of the plan in progress
+        self.approach_mm = float(approach_mm)
         b, dk, a = cfg["brick"], cfg["deck"], cfg["ares"]
         layers = int(dk.get("magazine_layers", dk.get("layers", 1)))
         top_ares = (float(a["deck_top_z"]) + float(dk["holder_z"])
@@ -119,27 +123,37 @@ class MotionGuard:
         self._checkers = None
 
     def _held_capsules(self, kind: str) -> list:
-        """The held stone in the flange frame: TCP = top centre, TCP z into the stone, length along TCP x. A 3 x 3
-        grid of capsules along the length, radius r = min(width, height) / 6, ends rounded within the stone - inside
-        the box except the edges, which it misses by at most (sqrt 2 - 1) r < armcheck.CLEARANCE_MM. (One fat capsule
-        overshot the end faces of a half stone by 10 mm and refused picks next to a stack 5 mm away, 2026-10-07.)"""
+        """The held stone in the flange frame: TCP = top centre, TCP z into the stone, length along TCP x, width incl.
+        the ribs of the long faces ([brick] rib_mm). A 3 x 3 grid of capsules along the length (radius r = min(width,
+        height) / 6, ends within the stone: the faces between the grid lines at most (sqrt 2 - 1) r = 8.3 mm inside
+        the box, < armcheck.CLEARANCE_MM) plus the 12 box edges as zero-radius segments (the grid alone missed the
+        corners by 14.6 mm, review 2026-10-07). (One fat capsule overshot the end faces of a half stone by 10 mm and
+        refused picks next to a stack 5 mm away.)"""
         dims = self.cfg["half_brick"] if kind == "half" else self.cfg["brick"]
-        L, W, H = float(dims["length"]), float(dims["width"]), float(dims["height"])
+        rib = float(self.cfg["brick"].get("rib_mm", 0.0))
+        L, W, H = float(dims["length"]), float(dims["width"]) + 2.0 * rib, float(dims["height"])
         r = min(W, H) / 6.0
         half = max(L / 2.0 - r, 0.0)
+        T = self.T_flange_tcp
         out = []
         for v in (-W / 2.0 + r, 0.0, W / 2.0 - r):
             for z in (r, H / 2.0, H - r):
-                a = g.apply(self.T_flange_tcp, [[-half, v, z]])[0]
-                b = g.apply(self.T_flange_tcp, [[half, v, z]])[0]
-                out.append(("held stone", a, b, r))
+                out.append(("held stone", g.apply(T, [[-half, v, z]])[0], g.apply(T, [[half, v, z]])[0], r))
+        x, y = L / 2.0, W / 2.0
+        edges = ([((-x, sy, z), (x, sy, z)) for sy in (-y, y) for z in (0.0, H)]
+                 + [((sx, -y, z), (sx, y, z)) for sx in (-x, x) for z in (0.0, H)]
+                 + [((sx, sy, 0.0), (sx, sy, H)) for sx in (-x, x) for sy in (-y, y)])
+        for a, b in edges:
+            out.append(("held stone", g.apply(T, [a])[0], g.apply(T, [b])[0], 0.0))
         return out
 
     def _boxes(self):
         if self._checkers is not None:
             return self._checkers
         w, cfg = self.world, self.cfg
-        out = [("ares", armcheck.ares_boxes(cfg, list(w.magazine)), None)]
+        floor = armcheck.Box("floor", np.array([0.0, 0.0, -FLOOR_SLAB_MM / 2.0]), np.eye(3),
+                             np.array([FLOOR_HALF_MM, FLOOR_HALF_MM, FLOOR_SLAB_MM / 2.0]))   # ARES frame z = 0 = floor
+        out = [("ares", armcheck.ares_boxes(cfg, list(w.magazine)) + [floor], None)]
         if w.T_base_wall is not None and w.wall_stones:
             legs = {}
             for lg in w.legs or ():
@@ -176,9 +190,9 @@ class MotionGuard:
         (SELF_CLEARANCE_MM) and arm / tool / held stone vs a box of the world (CLEARANCE_MM)."""
         tool = armcheck.tool_capsules(self.cfg) + (self._held_capsules(holding) if holding else [])
         out: dict[tuple[str, str], float] = {}
-        d, part, link = self._self_clearance(q, tool)
-        if d < armcheck.SELF_CLEARANCE_MM:
-            out[(part, link)] = armcheck.SELF_CLEARANCE_MM - d
+        for (part, link), d in self._self_pairs(q, tool).items():       # every pair (review: a tolerated start
+            if d < armcheck.SELF_CLEARANCE_MM:                          # pair hid the others)
+                out[(part, link)] = armcheck.SELF_CLEARANCE_MM - d
         for what, boxes, T_parent_base in self._boxes():
             if not boxes:
                 continue
@@ -187,18 +201,18 @@ class MotionGuard:
                         if c.name not in ("base", "shoulder")]
             else:
                 caps = armcheck.arm_capsules(q, T_parent_base, tool)
-            in_column = (self._column is not None and float(np.hypot(
-                *((ur5_fk(np.asarray(q, float)) @ self.T_flange_tcp)[:2, 3] - self._column))) <= COLUMN_TOL_MM)
+            in_column = self._in_column(q)
             for cap, box, depth in armcheck.collisions(caps, boxes, armcheck.CLEARANCE_MM):
                 if in_column and cap in GRIPPER_PARTS and depth <= armcheck.CLEARANCE_MM:
                     continue                       # gripper / stone over the slot, beside its neighbours: touching ok
                 out[(cap, f"{box} ({what})")] = max(out.get((cap, f"{box} ({what})"), 0.0), depth)
         return out
 
-    def _self_clearance(self, q, tool) -> tuple[float, str, str]:
+    def _self_pairs(self, q, tool) -> dict[tuple[str, str], float]:
+        """{(tool part, arm link): smallest distance mm} for every pair (armcheck.self_clearance pair by pair)."""
         caps = armcheck.arm_capsules(q, np.eye(4), tool)
         arm = [c for c in caps if c.name in armcheck.ARM_LINKS]
-        best = (math.inf, "", "")
+        out: dict[tuple[str, str], float] = {}
         for t in caps[len(arm):]:
             n = max(2, int(math.ceil(float(np.linalg.norm(t.b - t.a)) / 5.0)) + 1)
             P = t.a + np.linspace(0.0, 1.0, n)[:, None] * (t.b - t.a)
@@ -206,9 +220,24 @@ class MotionGuard:
                 if (t.name, a.name) in armcheck.SELF_SKIP or (t.name == "held stone" and a.name == "wrist 3"):
                     continue
                 d = float(armcheck._point_segment_distance(P, a.a, a.b).min()) - t.r - a.r
-                if d < best[0]:
-                    best = (d, t.name, a.name)
-        return best
+                out[(t.name, a.name)] = min(out.get((t.name, a.name), math.inf), d)
+        return out
+
+    def _in_column(self, q) -> bool:
+        """The TCP is in the descent column of the plan's target (plan column): within COLUMN_TOL_MM horizontally,
+        between the target and approach_mm + COLUMN_ABOVE_MM above it, tool axis within COLUMN_TILT_DEG of the
+        target's (review 2026-10-07: the exemption had no height / orientation limit)."""
+        if self._column is None:
+            return False
+        T = ur5_fk(np.asarray(q, float)) @ self.T_flange_tcp
+        Tc = self._column
+        if float(np.hypot(*(T[:2, 3] - Tc[:2, 3]))) > COLUMN_TOL_MM:
+            return False
+        dz = float(T[2, 3] - Tc[2, 3])
+        if not -COLUMN_TOL_MM <= dz <= self.approach_mm + COLUMN_ABOVE_MM:
+            return False
+        c = float(np.clip(np.dot(T[:3, 2], Tc[:3, 2]), -1.0, 1.0))
+        return math.degrees(math.acos(c)) <= COLUMN_TILT_DEG
 
     def segment_problems(self, q0, q1, holding: str | None = None, from_start: bool = False) -> list[str]:
         """Problems of the joint move q0 -> q1 (first sample that fails), [] = free. from_start: q0 is where the arm
@@ -261,14 +290,14 @@ class MotionGuard:
         return out
 
     def plan(self, q_from: Sequence[float], q_to: Sequence[float], holding: str | None = None,
-             vias: Sequence[Sequence[float]] = (), column: Sequence[float] | None = None) -> Verdict:
+             vias: Sequence[Sequence[float]] = (), column: np.ndarray | None = None) -> Verdict:
         """Joint path q_from -> (vias) -> q_to: the given vias if that path is free, else the first free detour
-        (module docstring). Verdict.ok False -> refuse the move. column = target TCP (x, y) in the base frame of a
-        pick / place: while the TCP is within COLUMN_TOL_MM of it, gripper, jaws and held stone (GRIPPER_PARTS) may
+        (module docstring). Verdict.ok False -> refuse the move. column = target TCP pose (4 x 4, base frame) of a
+        pick / place: while the TCP is in its descent column (_in_column), gripper, jaws and held stone (GRIPPER_PARTS) may
         touch (not overlap) the stones of the world - they are above the slot, next to a butt joint or a magazine
         stack 5 mm away, as in the descent that follows (robodk/motion.py: the last 60 mm untested, above that
         RoboDK's own clearance 0). Camera, adapter and arm links keep CLEARANCE_MM."""
-        self._column = None if column is None else np.asarray(column, float)[:2]
+        self._column = None if column is None else np.asarray(column, float)
         try:
             return self._plan(q_from, q_to, holding, vias)
         finally:

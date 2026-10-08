@@ -511,11 +511,13 @@ v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
 a_lin = 0.30                # ASSUMPTION: m/s²
 v_contact = 0.02            # ASSUMPTION: m/s, last approach to / retract from the stone
 park_q_deg = [161.83, -91.86, 41.77, -39.91, -90.0, 161.83]  # ASSUMPTION (2026-10-07): compact pose like robodk/
-                            # simulate.py Planner.compact (TCP 350 mm ahead of the UR base, z 919 mm ARES = the transfer
-                            # height over a full magazine, tool down, elbow up), checked with mauer.motionguard: tool 40 mm
-                            # from the arm, free of ARES and a full magazine. The previous value [21.34, -127.66, 20.7,
-                            # 16.96, -90.0, 21.34] (same pose, folded IK branch, never collision-checked) had the jaws 47 mm
-                            # INSIDE the forearm in the capsule model - verify on the robot: first move slowly in step mode
+                            # simulate.py Planner.compact - TCP 350 mm ahead of the UR base at ARES (703.6, 0, 919) mm,
+                            # i.e. 144 mm ahead of the chassis front at the transfer height over a full magazine, tool
+                            # down, elbow up; checked with mauer.motionguard (tool 40 mm from the arm, free of ARES and a
+                            # full magazine) and in RoboDK (simulate.py parks there; 3D route checks with the arm parked
+                            # there: 0 colliding samples). Replaces [21.34, -127.66, 20.7, 16.96, -90.0, 21.34] (TCP r 300
+                            # mm / z 905 mm, folded IK branch, never collision-checked: the jaws 47 mm INSIDE the forearm
+                            # in the capsule model) - verify on the robot: first move slowly in step mode
 sim_payload_kg = 1.0        # ASSUMPTION: URSim/simulation ONLY while payload_tool_kg is unknown; never on the real robot
 
 [ares_ads]
