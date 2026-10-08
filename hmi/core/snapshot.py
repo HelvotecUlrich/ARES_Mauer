@@ -190,7 +190,7 @@ class ShotView:
     scale: float                    # preview px per image px
     full_size: tuple[int, int]      # (width, height) of the camera image [px]
     rec: dict | None                # the 'shot' record (boards: ok, n_corners, rms_px | reason); None = manual grab
-    detections: dict | None = None  # CAMERA: {board: {"n": int, "ids": list, "pts": list}} (preview px)
+    detections: dict | None = None  # hmi.core.overlay: {board: {"n", "ids", "pts" (preview px), "markers"}}
     note: str = ""
 
 
@@ -207,7 +207,7 @@ def to_uint8(image: np.ndarray) -> np.ndarray:
 
 
 def default_shot_view(image: np.ndarray, rec: Mapping | None, cfg: Mapping, scale: float) -> ShotView:
-    """Preview = the image resized by `scale` (cv2 INTER_AREA), nothing drawn (the CAMERA feature draws)."""
+    """Preview = the image resized by `scale` (cv2 INTER_AREA), nothing drawn (hmi.core.overlay draws)."""
     import cv2
     h, w = image.shape[:2]
     size = (max(1, int(round(w * scale))), max(1, int(round(h * scale))))

@@ -1267,3 +1267,52 @@ implemented as specified.
   `short_sim_session(n0, n1)`, `StubLink`, `StubCamera`, `wait_until`, `AMR_CFG`.
 - Connect controller / context signals to bound methods of the widget (or lambdas): they are queued into the GUI
   thread; widgets never call hardware objects.
+
+## 16. Implementation notes (features and INTEGRATE)
+
+The feature branches `hmi-camera`, `hmi-status` and `hmi-twin` were merged into `hmi-integration` without conflicts
+(disjoint files). Additions beyond the contract, by step:
+
+**CAMERA**
+- `ShotContext` has an extra field `min_corners` ([vision] min_corners). `make_shot_view` returns `CameraShot`, a
+  `ShotView` subclass with `image` (the full frame, not copied), `base` (preview without the overlay), `boards`
+  (`BoardResult`s), `header`, `ids_drawn`, `detect_ms`. `ShotView.detections` per board: `n`, `ids`, `pts` (preview
+  px) and `markers`. Further API: `board_results`, `render_overlay`, `redraw`, `OverlayProcessor` (caches the
+  `ShotContext` per config object), `write_snapshot`.
+- `CameraView.snapshot_saved(str path, str error)` (queued from the "camera-snapshot" thread). **Snapshot** writes the
+  shown view, the full image and a JSON (shot record, board results, last fit) to `<run log folder>/snapshots/`.
+- The display is rate-limited by `[hmi] camera_display_hz` (key added by INTEGRATE; the branch had a 5 Hz fallback).
+
+**STATUS**
+- `hmi.views.ur_panel.UrPoller`: the context's ONE `UrSource` (child of `ctx`, `UrPoller.of(ctx)`), polled in the GUI
+  thread at `[hmi] ur_poll_hz`, shared by the UR tab and the status strip (signal `updated(object)`); renewed on
+  `rig_changed` / `session_loaded`, stopped by a shutdown hook.
+- Pure helpers: `ur_short`, `feedback.planned_trips` (= make_job meta `planned_reloads` / `planned_station_refills`),
+  `feedback.issue_text`, `feedback.placement_text`, `ares_panel.target_of` / `route_text` / `command_text` /
+  `pose_text` / `delta_text`, `StatusStrip.texts()`.
+
+**TWIN**
+- Optional extras: `frame_from(..., world=None)`, `plan_ops(old, new, wall_kinds=None)`, `Op.failed`, `TwinFrame.t`
+  (sample time for the lag figure), a held stone with an unknown jaw state has `from = "unknown"` (drawn red);
+  `Twin.stop()` returns a bool; `Twin.stats()`, `Twin.request_snapshot()` (PNG of the main 3D view, no Cam2D);
+  `TwinPanel(ctx, parent=None, *, twin_factory=None)`, `TwinLink(..., twin_factory=None)`, `TwinLink.ensure()` /
+  `shutdown()`. Extra test file `tests/test_hmi_twin.py` (fake twin, no RoboDK).
+
+**INTEGRATE** (branch `hmi-integration`)
+1. `[hmi] camera_display_hz = 5.0` (ASSUMPTION) appended to `[hmi]`; the camera view reads it without a fallback.
+   This changes `config_sha256` once more: rebuild the jobs in the main tree after the merge (5.2).
+2. `RunController.grab_failed = Signal(str)` ("<ExceptionType>: <message>"), emitted when a manual `grab()` raises
+   (the `message` "grab failed: ..." stays). The camera view stops Live on it instead of matching the message text.
+3. `UrSource._sim` reads `SimRobot.holding` once (the run thread could set it to None between two reads: TypeError
+   in the UR poller and the twin thread).
+4. The RoboDK start without the Qt platform variables moved from `robodk/twin.py` into
+   `rdk_common.connect(new_instance=True)` (`rdk_common.qt_free_env`): `QT_QPA_PLATFORM=offscreen` from
+   `tests/conftest.py` made every RoboDK started from the test process exit at once - the twin, and also the opt-in
+   `tests/test_robodk_l.py` / `test_robodk_camera.py` (those were not re-run: they use API ports below 20630).
+5. Mauer tab: the run feedback board sits under the plan view (vertical splitter) with 4 tiles per row, instead of at
+   the bottom of the left scroll column (visible during a run without scrolling).
+6. `hmi.cmd` launcher; texts that still described stubs (`hmi/main.py`, `hmi/README.md`) updated; README "Mauer
+   HMI" section; `docs/ARCHITECTURE.md` "HMI (hmi/)" section.
+7. `tests/test_hmi_integration.py`: one window with every feature (fake twin) through a step-mode SIM run with a
+   station trip, HALT (Space) from the Camera tab while a stone is held, refused resume, Jaws empty, resume to the
+   end; camera, wall pose, UR panel, status strip, run feedback and twin agree on the result.

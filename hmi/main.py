@@ -8,7 +8,8 @@ config.yaml (config/station.toml [hmi] / [ares_ads]), command-line options for t
 --config   station.toml to use (default config/station.toml)
 --ares     create the real AdsWorker: it connects to the [ares_ads] host (heartbeat, MANUAL, HALT, jog). Without it
            the HMI never opens an ADS connection and REAL mode is disabled
---twin     start the RoboDK twin once a job is loaded (TWIN feature; ignored while the Twin tab is a stub)
+--twin     switch the RoboDK twin on (Twin tab): it starts with the first job, in an own RoboDK instance on the
+           first free API port from [hmi.twin] port (>= 20630, never the user's RoboDK on 20500 / 20501)
 """
 from __future__ import annotations
 
@@ -65,7 +66,7 @@ def build(argv: list[str] | None = None) -> tuple[MainWindow, HmiContext]:
         log.error("ADS refused, HMI settings: %s", "; ".join(problems))
         ares = False
     ctx = HmiContext(station_cfg, config_path=Path(args.config) if args.config else None, ares_enabled=ares)
-    ctx.start_twin = bool(args.twin)          # read by the TWIN feature's panel (HmiContext.start_twin)
+    ctx.start_twin = bool(args.twin)          # read by the Twin tab (hmi/views/twin_panel.py)
     if ares:
         worker, thread = start_ads_worker(ctx.amr_cfg)
     else:

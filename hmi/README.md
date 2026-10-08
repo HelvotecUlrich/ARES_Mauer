@@ -2,15 +2,19 @@
 
 The ARES HMI v2 (amr_hmi, copied from the MA repo) extended for the brick-laying runs of this repo: load a job,
 run it in the pure-Python simulation (SIM) or on ARES + UR5 + IDS camera (REAL), confirm every motion in step mode,
-pause / abort / HALT, recover a stopped run, and keep all amr_hmi functions (connection, startup sequence, jog,
-relative move, odometry map, dashboard, diagnostics, battery). Design and contract: `docs/HMI_DESIGN.md`.
+pause / abort / HALT, recover a stopped run, watch the camera images with their ChArUco detections, the UR and
+ARES state and the run feedback, mirror the run in a RoboDK digital twin, and keep all amr_hmi functions
+(connection, startup sequence, jog, relative move, odometry map, dashboard, diagnostics, battery). Design and
+contract: `docs/HMI_DESIGN.md`.
 
 ## Start
 
 ```
 py.exe -m hmi                                      # SIM only - no ADS connection ("ADS off"), REAL disabled
 py.exe -m hmi --job data/jobs/nominal_C.json       # load a job at start (with the config variant it was built with)
+py.exe -m hmi --job data/jobs/nominal_C.json --twin   # ... and mirror it in an own RoboDK (Twin tab)
 py.exe -m hmi --ares                               # the HMI's ADS worker connects to the ARES PLC ([ares_ads])
+hmi.cmd --job data/jobs/nominal_C.json             # the same from a Windows prompt (py -m hmi %*)
 ```
 
 | Option | Meaning |
@@ -19,7 +23,7 @@ py.exe -m hmi --ares                               # the HMI's ADS worker connec
 | `--variant NAME` | preselect the variant for "Build from config" (`config/variants/NAME.toml`) |
 | `--config PATH` | another `station.toml` |
 | `--ares` | create the ADS worker (heartbeat, MANUAL, HALT, jog, GO): it connects to `[ares_ads] host_ip` at once. Without it the HMI never opens an ADS connection; tests and SIM runs never use it |
-| `--twin` | start the RoboDK twin with the first job (TWIN step) |
+| `--twin` | switch the RoboDK twin on: it starts with the first job in an own RoboDK instance (API port from `[hmi.twin] port`, >= 20630) |
 
 The HMI never connects to hardware on its own: ADS only with `--ares`; the UR (RTDE / URScript / Dashboard), the
 sequencer's own ARES connection and the IDS camera only when **Prepare / Connect** is pressed in REAL mode.
@@ -29,15 +33,30 @@ sequencer's own ARES connection and the IDS camera only when **Prepare / Connect
 | Tab | Content |
 |---|---|
 | Mauer | job (list of `data/jobs/*.json`, Build from config, Browse), SIM / REAL options, Prepare / Connect, Start, Pause, Resume, Abort, Release, progress (stop, stone, action, station trip, ARES pose estimate, jaws), recovery, preflight list, plan view of the wall |
-| Camera | the run's camera images with the ChArUco detections (CAMERA step; stub in CORE) |
-| UR | UR state: modes, joints, TCP, gripper outputs, payload (STATUS step; stub in CORE) |
+| Camera | last / live image of the run's camera with the detected ChArUco corners (green accepted, orange rejected, red missing), board table (corners, RMS px, reason), last frame fit (RMS / max mm, error vs nominal, jump) and a REJECTED banner; **Grab** / **Live** only in REAL with a prepared rig and no run; **Snapshot** saves view + full image + JSON to `<run log>/snapshots/` |
+| UR | URLink state (REAL: RTDE sample age, controller version, robot / safety / runtime mode, power, program running; SIM: the simulated arm): joints, TCP, gripper outputs (pulses, not a held state), commanded payload, held stone, parked, last robot action |
 | ARES control | amr_hmi Control tab: startup sequence, jog (W/A/S/D/Q/E), relative move, odometry map |
-| Wall pose | ARES pose in the wall frame, camera fits per stop (STATUS step; stub in CORE) |
+| Wall pose | ARES pose estimate in the wall frame (plan view) next to the PLC odometry, the live pose during an ARES move (REAL), SIM truth and the estimate error, target / route leg / dock, last ARES move, the camera fits per stop |
 | Dashboard, Diagnostics, Battery | amr_hmi tabs |
 | Run log | every record of the current run log, coloured by severity, filtered by category; Open log folder |
-| Twin | RoboDK digital twin (TWIN step; stub in CORE) |
+| Twin | RoboDK digital twin on/off, Restart, Save view PNG; state, API port, rate, render time, lag, stones on screen |
 
-Above the tabs: HALT, the step-mode confirmation bar (visible on every tab) and the status strip.
+Above the tabs: HALT, the step-mode confirmation bar (visible on every tab) and the status strip (run state, mode,
+stop, stone, action, UR mode / safety, ARES PLC state / move, twin state). The Mauer tab shows the plan view with the
+run feedback board below it (stones, stop / leg / course, station trips and refills, ARES moves and corrections,
+camera fits, time per stone, preflight, warnings / errors; SIM placement statistics at the end; Open summary).
+
+## RoboDK digital twin
+
+The Twin tab (or `--twin`) starts an OWN RoboDK (`rdk_common.connect(new_instance=True)`) on the first free API
+port of `[hmi.twin] port .. port + port_tries - 1` (>= 20630; never the user's RoboDK on 20500 / 20501, and a port
+held by a RoboDK it did not start is skipped untouched), builds the station there (`build_station.build`, ~4 s, no
+camera window, collisions off) and mirrors the run at `[hmi.twin] rate_hz`: UR joints, ARES frame, pick-up station
+frame and the stones (magazine, station, wall, jaws). It is passive (thread `mauer-twin`, it reads snapshots only;
+the run never waits for it). SIM: ARES and the station at the simulated true pose. REAL: twin = sequencer belief
+(UR joints from RTDE, ARES at the estimate + the HMI's odometry during a move, stones at their nominal wall pose).
+A new job restarts it (job and config variant stay consistent); closing the HMI closes its RoboDK. If RoboDK is
+closed by hand the twin goes "lost"; **Restart** builds it again.
 
 ## A run
 
@@ -96,14 +115,18 @@ During a REAL run jog and GO are locked (banner on the ARES control tab); while 
 allowed (repositioning - the resume check sees the movement); "Reset pose" of the odometry map is locked while a
 REAL run is loaded.
 
-## Known limits (2026-10-07)
+## Known limits (2026-10-08)
 
 - PolyScope 3.3.3 on the lab UR5 has no `get_inverse_kin_has_solution`: every look / pick / place block fails until
   `mauer/ur/script.py` ik_guard has a 3.3 variant. The REAL preflight shows it as a blocker.
 - Nominal jobs (`tools/make_job.py`) never pass the real-run preflight (reach check "kinematic", no collision /
-  occlusion check): REAL Start stays disabled until a RoboDK-checked job exists.
-- The `[hmi]` sections changed `config/station.toml`, so jobs built before them report "config changed since the
-  job was built": rebuild them (`py.exe tools/make_job.py`, `py.exe tools/make_job.py --variant c_acb`).
+  occlusion check). The RoboDK-verified jobs (`data/jobs/nominal_C[_c_acb]_robodk.json`, written by a clean
+  `robodk/simulate.py` run) pass that item.
+- The `[hmi]` sections changed `config/station.toml` (`config_sha256` hashes the whole file), so every job built
+  before them reports "config changed since the job was built": rebuild the nominal jobs (`py.exe tools/make_job.py`,
+  `py.exe tools/make_job.py --variant c_acb`) and re-run `robodk/simulate.py` for the RoboDK-verified ones.
+- The C has 12 half stones and `[half_brick]` is still PLACEHOLDER / UNKNOWN (mass, dimensions): the real-run
+  preflight blocks on it (2026-10-08).
 - In REAL the plan view (and the twin) show the sequencer's belief: the nominal wall and the estimated ARES pose.
 
 ## Configuration
@@ -118,20 +141,22 @@ folder), `[hmi.frame]` (direction mapping, amr config.yaml `frame`), `[hmi.move]
 | Path | Content |
 |---|---|
 | `hmi/amr/` | amr_hmi v2 (MA `10_robot/hmi/amr_hmi`, commit 5935c5b, copied 2026-10-07): ADS worker, PLC symbols, logic, direction mapping, the amr widgets. Changes: relative imports, the run-lock hooks (list in `hmi/__init__.py`) |
-| `hmi/core/` | config mapping, ADS worker setup (`ads_link`), `HmiContext`, job sessions, rigs (SIM / REAL), preflight, run snapshots, read-only UR / ARES sources, `RunController` (run thread `mauer-run`) |
-| `hmi/views/` | Mauer tab, plan view, confirmation bar, run log; camera / UR / wall pose / feedback / status strip / twin widgets |
+| `hmi/core/` | config mapping, ADS worker setup (`ads_link`), `HmiContext`, job sessions, rigs (SIM / REAL), preflight, run snapshots, read-only UR / ARES sources, `RunController` (run thread `mauer-run`), camera overlay (`overlay`: detection + drawing in the run thread), twin link (`twin_link`: frames for the twin) |
+| `hmi/views/` | Mauer tab, plan view, confirmation bar, run log; camera view, UR panel (`UrPoller`: one read-only UR source shared with the status strip), wall pose, run feedback, status strip, twin panel |
+| `robodk/twin.py`, `robodk/twin_model.py` | the twin's RoboDK side (station, stone objects, thread loop) and its pure stone-state model (`plan_ops`, `TwinSettings`) |
 | `hmi/main_window.py`, `hmi/main.py` | window (adapted amr `ui/main_window.py`), entry point |
 
 Threads: GUI; `ads-worker` (amr AdsWorker, QThread); `mauer-run` (everything that blocks: job load / build, rig
-open / close, preflight, `Sequencer.run()`, recovery, camera grabs); `mauer-halt` (UR abort after HALT);
-`mauer-twin` (RoboDK). Widgets connect to the controller's signals (queued into the GUI thread) and never call
-hardware objects.
+open / close, preflight, `Sequencer.run()`, recovery, camera grabs and the camera overlay); `mauer-halt` (UR abort
+after HALT); `mauer-twin` (RoboDK); `camera-snapshot` (Snapshot file writes). Widgets connect to the controller's
+signals (queued into the GUI thread) and never call hardware objects.
 
 ## Tests
 
 ```
-py.exe -m pytest -q tests -k "hmi or sequencer_hooks"      # the HMI tests (~40 s, offscreen Qt, fakes only)
-py.exe -m pytest -q tests                                  # the whole suite
+py.exe -m pytest -q tests -k "hmi or twin_model or sequencer_hooks"   # the HMI tests (~1 min, offscreen Qt, fakes only)
+py.exe -m pytest -q tests                                             # the whole suite
+py.exe -m pytest -m robodk tests/test_twin_robodk.py -o addopts="" -q  # opt-in: the twin in an own RoboDK (20630+)
 ```
 
 Every HMI test runs with the `no_lab_network` fixture (only loopback connections, pyads / ids_peak not importable).

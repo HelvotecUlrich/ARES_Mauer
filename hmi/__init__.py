@@ -12,6 +12,7 @@ Provenance: hmi/amr/ is a copy of the MA repo `10_robot/hmi/amr_hmi` (commit 593
   creates an AdsWorker itself), main.py became hmi/main.py (command line, no YAML; apply_dark_theme unchanged).
 
 Layout: hmi/amr (the amr copy), hmi/core (services: config, ADS worker setup, sessions, rigs, preflight, snapshots,
-read-only sources, RunController), hmi/views (Mauer widgets), hmi/main_window.py, hmi/main.py.
+read-only sources, RunController, camera overlay, RoboDK twin link), hmi/views (Mauer widgets), hmi/main_window.py,
+hmi/main.py; the RoboDK side of the twin is robodk/twin.py + robodk/twin_model.py.
 Conventions: docs/HMI_DESIGN.md (design, threads, resource ownership), docs/ARCHITECTURE.md (frames, units).
 """
