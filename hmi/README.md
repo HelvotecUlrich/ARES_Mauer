@@ -59,6 +59,17 @@ camera fits, time per stone, preflight, warnings / errors; SIM placement statist
   of the motion guard's wall), or "start stop untouched" confirms that no stone of stop k is placed yet (stops < k
   count as built). REAL refuses the start without one of them.
 
+## Magazine dry run (magtest)
+
+A job built by `tools/make_magtest.py` (meta `kind` "magtest", `docs/MAGTEST_DE.md`) runs with
+`mauer.magtest.MagazineTest` instead of the Sequencer: one stop, ARES at the origin, one "stone" per move (pick slot,
+front pose, put-down slot). REAL opens only the UR (`RealRig.ur_only`: no AresAds, camera or calibration) and is
+selectable without `--ares`; the preflight is `preflight.magtest_preflight` (job / config + the UR block; `[ur]
+payload_cog_mm` PLACEHOLDER shown, not blocking); the start checklist asks for the two stones on the start slots,
+empty jaws, a free front area and the pendant check of `[ur5] mount_rz` (Base +X = ARES left); Resume does not check
+the ARES odometry. A robot error in a move: take the stone out, put it back on the move's pick slot, "Jaws empty",
+Resume (the move runs again). The plan view shows ARES and the front poses (moves done = placed), no station table.
+
 ## RoboDK digital twin
 
 The Twin tab (or `--twin`) starts an OWN RoboDK (`rdk_common.connect(new_instance=True)`) on the first free API

@@ -188,6 +188,20 @@ camera only on **Prepare / Connect**. ARES moves keep operating pattern A (the H
 MANUAL / HALT, the sequencer's AresAds writes only the move fields) - in ONE process, tested against the fake PLC,
 **not yet on the robot**. Usage and limits: `hmi/README.md`; design: `docs/HMI_DESIGN.md`.
 
+## Magazine dry run on ARES (2026-10-08)
+
+Samuel: test the UR's motions on ARES quickly, before the big simulation - two stones through every magazine slot,
+in between the arm goes forward with the stone and "places" without letting go. **`magtest`** (Windows) builds
+`data/jobs/magtest.json` (`tools/make_magtest.py`, `[magtest]` in the config) and opens it in the HMI; the run is
+`mauer/magtest.py` (`MagazineTest`, the Sequencer's step mode / pause / HALT / held-stone handling). ARES stands still,
+no camera, no ADS move; REAL opens the UR only and needs no `--ares`. The two stones start stacked on r0y0 and walk
+over the 6 positions in layers 1 + 2 and back (20 moves per round, 2 rounds); every move lowers the stone to 50 mm
+above a place pose of the front leg B (840 mm, u 0 .. +-600 inside out, courses 0-3; course 3 at u +-600 is out of
+reach) and holds 2 s with the jaws closed (`URRobot.dry_place`). HMI SIM run with the motion guard: 40/40 moves, the
+magazine ends as it started. Same day: UR on a 10 mm plate (`[ur5] mount_z` 343.6), cable to the back (`mount_rz` 90:
+the UR5 manual's base frame has the cable along +Y, so base +X points to ARES left; `park_q_deg` base joint -90 deg).
+Operator sheet (German): **`docs/MAGTEST_DE.md`**.
+
 ## C wall with ARES inside (2026-10-06, simulation only)
 
 Samuel: "make it a small C, one length is 2m, then 1.5 across and 1m back", keep the existing boards, ARES a bit

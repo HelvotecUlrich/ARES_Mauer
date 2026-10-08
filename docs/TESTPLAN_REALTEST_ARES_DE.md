@@ -152,10 +152,10 @@ Alle Werte stammen aus `config/station.toml` (main 7ab0be8). Jeden Messwert mit 
 
 | Schlüssel | Heute | Maßnahme | Test | Spätestens vor | Wirkung bei Fehler |
 |---|---|---|---|---|---|
-| [ur5] mount_x | 353.625, CONFIRMED ("exact position follows") | nachmessen | T3 | Freeze | Magazin-Pick, Motion Guard |
-| [ur5] mount_y | 0.0, ASSUMPTION | messen | T3 | Freeze | Magazin-Pick |
-| [ur5] mount_z | 333.6, **PLACEHOLDER** (Deck, ohne Adapterplatte) | messen; Gegenprobe in T5a | T3 | Freeze (Preflight-Blocker) | Pick-Höhe 1:1, also Ablagehöhe |
-| [ur5] mount_rz | 0.0, **PLACEHOLDER** | messen (Pendant +X) | T3 | Freeze (Preflight-Blocker) | 1° versetzt Magazinreihe 0 (653,6 mm hinter der UR-Achse) um ≈ 11 mm |
+| [ur5] mount_x | 360.0, CONFIRMED (Samuel 2026-10-08: 200 mm hinter der ARES-Vorderkante) | nachmessen | T3 | Freeze | Magazin-Pick, Motion Guard |
+| [ur5] mount_y | 0.0, CONFIRMED (Samuel 2026-10-08: mittig) | messen | T3 | Freeze | Magazin-Pick |
+| [ur5] mount_z | 343.6, CONFIRMED (Samuel 2026-10-08: 10-mm-Platte auf dem Deck) | Gegenprobe in T5a | T3 | Freeze | Pick-Höhe 1:1, also Ablagehöhe |
+| [ur5] mount_rz | 90.0, CONFIRMED (Samuel 2026-10-08: Kabel nach hinten, Pendant Base +X = ARES links; UR5-Handbuch Abb. 15.1) | Restwinkel messen (Pendant +X, siehe T3) | T3 | Freeze | 1° versetzt Magazinreihe 0 (653,6 mm hinter der UR-Achse) um ≈ 11 mm |
 | [tool] tcp_z | 147, ASSUMPTION | prüfen: Backen fassen den Stein genug, Greiferkörper frei von den Zapfen | T3 | Freeze | Greiftiefe, Kollision |
 | [brick] mass_kg | 3.0, ASSUMPTION ("about 3 kg") | wiegen | T3 | Freeze | Nutzlast: 1,68 + Stein ≤ 5,0 kg |
 | [half_brick] length / width / height / pin_across / pin_length | **PLACEHOLDER** | realen Halbstein vermessen | T3 | Freeze (Preflight-Blocker) | Ablage der Halbsteine |
@@ -321,7 +321,7 @@ Alle Befehle laufen im Repo-Wurzelverzeichnis `C:\Users\samue\ARES_Mauer` mit `p
 2. **UR-Lage ([ur5]).**
    - mount_x und mount_y: Abstand der UR-Fußmitte zur ARES-Vorderkante (x = +560 mm, [ares] length 1120) und zu beiden Seitenkanten (y = ±300 mm). Dann gilt mount_x = 560 − Abstand vorn und mount_y = (Abstand rechts − Abstand links) / 2, mit y nach links positiv. Vorher prüfen, ob die gemessene Kante der CAD-Kontur entspricht.
    - mount_z: Höhe der UR-Fußauflage über der Deckoberseite, also eine eventuelle Adapterplatte. mount_z = 333,6 mm + Plattendicke. Die Deckoberseite über dem Boden am UR messen und mit [ares] deck_top_z vergleichen (gefedert).
-   - mount_rz: Am Pendant im Move-Tab Feature "Base", Speed-Slider niedrig, den TCP 300 mm in +X verfahren. Zuerst prüfen, dass +X nach ARES-vorn zeigt. Zeigt es zur Seite oder nach hinten, ist mount_rz ±90° oder 180°; das ist eine Konfigurationsänderung mit vollständiger Neuplanung. Dann die seitliche Abweichung des Wegs gegen eine Kante parallel zu ARES-x messen: mount_rz = atan(Abweichung / 300 mm).
+   - mount_rz: Am Pendant im Move-Tab Feature "Base", Speed-Slider niedrig, den TCP 300 mm in +X verfahren. Seit 2026-10-08 (Kabel nach hinten) muss +X nach ARES-**links** zeigen (mount_rz = 90°; das UR-Kabel kommt in Basis +Y heraus, UR5-Handbuch Abb. 15.1). Zeigt es woandershin, stimmt mount_rz nicht; das ist eine Konfigurationsänderung mit vollständiger Neuplanung. Dann die Abweichung des Wegs gegen eine Kante parallel zu ARES-y messen: mount_rz = 90° + atan(Abweichung / 300 mm) (Vorzeichen: Abweichung nach ARES-hinten positiv, denn +X dreht mit wachsendem mount_rz von links nach hinten).
 3. **Magazin ([deck]).** Halterhöhe über dem Deck messen (holder_z). Die Haltermitten zur UR-Fußachse messen: Reihen bei x = −653,6 und −433,6 mm, Spalten bei y = −205 / 0 / +205 mm, Halbsteinplatz r1y0 bei y = −255 und −155 mm (Anhang A.5). Optional mit dem Roboter: den TCP am Pendant langsam mit Sicherheitsabstand über einen Halter fahren und `py.exe tools/ur_check.py pose` lesen. Der Sollwert ist die ARES-Koordinate aus A.5 minus die UR-Montage. Abweichungen über 2 mm (**Vorschlag**) gehen in die Konfiguration. Die Magazin-Picks liegen außerhalb der Kameraregelung.
 4. **Kamera-Montagecheck.** calib-Board flach im Bild, Kamera etwa 320 mm darüber: `py.exe tools/measure_target.py mount --boards calib --report data/mount_check/mount_<Datum>_ares.json`. Nach "yes" fährt der TCP 10 mm in Basis-+x und zurück, dann 10 mm in +y und zurück, mit 20 mm/s.
 5. **Massen und Halbstein.**

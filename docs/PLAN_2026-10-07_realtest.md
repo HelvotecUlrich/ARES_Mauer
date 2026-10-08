@@ -120,3 +120,9 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - 2026-10-08: Samuel mounts the UR base 200 mm behind the ARES front edge, centred in y -> [ur5] mount_x 353.625 ->
   360.0, mount_y CONFIRMED. Invalidates the reach tables, the jobs and the RoboDK stamp: rerun robodk/simulate.py
   (main; c_acb if wanted) - NOT started yet (Samuel: "starte noch nichts").
+- 2026-10-08 late morning: Samuel - UR on a 10 mm plate, cable to the back (pendant Base +X = ARES left): [ur5] mount_z
+  343.6, mount_rz 90 CONFIRMED (b8137f3; park_q_deg base joint 71.83). Quick movement test on ARES before the big
+  simulation: magazine dry run (mauer/magtest.py, tools/make_magtest.py, magtest.cmd, HMI integration,
+  docs/MAGTEST_DE.md) - 2 stones through the magazine (layers 1 + 2), a dry place 50 mm above the front leg between pick and put-down. HMI
+  SIM 40/40. The wall jobs, reach tables and the RoboDK stamp stay invalid (mount x / z / rz): rerun robodk/simulate.py
+  when the big simulation is due (Samuel: later).
