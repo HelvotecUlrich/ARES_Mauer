@@ -31,6 +31,8 @@ from mauer import config  # noqa: E402
 
 Pt = tuple[float, float]
 ARC_SEG_DEG = 3.0           # polyline segment of the rounded corners
+CAP_W = 0.96                # Arial Bold advance / cap height of ARES, HSLU (PIL arialbd.ttf: 0.96-0.97)
+LOGO_H, LOGO2_H = 50.0, 14.0  # cap height of "ARES" between the stone rows and of "HSLU" left / right of it [mm]
 WEB_MM = 3.0                # minimum MDF between a hole and an edge (check)
 
 
@@ -41,7 +43,7 @@ class Plate:
     cones: list[Pt] = field(default_factory=list)
     bolts: list[Pt] = field(default_factory=list)
     holders: list[tuple[str, Pt]] = field(default_factory=list)
-    texts: list[tuple[Pt, float, str]] = field(default_factory=list)
+    texts: list[tuple[Pt, float, str]] = field(default_factory=list)   # left baseline, cap height, text (rot 90)
     lines: list[tuple[Pt, Pt]] = field(default_factory=list)
 
 
@@ -59,6 +61,11 @@ def dovetail(x: float, yc: float, gd: dict, female: bool, downward: bool) -> lis
     lo, hi = yc - n / 2 - c, yc + n / 2 + c
     pts = [(x, lo), (x + d, lo - f), (x + d, hi + f), (x, hi)]
     return pts[::-1] if downward else pts
+
+
+def centred(text: str, h: float, cx: float, cy: float) -> tuple[Pt, float, str]:
+    """A word read along +y (rot 90, letters' top towards -x) centred on (cx, cy): its left baseline point."""
+    return ((cx + h / 2, cy - CAP_W * h * len(text) / 2), h, text)
 
 
 def plates(cfg: dict) -> list[Plate]:
@@ -84,9 +91,16 @@ def plates(cfg: dict) -> list[Plate]:
     mag = [(xs, -yh), (xf, -yh), (xf, yh), (xs, yh)]
     for yc in reversed(ys):
         mag += dovetail(xs, yc, gd, female=True, downward=True)
+    rows = sorted(float(u["mount_x"]) + float(dx) for dx in dk["magazine_rows_dx"])
+    x_gap = (rows[0] + rows[-1]) / 2                  # between the two stone rows (Samuel 2026-10-08: ARES + HSLU)
+    w_logo = CAP_W * LOGO_H * 4
+    logo = [centred("ARES", LOGO_H, x_gap, 0.0)] + [centred("HSLU", LOGO2_H, x_gap, s_ * (w_logo / 2 + 70.0))
+                                                     for s_ in (-1, 1)]
     p_mag = Plate("magazine", mag, cones, side(dp["bolt_side_x"]), holders,
-                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xs + 25.0, -230.0), 5.0, "ARES deck - magazine - " + note)],
-                  [((xs + 30.0, 0.0), (xf - 15.0, 0.0))] + arrow)
+                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xs + 25.0, -230.0), 5.0, "ARES deck - magazine - " + note)]
+                  + logo,
+                  [((xs + 30.0, 0.0), (x_gap - LOGO_H / 2 - 8.0, 0.0)), ((x_gap + LOGO_H / 2 + 8.0, 0.0),
+                                                                         (xf - 15.0, 0.0))] + arrow)
 
     # rear plate: rounded rear corners, tails on the front edge (walked upwards)
     rear = [(xs, -yh)]
@@ -226,6 +240,19 @@ def preview(pls: list[Plate], cfg: dict, path: Path, px_mm: float = 1.0) -> None
                 dr.ellipse([P(x - dd / 2, y + dd / 2), P(x + dd / 2, y - dd / 2)], outline="red", width=2)
             xs = [q[0] for q in pl.outline]
             dr.text(P((min(xs) + max(xs)) / 2 - 25, 25), pl.name, fill="black")
+            for (tx, ty), h, txt in pl.texts:
+                if h < 10.0:
+                    continue
+                from PIL import ImageFont
+                try:
+                    font = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", int(h * 1.4 * px_mm))
+                except OSError:
+                    font = ImageFont.load_default()
+                im = Image.new("RGBA", (int(CAP_W * h * len(txt) * px_mm * 1.3), int(h * 1.6 * px_mm)), (0, 0, 0, 0))
+                ImageDraw.Draw(im).text((0, 0), txt, fill=(0, 0, 255, 255), font=font)
+                im = im.rotate(90, expand=True)                 # reading along +y = up in the picture
+                bx, by = P(tx, ty)
+                img.paste(im, (int(bx - h * 1.25 * px_mm), int(by - im.size[1])), im)
     img.save(path)
 
 
