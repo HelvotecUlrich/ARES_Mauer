@@ -336,3 +336,46 @@ def test_a_door_in_the_middle_of_course_0_frees_the_first_stone_of_each_piece(cf
     assert wp.check_plan(cfg, st, plan) == []
     order = [s.key for _, b in plan for s in b]
     assert sorted(order) == sorted(s.key for s in st)
+
+
+def _closures(c):
+    """Stones placed while BOTH end faces already have a placed stone of the same course next to them (any leg,
+    probed 3 mm beyond each end face over the ribs) - they drop into a slot with only the corner gap as play."""
+    import sys
+    if str(REPO / "tools") not in sys.path:
+        sys.path.insert(0, str(REPO / "tools"))
+    import make_job as mj
+    from mauer import reach_cache
+    legs = wp.legs(c)
+    tables = {lg.name: reach_cache.get(c, mj.leg_dist(c, lg, c["wall"]["dist_nominal"]), side=mj.leg_side(c, lg))
+              for lg in legs}
+    stones, plans = wp.plan_legs(c, legs, {}, True, float(c["wall"]["reach_margin_mm"]), tables=tables,
+                                 a_limits=mj.stop_limits(c, legs, c["wall"]["dist_nominal"]))
+    by = {lg.name: lg for lg in legs}
+    order = [s for lg in wp.build_order(c, legs) for _, b in plans[lg.name] for s in b]
+
+    def inside(q, P):
+        n = len(P)
+        return all(((P[(i + 1) % n][0] - P[i][0]) * (q[1] - P[i][1]) - (P[(i + 1) % n][1] - P[i][1]) * (q[0] - P[i][0]))
+                   > 0 for i in range(n))
+
+    placed, out = [], []
+    for s in order:
+        lg = by[s.leg]
+        ends = [lg.to_wall(s.u + d * (s.length / 2 + 3.0), 0.0) for d in (-1, 1)]
+        same = [wp.stone_footprint(c, t, by[t.leg], ribs=True) for t in placed if t.course == s.course]
+        if all(any(inside(q, P) for P in same) for q in ends):
+            out.append(s.label)
+        placed.append(s)
+    return out
+
+
+@pytest.mark.parametrize("variant, n", [(None, 0), ("c_a55", 0), ("c_acb", 4)])
+def test_no_stone_drops_into_a_slot_unless_a_leg_closes_between_two(variant, n):
+    """Review 2026-10-08: in the C with a door and a window B runs through both corners and is built first; A, built
+    from its free end, put its last stone of every course between its neighbour and B (1 mm play). A leg whose far
+    end butts against a finished leg is now built from that corner. c_acb's B closes between A and C on purpose
+    (risk accepted, make_job warns): one closure per course."""
+    c = config.load(variant=variant)
+    got = _closures(c)
+    assert len(got) == n, got

@@ -655,17 +655,58 @@ def check_plan_legs(cfg: Mapping, legs_: Sequence[Leg], stones: Sequence[Stone],
     return errors + check_legs(cfg, legs_, stones)
 
 
+def from_far_end(cfg: Mapping, legs_: Sequence[Leg]) -> set[str]:
+    """Legs built from their FAR end (review 2026-10-08): a leg whose far end butts against a leg that runs through
+    that corner and is built earlier (wallplan.build_order) - built from its start it would put its last stone of
+    every course into a slot between its neighbour and the finished leg (corner_gap_mm play); built from the corner
+    every stone is set against one neighbour only. A leg that butts at BOTH ends closes either way and keeps its
+    direction (make_job warns, the c_acb B)."""
+    pos = {lg.name: i for i, lg in enumerate(build_order(cfg, legs_))}
+    out = set()
+    for i, lg in enumerate(legs_):
+        nxt = legs_[i + 1] if i + 1 < len(legs_) else None
+        prv = legs_[i - 1] if i > 0 else None
+        c_end = corner_of(cfg, lg, nxt) if nxt is not None else None
+        c_start = corner_of(cfg, prv, lg) if prv is not None else None
+        end_butts = c_end is not None and c_end["through"] == "next" and pos[nxt.name] < pos[lg.name]
+        start_butts = c_start is not None and c_start["through"] == "prev" and pos[prv.name] < pos[lg.name]
+        if end_butts and not start_butts:
+            out.add(lg.name)
+    return out
+
+
+def _sequence_from_far_end(cfg: Mapping, lg: Leg, stones: Sequence[Stone], table: Mapping, margin_mm: float,
+                           a_lim: tuple[float, float] | None) -> list:
+    """sequence_leg on the leg seen from its far end (u -> L - u, the reach table mirrored along the wall), the stops
+    and stones mapped back to the leg frame."""
+    L = leg_length(cfg, lg.n0)
+    reach0, lo0, hi0, grid = reach_fn(table, margin_mm=margin_mm)
+    orig = {s.key: s for s in stones}
+    mirrored = [replace(s, u=L - s.u) for s in stones]
+    lo = {k: -v for k, v in hi0.items()}
+    hi = {k: -v for k, v in lo0.items()}
+    lim = None if a_lim is None else (L - a_lim[1], L - a_lim[0])
+    plan = sequence_leg(cfg, mirrored, lambda k, u: reach0(k, -u), lo, hi, grid, margin_mm, a_lim=lim)
+    return [(L - a, [orig[s.key] for s in batch]) for a, batch in plan]
+
+
 def plan_legs(cfg: Mapping, legs_: Sequence[Leg], table: Mapping, half_stones: bool = True,
               margin_mm: float = 0.0, *, tables: Mapping[str, Mapping] | None = None,
               a_limits: Mapping[str, tuple[float, float]] | None = None) -> tuple[list[Stone], dict[str, list]]:
     """(stones, {leg: [(a, batch), ...]}) for every leg on the reach table - or on its own table in `tables` (legs
-    built on different sides of ARES) - with the stop limits `a_limits` {leg: (a_min, a_max)}; ValueError for an
-    invalid plan."""
+    built on different sides of ARES) - with the stop limits `a_limits` {leg: (a_min, a_max)}; a leg of from_far_end
+    is built from its far end (its stops then run towards its start). ValueError for an invalid plan."""
     stones = layout_legs(cfg, legs_, half_stones)
     plans = {}
+    far = from_far_end(cfg, legs_)
     for lg in legs_:
-        reach, lo, hi, grid = reach_fn((tables or {}).get(lg.name, table), margin_mm=margin_mm)
-        plans[lg.name] = sequence_leg(cfg, [s for s in stones if s.leg == lg.name], reach, lo, hi, grid, margin_mm,
+        tab = (tables or {}).get(lg.name, table)
+        mine = [s for s in stones if s.leg == lg.name]
+        if lg.name in far:
+            plans[lg.name] = _sequence_from_far_end(cfg, lg, mine, tab, margin_mm, (a_limits or {}).get(lg.name))
+            continue
+        reach, lo, hi, grid = reach_fn(tab, margin_mm=margin_mm)
+        plans[lg.name] = sequence_leg(cfg, mine, reach, lo, hi, grid, margin_mm,
                                       a_lim=(a_limits or {}).get(lg.name))
     errors = check_plan_legs(cfg, legs_, stones, plans)
     if errors:

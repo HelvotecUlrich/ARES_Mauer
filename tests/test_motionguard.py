@@ -54,11 +54,14 @@ def test_a_target_in_self_collision_is_refused_before_anything_moves(cfg, job):
     assert not v.ok and v.problems[0].startswith("target:") and "forearm" in v.problems[0]
 
 
-def _first_b_stone(cfg, job):
-    """World and approach joints for the first stone of leg B (butts against the finished leg A)."""
-    k = next(i for i, s in enumerate(job.stops) if s.leg == "B")
-    stop, t = job.stops[k], job.stops[k].stones[0]
-    assert (t.leg, t.course, t.index) == ("B", 0, 0)
+def _corner_stone(cfg, job):
+    """World and approach joints for leg A's course-0 stone at the corner with B (the C of 2026-10-08: B runs through
+    both corners and is built first; A is built from that corner, its first stone butts against B's ARES-side face,
+    1 mm + rib). Before 2026-10-08: B's first stone against the finished leg A."""
+    k = next(i for i, s in enumerate(job.stops) if s.leg == "A")
+    stop = job.stops[k]
+    t = max((s for s in stop.stones if s.course == 0), key=lambda s: s.index)
+    assert (t.leg, t.course, t.index) == ("A", 0, 4) and t is stop.stones[0]      # set first: from the corner
     T_base_wall = g.inv(np.asarray(job.T_ares_base)) @ g.inv(stop.ares.T)
     placed = [s for st in job.stops[:k] for s in st.stones]
     world = GuardWorld(magazine=[], wall_stones=placed, legs=job.legs, T_base_wall=T_base_wall)
@@ -69,10 +72,11 @@ def _first_b_stone(cfg, job):
 
 
 def test_the_held_stone_may_touch_its_butt_joint_only_in_the_descent_column(cfg, job):
-    """Main config: B's first stone is placed against A's ARES-side face (1 mm + rib); at its approach pose the held
-    stone already hangs beside A's higher courses. In its descent column touching is allowed, overlapping is not."""
+    """Main config (the C of 2026-10-08): A's corner stone is placed against B's ARES-side face (1 mm + rib); B is
+    complete, so at its approach pose the held stone already hangs beside B's higher courses. In its descent column
+    touching is allowed, overlapping is not."""
     mg = _guard(cfg, job)
-    world, q_above, column = _first_b_stone(cfg, job)
+    world, q_above, column = _corner_stone(cfg, job)
     mg.set_world(world)
     assert mg.plan(job.park_q_rad, q_above, "full", column=column).ok
     v = mg.plan(job.park_q_rad, q_above, "full")
@@ -82,7 +86,7 @@ def test_the_held_stone_may_touch_its_butt_joint_only_in_the_descent_column(cfg,
     T_tcp = ur5_fk(q_above) @ T_ft
     T_bw = world.T_base_wall
     p_wall = g.apply(g.inv(T_bw), [T_tcp[:3, 3]])[0]
-    p_new = g.apply(T_bw, [p_wall + np.array([0.0, -30.0, 0.0])])[0]       # 30 mm towards leg A's face (wall -y)
+    p_new = g.apply(T_bw, [p_wall + np.array([30.0, 0.0, 0.0])])[0]        # 30 mm towards leg B's face (wall +x)
     T_new = T_tcp.copy()
     T_new[:3, 3] = p_new
     q_in = ik_near(T_new @ g.inv(T_ft), q_above)
@@ -185,7 +189,7 @@ def test_held_stone_edges_floor_and_column_window(cfg, job):
     else:
         pytest.skip("no pose below the floor found")
     # the column: 300 mm above a butt-joint place the held stone is no longer exempt
-    world, q_above, column = _first_b_stone(cfg, job)
+    world, q_above, column = _corner_stone(cfg, job)
     mg.set_world(world)
     mg._column = column
     assert mg._in_column(q_above)
