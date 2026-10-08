@@ -20,8 +20,8 @@ from mauer.sequencer import preflight_real
 
 SOURCES = ("job/config", "HMI", "ARES", "UR", "camera")
 RTDE_MAX_AGE_S = 0.5                 # = URRobot.is_idle(): an older sample means the RTDE stream is stale
-IK_GUARD_33 = ("PolyScope 3.3: get_inverse_kin_has_solution missing - every look / pick / place block fails "
-               "(mauer/ur/script.py ik_guard needs a 3.3 variant; station.toml [ur] host comment)")
+IK_GUARD_33 = ("PolyScope 3.3 has no get_inverse_kin_has_solution - every look / pick / place block would fail: set "
+               "[ur] ik_check = \"get_inverse_kin\" (mauer/ur/script.py ik_guard)")
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,7 @@ def real_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None
             if st.program_running:
                 add("UR", "a program is running on the controller - stop it on the pendant")
         v = getattr(rig.link, "controller_version", None)
-        if v and tuple(v[:2]) == (3, 3):
+        if v and tuple(v[:2]) == (3, 3) and str(cfg.get("ur", {}).get("ik_check", "has_solution")) == "has_solution":
             add("UR", IK_GUARD_33)
         if rig.robot is None:
             add("UR", f"URRobot not created: {errors.get('robot', 'no URLink')}")

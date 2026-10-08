@@ -155,6 +155,14 @@ class MauerTab(QWidget):
         self.camera_loop = QCheckBox("camera loop (off: dead reckoning)")
         self.camera_loop.setChecked(True)
         self.save_images = QCheckBox("save images in the run log")
+        self.guard = QCheckBox("SIM motion guard (every joint move planned as on the real robot)")
+        self.guard.setChecked(True)
+        self.untouched = QCheckBox("start stop untouched (no stone of it placed yet)")
+        self.resume_log = QLabel("")                    # run log of an interrupted run (set by the dialog only)
+        self.resume_log.setWordWrap(True)
+        self.resume_btn_log = self._button("Run log...", "#333333", self._browse_log, 90)
+        self.resume_clear = self._button("Clear", "#333333", lambda: self._set_resume_log(None), 60)
+        self._set_resume_log(None)
         self.step = QCheckBox("Step mode: confirm every motion")
         self.step.toggled.connect(self._ctl.set_step)
         self.sim_speed = _spin(0.0, 5.0, float(self._ctx.hmi.get("sim_step_s", 0.3)), " s", 2, 0.1)
@@ -164,18 +172,26 @@ class MauerTab(QWidget):
         stops.addWidget(lbl("to"))
         stops.addWidget(self.stop_to)
         for w in (self.scenario, self.seed, self.lenient, self.stop_from, self.stop_to, self.camera_loop,
-                  self.save_images, self.step, self.sim_speed):
+                  self.save_images, self.step, self.sim_speed, self.guard, self.untouched):
             w.setFocusPolicy(Qt.NoFocus)
+        later = QHBoxLayout()
+        later.addWidget(self.resume_log, 1)
+        later.addWidget(self.resume_btn_log)
+        later.addWidget(self.resume_clear)
         f.addRow("SIM scenario", self.scenario)
         f.addRow("SIM seed", self.seed)
         f.addRow(self.lenient)
         f.addRow("stops", stops)
+        f.addRow("earlier run", later)
+        f.addRow(self.untouched)
+        f.addRow(self.guard)
         f.addRow(self.camera_loop)
         f.addRow(self.save_images)
         f.addRow(self.step)
         f.addRow("SIM s per motion", self.sim_speed)
         self._option_widgets = (self.sim_rb, self.real_rb, self.scenario, self.seed, self.lenient, self.stop_from,
-                                self.stop_to, self.camera_loop, self.save_images)
+                                self.stop_to, self.camera_loop, self.save_images, self.guard, self.untouched,
+                                self.resume_btn_log, self.resume_clear)
         return box
 
     def _buttons(self) -> QWidget:
@@ -342,7 +358,26 @@ class MauerTab(QWidget):
                           stop_after=None if b >= n - 1 else max(a, b), camera_loop=self.camera_loop.isChecked(),
                           save_images=self.save_images.isChecked(), scenario=self.scenario.currentText(),
                           seed=self.seed.value(), lenient_grasp=self.lenient.isChecked(),
-                          sim_step_s=self.sim_speed.value())
+                          sim_step_s=self.sim_speed.value(), guard=self.guard.isChecked(),
+                          resume_log=self._resume_log, stop_untouched=self.untouched.isChecked())
+
+    def _set_resume_log(self, path) -> None:
+        """The run log of an interrupted run: its stones stand (placed / declared), the run starts after them."""
+        self._resume_log = Path(path) if path else None
+        set_text(self.resume_log, self._resume_log.name if self._resume_log else "none (start from the chosen stop)")
+
+    def _browse_log(self) -> None:
+        if not self._browse_allowed()[0]:
+            return
+        start = self._ctl.runs_dir if self._ctl.runs_dir.is_dir() else Path.cwd()
+        dlg = QFileDialog(self, "Run log folder of the interrupted run", str(start))
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)    # an HMI child window: Space / Esc stay HALT
+        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setOption(QFileDialog.ShowDirsOnly, True)
+        dlg.setModal(False)                                      # the HALT button stays usable
+        dlg.fileSelected.connect(self._set_resume_log)
+        self._file_dialog = dlg
+        dlg.show()
 
     def _prepare(self) -> None:
         self._ctl.prepare(self.options())

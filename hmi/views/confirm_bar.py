@@ -61,11 +61,13 @@ class ConfirmBar(QFrame):
 
     def show_request(self, req) -> None:
         self._req = req
-        station = req.kind == "station_empty"
-        set_text(self._kind, "Pick-up station" if station else "Step mode - next motion:")
+        kind, go, decline = {"station_empty": ("Pick-up station", "Refilled", "Abort run"),
+                             "start": ("REAL start - checklist:", "Checked - start", "Not ready")}.get(
+            req.kind, ("Step mode - next motion:", "Go", "Decline"))
+        set_text(self._kind, kind)
         set_text(self._text, req.text)
-        self.go.setText("Refilled" if station else "Go")
-        self.decline.setText("Abort run" if station else "Decline")
+        self.go.setText(go)
+        self.decline.setText(decline)
         self._update_note()
         self.go.setEnabled(False)
         self.decline.setEnabled(True)

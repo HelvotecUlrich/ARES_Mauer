@@ -43,7 +43,7 @@ from PySide6.QtCore import QObject, Signal
 
 from mauer.ares.ads import OdomPose
 from mauer.reference import Pose2D
-from mauer.sequencer import Sequencer, SequencerAborted, SequencerError, SequencerPaused
+from mauer.sequencer import Sequencer, SequencerAborted, SequencerError, SequencerPaused, standing_in_log
 
 from .preflight import PreflightReport, real_preflight, sim_preflight
 from .rigs import HaltGate, RealFactories, RealRig, RigInfo, SimRig
@@ -79,12 +79,15 @@ class RunOptions:
     sim_step_s: float | None = None   # SIM pacing; None = [hmi] sim_step_s (changeable live)
     log_dir: Path | None = None       # None = <runs_dir>/<YYYY-mm-dd_HHMMSS>_hmi_<mode>[_n] (never reused: RunLog
                                       # appends)
+    guard: bool = True                # SIM: plan every joint move with mauer.motionguard (REAL: always)
+    resume_log: Path | None = None    # run log of an interrupted run: its stones stand (Sequencer.declare_placed)
+    stop_untouched: bool = False      # start at stop k > 0 without a run log: no stone of stop k is placed yet
 
 
 @dataclass(frozen=True)
 class ConfirmRequest:
     id: int
-    kind: str                         # "motion" | "station_empty"
+    kind: str                         # "motion" | "station_empty" | "start" (REAL start checklist)
     text: str                         # the sequencer's description ("robot: ...", "ARES translate ...")
     holding: dict | None              # seq.held when asked
     pause_pending: bool               # pause or soft abort requested (acts after the held stone is put down)
@@ -210,6 +213,7 @@ class RunController(QObject):
         self._state = "empty"
         self._session: JobSession | None = None
         self._opts: RunOptions | None = None
+        self._log_standing: list[tuple] = []         # stones of RunOptions.resume_log (declared standing at Prepare)
         self._rig: SimRig | RealRig | None = None
         self._rig_info: RigInfo | None = None
         self._seq: Sequencer | None = None
@@ -288,6 +292,10 @@ class RunController(QObject):
     def sequencer(self) -> Sequencer | None:
         """The current Sequencer (read-only use from the GUI: held, pose_status, paused)."""
         return self._seq
+
+    @property
+    def runs_dir(self) -> Path:
+        return self._runs_dir
 
     @property
     def log_dir(self) -> Path | None:
@@ -447,9 +455,10 @@ class RunController(QObject):
     def _do_prepare(self) -> None:
         s, o = self._session, self._opts
         rig: SimRig | RealRig | None = None
+        self._log_standing = sorted(standing_in_log(o.resume_log)) if o.resume_log else []
         try:
             if o.mode == "sim":
-                rig = SimRig(s.cfg, s.job, o)
+                rig = SimRig(s.cfg, s.job, o, standing=self._log_standing)
             else:
                 rig = RealRig(s.cfg, s.job, self._factories)
                 rig.open()
@@ -484,6 +493,8 @@ class RunController(QObject):
                             on_station_empty=self._station_empty_cb, on_shot=self._on_shot)
             self._tracker = SnapshotTracker(s, lambda: odom_from_status(self._ads_status_fn()))
             seq.log.add_listener(self._on_record)
+            if self._log_standing:                  # stones of the interrupted run: skipped, part of the guard's wall
+                seq.declare_placed(self._log_standing, source=f"run log {o.resume_log}")
             self._seq = seq
             self._emit_snapshot(replace(RunSnapshot.initial(s, o.start_stop), log_path=str(seq.log.path)))
             detail = f"{o.mode.upper()} ready, log {seq.log.folder}"
@@ -545,6 +556,10 @@ class RunController(QObject):
     def _start_refusal(self) -> str | None:
         """REAL, run thread, right before the first motion: the preflight of Prepare may be minutes old - the HMI's
         ADS state, the AresAds check (move / jog running, MANUAL, heartbeat) and the UR state again."""
+        k = int(self._opts.start_stop)
+        if k > 0 and not self._opts.resume_log and not self._opts.stop_untouched:
+            return (f"start at stop {k}: choose the run log of the interrupted run or confirm that no stone of stop "
+                    f"{k} is placed yet (stops < {k} count as built)")
         if isinstance(self._rig, RealRig):
             self._rig.check_ads()
         self._preflight = self._report()
@@ -555,12 +570,31 @@ class RunController(QObject):
             return MOVING
         return None
 
+    def start_fill(self) -> list[tuple[str, str]]:
+        """[(magazine slot, stone type)] the operator loads before Start (as tools/run_job.py --real): the job's
+        initial fill, or for a later start (stop k > 0, stones of a run log) the fill for the stones after them."""
+        from mauer import job as mjob
+        job, o = self._session.job, self._opts
+        standing = {t.key for st in job.stops[:int(o.start_stop)] for t in st.stones} | set(self._log_standing)
+        if standing:
+            return mjob.restart_fill(job, standing)
+        return [(sid, job.magazine.initial_kinds.get(sid, "full")) for sid in job.magazine.initial_fill]
+
+    def start_checklist(self) -> str:
+        o = self._opts
+        fill = ", ".join(f"{sid}: {kind}" for sid, kind in self.start_fill())
+        late = f"{len(self._log_standing)} stones of {Path(o.resume_log).name} stand; " if self._log_standing else ""
+        return (f"REAL start at stop {o.start_stop}: {late}gripper jaws EMPTY, pick-up station FULL, magazine loaded "
+                f"as listed, every other slot empty - {fill}")
+
     def _do_start(self, start_stop: int, stop_after: int | None) -> None:
         reason = self._start_refusal() if self.mode == "real" else None
         if reason is None and self._halt.is_set():
             reason = "HALT pressed during the start checks"
         elif reason is None and self._abort_soft.is_set():
             reason = "Abort pressed during the start checks"
+        elif reason is None and self.mode == "real" and not self._ask("start", self.start_checklist()):
+            reason = "start checklist not confirmed"         # declined, HALT or closing
         if reason is not None:
             self.message.emit("warning", f"start refused: {reason}")
             self._set_state("ready", f"start refused: {reason}")

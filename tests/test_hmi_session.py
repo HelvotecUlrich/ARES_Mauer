@@ -51,7 +51,7 @@ def test_the_session_keeps_the_hash_of_the_config_it_parsed(built, tmp_path):
         mjob.config_sha256(None, "c_acb")
     assert config_drift(s.cfg, toml, s.config_sha256) == []
     original = toml.read_bytes()
-    toml.write_bytes(original + b"\n# edited after the load\n")
+    toml.write_bytes(b"# edited after the load\n" + original)       # (an edit inside [hmi*] would not count)
     drift = config_drift(s.cfg, toml, s.config_sha256)
     assert len(drift) == 1 and "changed on disk since the job was loaded" in drift[0]
     rep = sim_preflight(s.cfg, s.job, toml, s.config_sha256)

@@ -62,7 +62,8 @@ def _robot(link: Any, cfg: dict, job: Job) -> Any:
     """URRobot with the motion guard the real robot requires (as tools/run_job.py run_real)."""
     from mauer.backends import URRobot
     from mauer.motionguard import MotionGuard
-    return URRobot(link, cfg, job, guard=MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp))
+    return URRobot(link, cfg, job, guard=MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp,
+                                                     approach_mm=job.approach_mm))
 
 
 def _intrinsics(cfg: dict) -> Any:
@@ -137,14 +138,17 @@ class HaltGate:
 
 
 class SimRig:
-    """The pure-Python simulated world (mauer.simworld), as tools/run_job.py sim_once."""
+    """The pure-Python simulated world (mauer.simworld), as tools/run_job.py sim_once. opts.guard: the robot plans
+    every joint move with mauer.motionguard as URRobot does on the real robot (detours, refusals); `standing`: stones
+    that already stand at the start (RunOptions.resume_log), the magazine is loaded for the stones after them."""
     mode = "sim"
 
-    def __init__(self, cfg: dict, job: Job, opts) -> None:
+    def __init__(self, cfg: dict, job: Job, opts, standing=()) -> None:
         from mauer.simworld import SimWorld, scenario
         self.cfg, self.job = cfg, job
         self.world = SimWorld(cfg, job, scenario(opts.scenario), seed=int(opts.seed), start_stop=int(opts.start_stop),
-                              supersample=2, grasp_check=not opts.lenient_grasp)
+                              supersample=2, grasp_check=not opts.lenient_grasp,
+                              guard=bool(getattr(opts, "guard", True)), standing=tuple(standing))
         self.robot, self.ares, self.camera = self.world.robot, self.world.ares, self.world.camera
         self.intr, self.T_flange_cam = self.world.intr, self.world.T_flange_cam
         self.link = None

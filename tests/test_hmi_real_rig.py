@@ -73,7 +73,11 @@ def test_real_rig_opens_in_order_and_reports_every_blocker(plc):
     rep = real_preflight(s.cfg, s.job, ares_enabled=True, ads_connected=True, ads_status=MANUAL_STATUS, rig=rig)
     texts = [(i.source, i.text) for i in rep.items]
     assert all(i.blocking for i in rep.items) and not rep.ok
-    assert ("UR", IK_GUARD_33) in texts                                         # PolyScope 3.3.3 on the lab UR5
+    assert s.cfg["ur"]["ik_check"] == "get_inverse_kin"                        # station.toml: the 3.3 IK check
+    assert ("UR", IK_GUARD_33) not in texts                                     # PolyScope 3.3.3 on the lab UR5
+    cfg = {**s.cfg, "ur": {**s.cfg["ur"], "ik_check": "has_solution"}}         # the URSim 3.15 check on 3.3
+    assert ("UR", IK_GUARD_33) in [(i.source, i.text) for i in real_preflight(
+        cfg, s.job, ares_enabled=True, ads_connected=True, ads_status=MANUAL_STATUS, rig=rig).items]
     assert any(src == "job/config" and "nominal look poses" in t for src, t in texts)
     assert not any(src in ("HMI", "ARES", "camera") for src, _ in texts)
     assert rep.header().startswith("REAL refused")
@@ -376,5 +380,53 @@ def test_real_resume_checks_follow_the_odometry(qapp, tmp_path, plc):
         assert wait_until(lambda: any("blocking problems" in t for t in msgs), 10.0, qapp)
         assert wait_until(lambda: c.state == "paused", 5.0, qapp)
         c._state = "ready"
+    finally:
+        assert c.shutdown(10.0)
+
+
+def test_real_start_checklist_and_a_later_start(qapp, tmp_path, plc, monkeypatch):
+    """Test plan Anhang C1 / C2 (2026-10-08), as tools/run_job.py --real: Start (REAL) shows the magazine fill and
+    waits for the operator's checklist (jaws empty, magazine as listed, station full) before the first motion - a
+    decline starts nothing; a start at stop k > 0 needs the run log of the interrupted run (its stones are declared
+    standing, the fill is the one for the stones after them) or the confirmation that stop k is untouched."""
+    import json
+
+    from mauer import job as mjob
+    s = short_sim_session(n0=2, n1=2)
+    monkeypatch.setattr(rc, "real_preflight", _ok_report)
+    c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs", ares_enabled=True,
+                      ads_status_fn=lambda: dict(MANUAL_STATUS), ads_connected_fn=lambda: True,
+                      real_factories=factories(plc, []))
+    msgs, asks = [], []
+    c.message.connect(lambda lvl, t: msgs.append(t))
+    c.confirm_requested.connect(asks.append)
+    try:
+        c.set_session(s)
+        c.prepare(RunOptions("real", start_stop=1))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp)
+        c.start()
+        assert wait_until(lambda: any("start refused: start at stop 1: choose the run log" in t for t in msgs),
+                          10.0, qapp)
+        assert wait_until(lambda: c.state == "ready", 5.0, qapp) and asks == []
+        c.release()
+        assert wait_until(lambda: c.state == "loaded", 10.0, qapp)
+        old = tmp_path / "old_run"
+        old.mkdir()
+        key = s.job.stops[1].stones[0].key
+        (old / "run.jsonl").write_text(json.dumps({"event": "placed", "stone": list(key)}) + "\n", encoding="utf-8")
+        c.prepare(RunOptions("real", start_stop=1, resume_log=old))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp)
+        assert key in c.sequencer.placed
+        standing = {t.key for t in s.job.stops[0].stones} | {key}
+        assert c.start_fill() == mjob.restart_fill(s.job, standing) and c.start_fill()
+        c.start()
+        assert wait_until(lambda: asks, 10.0, qapp)
+        req = asks[-1]
+        assert req.kind == "start" and "1 stones of old_run stand" in req.text and "jaws EMPTY" in req.text
+        assert all(f"{sid}: {kind}" in req.text for sid, kind in c.start_fill())
+        c.answer_confirm(req.id, False)
+        assert wait_until(lambda: any("start checklist not confirmed" in t for t in msgs), 10.0, qapp)
+        assert wait_until(lambda: c.state == "ready", 5.0, qapp)
+        assert "run_start" not in [r["event"] for r in read_log(c.log_dir)]   # nothing ran (StubLink: no program)
     finally:
         assert c.shutdown(10.0)
