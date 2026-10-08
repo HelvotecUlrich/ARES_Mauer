@@ -27,9 +27,7 @@ Imported only by hmi/core/twin_link.py (lazily) and tests/test_twin_robodk.py; p
 """
 from __future__ import annotations
 
-import contextlib
 import logging
-import os
 import queue
 import statistics
 import sys
@@ -68,19 +66,6 @@ UI_FLAGS = FLAG_ROBODK_ALL & ~FLAG_ROBODK_TREE_VISIBLE & ~FLAG_ROBODK_REFERENCES
 Q_EPS_RAD = 1e-5                       # joint change that is drawn
 POSE_EPS_MM = 1e-3                     # ARES / station pose change that is drawn
 STATS_N = 50                           # ticks in the median of tick_ms / lag_ms / rate_hz
-QT_ENV = ("QT_QPA_PLATFORM", "QT_QPA_PLATFORM_PLUGIN_PATH", "QT_PLUGIN_PATH")     # not passed on to RoboDK
-
-
-@contextlib.contextmanager
-def robodk_env():
-    """os.environ without the Qt platform variables while RoboDK is started (robolink starts it with the inherited
-    environment): RoboDK is a Qt application of its own, and QT_QPA_PLATFORM=offscreen (set by tests/conftest.py for
-    the HMI tests) makes it exit at once ("RoboDK Application not properly started", checked 2026-10-08)."""
-    saved = {k: os.environ.pop(k) for k in QT_ENV if k in os.environ}
-    try:
-        yield
-    finally:
-        os.environ.update(saved)
 
 
 def pose2d_T(p):
@@ -370,8 +355,8 @@ class Twin:
             if port < MIN_PORT or port in USER_PORTS:     # TwinSettings refuses these already
                 raise RuntimeError(f"refusing RoboDK API port {port}")
             try:
-                with robodk_env():
-                    RDK = self._connect(new_instance=True, port=port, minimized=not self.settings.visible)
+                # rdk_common.connect starts RoboDK without the Qt platform variables (rdk_common.qt_free_env)
+                RDK = self._connect(new_instance=True, port=port, minimized=not self.settings.visible)
             except RuntimeError as e:                     # a RoboDK this twin did not start: skipped untouched
                 errors.append(f"{port}: {e}")
                 log.info("twin: port %d not used: %s", port, e)
