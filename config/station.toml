@@ -182,6 +182,9 @@ magazine_layers = 3         # ASSUMPTION: layers per magazine stack as simulated
 front_x = 40.0              # ASSUMPTION: front edge of the plates in the ARES frame [mm] (front magazine stones end at
                             # x = -12, the UR base starts at mount_x - 75)
 split_x = -400.0            # ASSUMPTION: joint magazine / rear plate (rear magazine stones end at x = -355)
+front_notch = [40.0, 20.0]  # CONFIRMED: Samuel 2026-10-08 - the magazine plate needs a rectangular cut-out at its front
+                            # edge: 40 mm in from each side, 20 mm deep (the first plate was recut:
+                            # targets/deck_plate/deck_plate_magazine_notch_recut.dxf)
 dovetail_y = [-150.0, 150.0]  # ASSUMPTION: dovetail centres on the joint ([guides] dovetail, joint_clearance)
 inset_mm = 10.0             # ASSUMPTION: "onepiece" only - plate edge inside the deck edge (580 mm fits the 600 mm bed)
 bolt_edge_mm = 20.0         # CONFIRMED: Samuel 2026-10-08 - M6 / slot nuts 20 mm from the ARES outer edge
