@@ -288,7 +288,8 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch
                               handeye_file=tmp_path / "none_h.json")
     text = "\n".join(problems)
     for frag in ("[ur] host is empty", "[ur] payload_tool_kg <= 0", "[brick] mass_kg <= 0", "camera intrinsics missing",
-                 "hand-eye calibration missing", "nominal look poses", "[ur5] mount_z PLACEHOLDER - measure it"):
+                 "hand-eye calibration missing", "nominal look poses",
+                 "[ur] payload_cog_mm PLACEHOLDER - measure it"):     # [ur5] mount_z / rz CONFIRMED since 2026-10-08
         assert frag in text, frag
     st = mjob.config_status()                                            # the values measured before the real test
     monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: {
@@ -730,7 +731,7 @@ def test_preflight_blocks_placeholders_outside_the_camera_loop(lcfg, ljob, tmp_p
     st = mjob.config_status()
     for key in OUTSIDE_THE_CAMERA_LOOP:
         assert (key in text) == (st[key]["status"] in ("PLACEHOLDER", "UNKNOWN")), key
-    assert "[ur5] mount_z" in text                                       # PLACEHOLDER in station.toml today
+    assert "[ur] payload_cog_mm" in text and "[ur5] mount_z" not in text    # station.toml today (mount 2026-10-08)
     measured = {k: ({**v, "status": "CONFIRMED"} if k in OUTSIDE_THE_CAMERA_LOOP else v) for k, v in st.items()}
     monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: measured)
     text = "\n".join(preflight_real(lcfg, ljob, **kw))

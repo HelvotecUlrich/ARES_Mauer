@@ -395,7 +395,11 @@ def test_inhibit_refuses_every_program_but_the_abort(fake):
         with pytest.raises(URLinkInhibited):
             ur.send_program("def x():\n  sleep(0.01)\nend\n")
         assert fake.programs == []
-        assert "stopl program sent" in ur.abort(dashboard=False) and fake.programs == [s.abort_program()]
+        assert "stopl program sent" in ur.abort(dashboard=False)
+        t_end = time.time() + 1.0                    # the fake's 30002 thread receives it after the send returns
+        while fake.programs != [s.abort_program()] and time.time() < t_end:
+            time.sleep(0.005)
+        assert fake.programs == [s.abort_program()]
         ur.release_inhibit()
         assert ur.inhibited is None and ur.run_block("sleep(0.01)", "released", timeout_s=2.0).ok
 

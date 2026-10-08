@@ -136,7 +136,8 @@ def test_station_and_park(job, cfg):
 def test_provenance(job, cfg):
     assert job.config_sha256 == mjob.config_sha256()        # provenance always from the file on disk
     keys = {d["key"]: d for d in job.depends_on}
-    assert keys["[ur5] mount_z"]["status"] == "PLACEHOLDER" and keys["[ur5] mount_z"]["value"] == 333.6
+    assert "[ur5] mount_z" not in keys and "[ur5] mount_rz" not in keys    # CONFIRMED 2026-10-08 (plate, cable back)
+    assert keys["[deck] layers"]["status"] == "PLACEHOLDER" and keys["[deck] layers"]["value"] == 2
     assert keys["[tool] tcp_z"]["status"] == "ASSUMPTION"
     assert keys["[brick] mass_kg"]["status"] == "ASSUMPTION"           # "about 3 kg", 2026-10-06
     assert keys["[[targets]] W0.xyz"]["status"] == "PLACEHOLDER"
