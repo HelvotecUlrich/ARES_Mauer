@@ -416,9 +416,11 @@ locator_h = 21.5            # ASSUMPTION (design, Samuel 2026-10-06): socket dep
                             # stands on the MDF: the tip (r 7.7) self-centres a stone placed up to ~10 mm off (r 18.0
                             # mouth), the final fit is the same socket_clearance
 socket_clearance = 0.25     # ASSUMPTION: radial clearance of the printed cone in the socket - print the test first
-peg_d = 8.0                 # ASSUMPTION: peg under every locating cone
+peg_d = 8.0                 # ASSUMPTION: peg under every locating cone (printed: 7.94 mm, Samuel 2026-10-08)
 peg_len = 3.0               # ASSUMPTION: 1 mm shorter than the MDF is thick
-peg_hole_d = 8.3            # ASSUMPTION: laser-cut peg hole - cut the test strip first
+peg_hole_d = 8.0            # CONFIRMED: Samuel 2026-10-08 peg_fit_test.dxf (tools/make_peg_test.py): the hole labelled
+                            # 8.0 (cut circle 7.7 = 8.0 - kerf_mm) measured ~7.82 mm, printed peg 7.94 -> press fit.
+                            # Keep kerf_mm as is: this value is tied to the 0.3 mm compensation (real hole kerf ~0.12)
 vtab = [5.6, 3.8]           # ASSUMPTION: V-tab width at the edge x height, 0.4 / 0.2 mm under the plates' notches
                             # ([plates] notch_width 6 x notch_depth 4)
 window_clearance = 0.3      # ASSUMPTION: per side around the plain station plates in their windows

@@ -3,6 +3,8 @@ the press fit of the printed locating cone's peg ([guides] peg_d) before the flo
 
     py.exe tools/make_peg_test.py                      # 7.5 .. 8.4 mm in 0.1 mm steps -> targets/guides/peg_fit_test.dxf
     py.exe tools/make_peg_test.py --from 7.7 --to 8.2 --step 0.05
+    py.exe tools/make_peg_test.py --cones 0.25 0.15 0.10 0.05   # + locating cones with these socket clearances [mm]
+                                                               #   -> targets/guides/cone_fit_test/locating_cone_c*.stl
 
 The engraved number under a hole is its FINISHED diameter: the cut circle is drawn kerf ([guides] kerf_mm, ASSUMPTION)
 smaller, as tools/make_guides.py cuts the peg holes. Push a printed cone (targets/guides/locating_cone.scad) into each
@@ -51,6 +53,22 @@ def build(ds: list[float], kerf: float, peg_d: float, decimals: int = 1) -> mp.D
     return d
 
 
+def write_cones(cfg: dict, clearances: list[float], out: Path) -> None:
+    """Locating cones as tools/make_guides.py makes them, one STL per radial socket clearance (engrave nothing: the
+    file name carries the clearance - mark the printed cones). The smallest clearance whose cone still lets a stone
+    stand flat on the MDF (no rocking, not lifted by the cone) -> [guides] socket_clearance."""
+    import dataclasses
+
+    import make_guides as mg
+    out.mkdir(parents=True, exist_ok=True)
+    p0 = mg.params(cfg)
+    for c in clearances:
+        p = dataclasses.replace(p0, clearance=float(c))
+        path = out / f"locating_cone_c{c:.2f}.stl"
+        mg.write_stl(path, mg.locator_mesh(p), f"ARES_Mauer locating cone clearance {c:.2f}")
+        print(f"written {path}: base r {mg.cone_r(p, 0.0):.3f}, top r {mg.cone_r(p, p.locator_h):.3f} mm")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--from", dest="d_from", type=float, default=7.5, help="smallest finished hole diameter [mm]")
@@ -58,8 +76,13 @@ def main() -> int:
     ap.add_argument("--step", type=float, default=0.1, help="diameter step [mm]")
     ap.add_argument("--config", default=None)
     ap.add_argument("--out", type=Path, default=ROOT / "targets" / "guides" / "peg_fit_test.dxf")
+    ap.add_argument("--cones", type=float, nargs="*", default=None,
+                    help="also write locating cones with these radial socket clearances [mm] ([guides] socket_clearance)")
     a = ap.parse_args()
-    gd = config.load(a.config)["guides"]
+    cfg = config.load(a.config)
+    gd = cfg["guides"]
+    if a.cones:
+        write_cones(cfg, a.cones, a.out.parent / "cone_fit_test")
     ds = diameters(a.d_from, a.d_to, a.step)
     decimals = max(1, len(f"{a.step:g}".partition(".")[2]))
     d = build(ds, float(gd.get("kerf_mm", 0.0)), float(gd["peg_d"]), decimals)
