@@ -252,7 +252,7 @@ def test_orbit_drops_the_view_that_touched_the_arm():
     q0 = np.radians([-69.3583, -88.6686, -97.7776, -83.5734, 90.0611, 20.7653])     # data/he_2026-10-06 meta
     spec = board_specs(cfg)["calib"]
     T_cam_board0 = g.transl(-spec.centre_mm[0], -spec.centre_mm[1], 346.86)            # board centre on the axis
-    kept, dropped, geo = ch.orbit_plan(cfg, ur5_fk(q0), q0, T_cam_board0, spec)
+    kept, dropped, geo = ch.orbit_plan(cfg, ur5_fk(q0), q0, T_cam_board0, spec, ares=False)    # on the lab table
     names = [v["name"] for v in kept]
     assert names[:18] == [f"o{i:02d}" for i in range(18)], names
     assert "o18" not in names and any(d.startswith("o18: camera adapter vs forearm") for d in dropped), dropped
@@ -267,3 +267,46 @@ def test_self_clearance_sees_the_camera_folded_onto_the_forearm():
     ok = armcheck.self_clearance(q, cfg)[0]
     worst = min(armcheck.self_clearance(np.r_[q[:5], q[5] + np.radians(a)], cfg)[0] for a in range(0, 360, 10))
     assert ok > 15.0 and worst < ok                              # turning wrist 3 brings the adapter to the arm
+
+
+def _deck_start(cfg, x_ares: float, y_ares: float, dist_mm: float = 320.0):
+    """Camera looking straight down at a calib board centred at (x, y) on the ARES deck from dist_mm: (q0, T_cam_board0,
+    spec). The board frame: z into the board (down), as OpenCV."""
+    from mauer import armcheck
+    from mauer.simworld import ik_near
+    spec = board_specs(cfg)["calib"]
+    X = config.T_flange_cam_nominal(cfg)
+    T_ab = config.T_ares_base(cfg)
+    deck = float(cfg["ares"]["deck_top_z"]) + 4.0
+    park = np.asarray(np.radians(cfg["ur"]["park_q_deg"]), float)
+    best = None
+    for yaw in range(0, 360, 15):                 # the camera's yaw about the vertical with the most tool clearance
+        T_ares_cam = g.transl(x_ares, y_ares, deck + dist_mm) @ g.rotx(np.pi) @ g.rotz(np.radians(yaw))  # axis down
+        q = ik_near(g.inv(T_ab) @ T_ares_cam @ g.inv(X), park)
+        if q is not None and (best is None or armcheck.self_clearance(q, cfg)[0] > best[0]):
+            best = (armcheck.self_clearance(q, cfg)[0], q)
+    assert best is not None and best[0] > 40.0, best
+    q0 = best[1]
+    T_cam_board0 = g.transl(-spec.centre_mm[0], -spec.centre_mm[1], dist_mm)
+    return q0, T_cam_board0, spec
+
+
+def test_orbit_on_ares_checks_the_views_against_ares_and_the_controller():
+    """Calibration on ARES (T4, 2026-10-09): every view and every straight-line move is checked against the ARES
+    boxes (chassis, UR control box at the far end, magazine empty) - a box next to the board drops the views that
+    tilt into it. Found on the way: 320 mm over the deck the 25 deg tilt o20 brings a gripper jaw to 9 mm from the
+    deck (the old check saw camera, TCP and flange only) - dropped now."""
+    from mauer import armcheck
+    cfg = config.load()
+    q0, T_cb, spec = _deck_start(cfg, -100.0, 0.0)
+    kept, dropped, _ = ch.orbit_plan(cfg, ur5_fk(q0), q0, T_cb, spec)
+    assert len(kept) >= 20, dropped
+    assert any(d.startswith("o20: jaw") and "ARES chassis" in d for d in dropped), dropped
+    no_ares, _, _ = ch.orbit_plan(cfg, ur5_fk(q0), q0, T_cb, spec, ares=False)
+    assert "o20" in [v["name"] for v in no_ares]                     # the table check alone would have run it
+    pillar = armcheck.Box("test pillar", np.array([-100.0, 230.0, 600.0]), np.eye(3), np.array([60.0, 60.0, 300.0]))
+    boxes = armcheck.ares_boxes(cfg) + [pillar]
+    kept2, dropped2, _ = ch.orbit_plan(cfg, ur5_fk(q0), q0, T_cb, spec, boxes=boxes)
+    assert len(kept2) < len(kept) and any("test pillar" in d for d in dropped2), dropped2
+    checker = armcheck.ArmChecker(cfg, boxes, on_ares=config.T_ares_base(cfg))
+    assert all(checker.hits(v["q_nominal"], None) == [] for v in kept2)

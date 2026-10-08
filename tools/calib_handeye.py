@@ -28,7 +28,10 @@ stays in its configuration, no planned poses, no IK branch, no board pose needed
 Each view and the straight-line move to it are checked first: nominal UR5 IK near the start joints, clearance above
 the board plane, and the tool (camera adapter, camera, gripper) against the arm's own links (mauer.armcheck
 self_clearance >= SELF_CLEARANCE_MM along the move - the first run touched wrist 1 with the camera adapter on the
-way to o18, 2026-10-06); views that fail are dropped and listed, the return to the start is checked too. The images + flange poses form a normal "handeye" dataset (solve, calib_intrinsics solve).
+way to o18, 2026-10-06), and - on ARES, the default (2026-10-08) - the arm and the tool against the ARES boxes
+(mauer.armcheck.ares_boxes: chassis up to the deck, the UR control box at the far end; the magazine must be EMPTY)
+with the [ur5] mount; --no-ares on the lab table. Views that fail are dropped and listed, the return to the start is
+checked too. The images + flange poses form a normal "handeye" dataset (solve, calib_intrinsics solve).
 
 Without hardware (URSim CB3 3.15.8 in Docker, tests/ursim.py): add --ursim (host 127.0.0.1; --start-ursim starts the
 container, never pulls). The camera is then mauer.simcam.SynthCamera: it renders the calib board at its nominal deck
@@ -681,10 +684,11 @@ def orbit_target(T_base_cam0: np.ndarray, pivot: Sequence[float], az_deg: float,
 
 
 def move_self_clearance(cfg: dict, T0: np.ndarray, T1: np.ndarray, q0: Sequence[float], step_mm: float = 5.0,
-                        step_deg: float = 1.0) -> tuple[float, str, str, np.ndarray | None]:
+                        step_deg: float = 1.0, ares=None) -> tuple[float, str, str, np.ndarray | None]:
     """Smallest tool-vs-arm clearance (armcheck.self_clearance) along a straight-line flange move T0 -> T1 (position
     linear, orientation along the shortest rotation, as movel), joints followed from q0 with the nominal IK; returns
-    (mm, tool part, link, q at T1) - q None (and -inf) if the IK branch is lost on the way."""
+    (mm, tool part, link, q at T1) - q None (and -inf) if the IK branch is lost on the way. ares: an
+    armcheck.ArmChecker of the ARES boxes (on_ares) - a hit returns (-penetration, arm / tool part, box, q)."""
     from mauer import armcheck
     T0, T1 = np.asarray(T0, float), np.asarray(T1, float)
     rv = g.R_to_rotvec(T0[:3, :3].T @ T1[:3, :3])
@@ -698,6 +702,10 @@ def move_self_clearance(cfg: dict, T0: np.ndarray, T1: np.ndarray, q0: Sequence[
         if qq is None:
             return -math.inf, "IK lost", "", None
         q = np.array([q[j] + _wrap(qq[j] - q[j]) for j in range(6)])
+        if ares is not None:
+            hits = ares.hits(q, None)
+            if hits:
+                return -hits[0][2], hits[0][0], hits[0][1], q
         c = armcheck.self_clearance(q, cfg)
         if c[0] < worst[0]:
             worst = c
@@ -705,9 +713,11 @@ def move_self_clearance(cfg: dict, T0: np.ndarray, T1: np.ndarray, q0: Sequence[
 
 
 def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam_board0: np.ndarray,
-               spec: BoardSpec) -> tuple[list[dict], list[str], dict]:
+               spec: BoardSpec, ares: bool = True, boxes=None) -> tuple[list[dict], list[str], dict]:
     """Views relative to the start: [{"name", "T_base_flange", "tilt", "roll", "d_mm", "q_nominal"}] kept, the
-    reasons of the dropped ones, and the geometry (pivot, distance, board plane z)."""
+    reasons of the dropped ones, and the geometry (pivot, distance, board plane z). ares (UR5 on ARES, 2026-10-09):
+    every view and move is also checked against `boxes` (default mauer.armcheck.ares_boxes: the chassis and the UR
+    control box at the far end, an EMPTY magazine) with the arm on ARES ([ur5] mount); False on the lab table."""
     X = config.T_flange_cam_nominal(cfg)
     T_ft = config.T_flange_tcp(cfg)
     T_cam0 = np.asarray(T_base_flange0, float) @ X
@@ -720,7 +730,10 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
     def board_tilt(T_cam: np.ndarray) -> float:
         return math.degrees(math.acos(float(np.clip(T_cam[:3, 2] @ n_board, -1.0, 1.0))))
     lim = float(cfg.get("vision", {}).get("handeye_plan", {}).get("min_clearance_mm", MIN_CLEARANCE_MM))
+    from mauer import armcheck
     from mauer.armcheck import SELF_CLEARANCE_MM
+    checker = (armcheck.ArmChecker(cfg, armcheck.ares_boxes(cfg) if boxes is None else boxes,
+                                   on_ares=config.T_ares_base(cfg)) if ares or boxes is not None else None)
     q0 = np.asarray(q0, float)
     kept, dropped = [], []
     prev_T, prev_q = np.asarray(T_base_flange0, float), q0
@@ -741,7 +754,7 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
         if low < lim:
             dropped.append(f"{name}: {low:.0f} mm above the board plane (< {lim:g})")
             continue
-        sc, part, link, q_end = move_self_clearance(cfg, prev_T, T_f, prev_q)
+        sc, part, link, q_end = move_self_clearance(cfg, prev_T, T_f, prev_q, ares=checker)
         if sc < SELF_CLEARANCE_MM:
             dropped.append(f"{name}: {part} vs {link} {sc:.0f} mm on the way (< {SELF_CLEARANCE_MM:g})")
             continue
@@ -751,7 +764,8 @@ def orbit_plan(cfg: dict, T_base_flange0: np.ndarray, q0: Sequence[float], T_cam
         prev_T, prev_q = T_f, q_end
     while kept:                                   # the way back to the start must be clear too
         last = kept[-1]
-        sc, part, link, _ = move_self_clearance(cfg, last["T_base_flange"], T_base_flange0, last["q_nominal"])
+        sc, part, link, _ = move_self_clearance(cfg, last["T_base_flange"], T_base_flange0, last["q_nominal"],
+                                                ares=checker)
         if sc >= SELF_CLEARANCE_MM:
             break
         dropped.append(f"{last['name']}: {part} vs {link} {sc:.0f} mm on the way back to the start")
@@ -799,7 +813,7 @@ def cmd_orbit(args) -> int:
             return 1
         if not bp.ok:                     # e.g. the RMS gate with intrinsics weak at the image edges - aiming only
             print(f"note: start pose {bp.reason} - good enough to aim the views", flush=True)
-        views, dropped, geo = orbit_plan(cfg, T_f0, q0, bp.T_cam_board, spec)
+        views, dropped, geo = orbit_plan(cfg, T_f0, q0, bp.T_cam_board, spec, ares=not args.no_ares)
         print(f"start: board centre {geo['distance_mm']:.0f} mm in front of the camera, camera {geo['start_board_tilt_deg']:.0f}"
               f" deg off the board normal, wrist 3 at {math.degrees(q0[5]):.1f} deg; {len(views)} views kept"
               + (f", dropped: {'; '.join(dropped)}" if dropped else ""), flush=True)
@@ -1150,6 +1164,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("orbit", help="views relative to the current pose around the calib board -> 'handeye' dataset")
     p.add_argument("--dataset", required=True, help="new dataset folder, e.g. data/he_2026-10-06")
     p.add_argument("--v-mm-s", type=float, default=ORBIT_V_MM_S, help="straight-line speed [mm/s]")
+    p.add_argument("--no-ares", action="store_true",
+                   help="UR5 on the lab table: do not check the views against the ARES model (chassis, controller)")
     add_robot_args(p)
 
     p = sub.add_parser("solve", help="calibrate T_flange_cam from a dataset (tools/handeye_solve.py)")
