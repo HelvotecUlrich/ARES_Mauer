@@ -28,6 +28,7 @@ OK, WARN, BAD, GREY, TEXT = "#44CC44", "#FFAA00", "#FF4444", "#999999", "#DDDDDD
 ISSUE_COLOURS = {"warning": WARN, "error": BAD}
 MAX_ISSUES = 500                              # list entries kept (oldest dropped)
 TILES = ("stones", "stop", "station", "ares", "camera", "time", "preflight", "issues")
+TILE_COLS = 4                                 # tiles per row (the board sits under the plan view of the Mauer tab)
 
 
 def planned_trips(job: Job, start_stop: int = 0, stop_after: int | None = None) -> tuple[int, int]:
@@ -155,10 +156,10 @@ class RunFeedback(QWidget):
             val.setWordWrap(True)
             set_style(val, f"color:{TEXT}; font-weight:bold;")
             self.tiles[key] = val
-            grid.addWidget(title, 2 * (i // 2), i % 2)
-            grid.addWidget(val, 2 * (i // 2) + 1, i % 2)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+            grid.addWidget(title, 2 * (i // TILE_COLS), i % TILE_COLS)
+            grid.addWidget(val, 2 * (i // TILE_COLS) + 1, i % TILE_COLS)
+        for c in range(TILE_COLS):
+            grid.setColumnStretch(c, 1)
         v.addLayout(grid)
         self.issues = QListWidget()
         self.issues.setFocusPolicy(Qt.NoFocus)

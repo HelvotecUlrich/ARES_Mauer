@@ -14,7 +14,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QRadioButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QRadioButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout,
+    QWidget,
 )
 
 from mauer.reference import Pose2D
@@ -79,8 +80,6 @@ class MauerTab(QWidget):
         col.addWidget(self._progress_group())
         col.addWidget(self._recovery_group())
         col.addWidget(self._preflight_group())
-        self.feedback = RunFeedback(self._ctx)
-        col.addWidget(self.feedback)
         col.addStretch()
         scroll = QScrollArea()
         scroll.setWidget(left)
@@ -89,8 +88,16 @@ class MauerTab(QWidget):
         scroll.setFixedWidth(LEFT_W + 24)
         scroll.setFocusPolicy(Qt.NoFocus)
         outer.addWidget(scroll)
+        # right: the plan view above the run feedback board (visible during the run without scrolling the left column)
+        right = QSplitter(Qt.Vertical)
+        right.setChildrenCollapsible(False)
         self.plan = PlanView()
-        outer.addWidget(self.plan, 1)
+        self.feedback = RunFeedback(self._ctx)
+        right.addWidget(self.plan)
+        right.addWidget(self.feedback)
+        right.setStretchFactor(0, 3)
+        right.setStretchFactor(1, 1)
+        outer.addWidget(right, 1)
 
     def _button(self, text: str, colour: str, slot, min_w: int = 90) -> PulseBtn:
         b = PulseBtn(text, colour, min_w=min_w, min_h=30)
