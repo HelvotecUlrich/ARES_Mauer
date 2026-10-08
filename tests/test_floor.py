@@ -215,3 +215,22 @@ def test_routes_end_with_an_approach_of_at_least_min_approach():
             if route:
                 last = floor.segments(route)[0][-1]
                 assert last.kind == "translate" and last.length_mm >= c["routes"]["min_approach_mm"] - 1e-6
+
+
+def test_a_plate_in_a_door_needs_a_spare_block():
+    """2026-10-08, the C with a door: a board plate rests against the base blocks of course 0 - in a door (an opening
+    in course 0) there is none, the site counts as a spare block like one beyond a free leg end."""
+    import importlib.util
+
+    from mauer import REPO, config
+    import sys
+    spec = importlib.util.spec_from_file_location("wp_floor_test", REPO / "robodk" / "wallplan.py")
+    wp = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = wp                     # dataclasses look the module up (Python 3.14)
+    spec.loader.exec_module(wp)
+    cfg = config.load()
+    door = wp.Leg("C", 5, openings=(wp.Opening(0.0, 600.0, 0, 3, "door"),))
+    window = wp.Leg("A", 5, openings=(wp.Opening(300.0, 700.0, 2, 3, "window"),))
+    size = (80.0, 64.0)
+    assert [floor.plate_site(cfg, door, k, size).spare for k in range(5)] == [True, True, True, False, False]
+    assert not any(floor.plate_site(cfg, window, k, size).spare for k in range(5))       # course 0 is complete

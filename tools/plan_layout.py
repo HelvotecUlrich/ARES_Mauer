@@ -62,8 +62,9 @@ CAP_BOARDS = 4                    # boards per stop counted for robustness
 def with_legs(cfg: dict, n0s) -> dict:
     """Copy of cfg with [[wall.legs]] = A (wall frame, n0s[0]) and every further leg the butt corner of the one before
     (B = n0s[1], C = n0s[2], ...): away from ARES's side, or towards it with [wall] ares_inside (ARES works inside the
-    corners). A leg keeps the side / dist / runs_through of the config's leg of the same name (runs_through: the leg
-    runs through its corner with the one before, wallplan.butt_corner through="next")."""
+    corners). A leg keeps the side / dist / runs_through / openings / start_half of the config's leg of the same name
+    (runs_through: the leg runs through its corner with the one before, wallplan.butt_corner through="next";
+    openings, start_half: doors / windows and the bond shift, 2026-10-08)."""
     wp = mj.load_wallplan()
     c = copy.deepcopy(cfg)
     inside = bool(c["wall"].get("ares_inside", False))
@@ -74,7 +75,7 @@ def with_legs(cfg: dict, n0s) -> dict:
         legs_.append(wp.butt_corner(c, legs_[-1], n, name, towards_ares=inside, through=through))
     c["wall"]["legs"] = [{"name": lg.name, "n0": lg.n0, "xyz_in_wall": [round(lg.x, 6), round(lg.y, 6), 0.0],
                           "rpy_in_wall_deg": [0.0, 0.0, round(math.degrees(lg.theta), 9)],
-                          **{k: old[lg.name][k] for k in ("side", "dist", "runs_through")
+                          **{k: old[lg.name][k] for k in ("side", "dist", "runs_through", "openings", "start_half")
                              if k in old.get(lg.name, {})}}
                          for lg in legs_]
     return c
@@ -188,7 +189,7 @@ def evaluate(cfg0: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
     by_name = {lg.name: lg for lg in legs_}
     stops = []
     built: list = []
-    for lg in legs_:
+    for lg in wp.build_order(cfg, legs_):         # the job's stop order (tools/make_job.py build_l, 2026-10-08)
         for a, batch in plans[lg.name]:
             built = built + list(batch)
             stops.append({"leg": lg.name, "a": float(a), "n": len(batch), "built": built,
@@ -323,10 +324,11 @@ def config_snippet(cfg: dict, best: dict) -> str:
         lines += ["[[wall.legs]]", f'name = "{lg["name"]}"', f"n0 = {lg['n0']}",
                   f"xyz_in_wall = {lg['xyz_in_wall']}", f"rpy_in_wall_deg = {lg['rpy_in_wall_deg']}"]
     walls = [t for t in cfg["targets"] if t["parent"] == "wall"]
-    for t, b in zip(walls, best["boards"]):
-        lines += ["[[targets]]", f'name = "{t["name"]}"', 'parent = "wall"', f'leg = "{b["leg"]}"',
-                  f"first_id = {t['first_id']}", f"xyz = [{b['xyz'][0]:.1f}, {b['xyz'][1]:.1f}, {b['xyz'][2]:.1f}]",
-                  "rpy_deg = [180.0, 0.0, 0.0]"]
+    for i, b in enumerate(best["boards"]):              # W<i> beyond the config's boards: the printed set W0..W7
+        name, fid = (walls[i]["name"], walls[i]["first_id"]) if i < len(walls) else (f"W{i}", 30 + 10 * i)
+        lines += ["[[targets]]", f'name = "{name}"', 'parent = "wall"', f'leg = "{b["leg"]}"',
+                  f"first_id = {fid}", f"xyz = [{b['xyz'][0]:.1f}, {b['xyz'][1]:.1f}, {b['xyz'][2]:.1f}]",
+                  "rpy_deg = [180.0, 0.0, 0.0]" + ("   # spare block" if b.get("spare") else "")]
     return "\n".join(lines)
 
 

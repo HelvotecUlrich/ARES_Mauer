@@ -131,48 +131,53 @@ reach_margin_mm = 20.0      # ASSUMPTION: legs plan - a stone counts as reachabl
                             # point within +-20 mm is ok (= [sequencer] stop_tol_mm: ARES may stand that far off the
                             # nominal stop after the closed loop). The straight-wall plan (simulate.py) keeps 0
 
-# Legs of the C (robodk/wallplan.py legs / butt_corner, tools/plan_layout.py). Wall frame = leg A frame, y towards
-# ARES. ARES works INSIDE the C (Samuel 2026-10-06) and never turns there: it drives in through the open side facing
-# leg B (heading 0 in the wall frame) and builds A on its RIGHT (side wall), B in FRONT, C on its LEFT (side wall),
-# then backs out (also for every station trip). Every next leg is perpendicular at the far end of the one before, on
-# its ARES side, with a vertical BUTT joint in every course (the 53 x 100.5 mm pin pattern is not square: a stone
-# turned by 90 deg never engages the sockets below): the EARLIER leg runs through the corner (its course-0 end flush
-# with the BODY of the next leg's outer face), the next leg's flat end face stands rib_mm + corner_gap_mm off its
-# ribbed ARES-side face: frame = T_wall_prev @ transl(length * n0_prev - width / 2, +(width / 2 + rib_mm +
-# corner_gap_mm), 0) @ rotz(+90 deg) (wallplan.butt_corner towards_ares, through="prev"). Built A -> B -> C, every
-# stone placed against one neighbour only (no closure). Layout Samuel 2026-10-07 (main config; the layout with the
-# ends of A and C exactly lined up and B as the closure is config/variants/c_acb.toml): A 5 1/2 stones (1.10 m,
-# course 0 = 5 full + a half stone at the corner end, wallplan.layout_leg), B 7, C 5 - A one half stone longer than C
-# so that the free ends nearly line up (C's end 22.7 mm beyond A's start: 1100 - (120 + 1.69 + 1.0) - 1000).
-# Outer size 1.12 x 1.52 m, 1.28 m between the inside faces of A and C (ARES is 0.6 m wide, 1.12 m long - with the
-# wall in front of ARES it did not fit, study 2026-10-06). side / dist: on which side of ARES the leg is built and
-# ARES centre -> leg centreline (RoboDK reach table per side; side walls at 580 mm = ARES side 110 mm from the board
-# plates, like the front at 840). ARES stops only where it keeps [routes] clearance_mm from the other legs and their
-# plates (tools/make_job.py stop_limits). Status: lengths, inside and the sides CONFIRMED (Samuel), corner design and
-# the distances ASSUMPTION.
+# Legs of the C (robodk/wallplan.py legs / butt_corner / layout_leg, tools/plan_layout.py). Wall frame = leg A frame,
+# y towards ARES. ARES works INSIDE the C (Samuel 2026-10-06) and never turns there: it enters through the open side
+# with the UR end ahead (this repo's +x; the vehicle drives backwards - [ares] frame_x_points_to) facing leg B and builds
+# A on its RIGHT (side wall), B in FRONT, C on its LEFT (side wall), then backs out (also for every station trip).
+# Every corner is a vertical BUTT joint (the 53 x 100.5 mm pin pattern is not square: a stone turned by 90 deg never
+# engages the sockets below): one leg runs through, the other's flat end face stands rib_mm + corner_gap_mm off its
+# ribbed face (wallplan.butt_corner towards_ares).
+# The C of 2026-10-08 (Samuel's photos input/Medien (16..19).jpg = courses 4..1 seen from above, dark full, light half
+# stones; "neu mit einer Andeutung fuer eine Tuere und ein Fenster"): the back leg B (9 stones, 1.8 m) runs through BOTH
+# corners, A and C (5 stones, 1.0 m from B's inside face) butt against it, their free ends line up - built B, A, C
+# (wallplan.build_order). A has a WINDOW (courses 3 + 4, 400 mm wide, 300 mm from both ends), C only a 400 mm piece at
+# its free end beside a DOOR 600 mm wide at B (all courses). Openings are cut out of the leg's running bond with half
+# stones at the jambs (wallplan.layout_leg): A's window courses differ from the photo (half stones at the jambs, not at
+# the leg ends) so that no joint stands over a joint; C's piece is the photo (start_half). 1.8 m over the outer faces
+# of A and C, 1.56 m between their inside faces. Which arm is which (window right, door left) is read from the photos
+# with ARES entering from the open side (ASSUMPTION). The C before (A 5 1/2 -> B 7 -> C 5) is config/variants/c_a55.toml.
+# side / dist: on which side of ARES the leg is built and ARES centre -> leg centreline (RoboDK reach table per side).
 [[wall.legs]]
 name = "A"
-n0 = 5.5                    # CONFIRMED: Samuel 2026-10-07 ("one side a little longer so that we can build A to C"; A
-                            # 5 1/2 chosen over A 6 / C 4 1/2); was 5 (2026-10-07 morning), 10 (2026-10-06)
+n0 = 5                      # CONFIRMED: Samuel's photos 2026-10-08 (5 full stones in course 1)
 xyz_in_wall = [0.0, 0.0, 0.0]          # ASSUMPTION: leg A frame = wall frame (definition)
 rpy_in_wall_deg = [0.0, 0.0, 0.0]
 side = "right"              # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: ARES side 110 mm from the board plates (170 mm from the leg centreline)
+openings = [{ name = "window", u_from = 300.0, u_to = 700.0, courses = [2, 3] }]   # CONFIRMED: photos 2026-10-08
+                            # (courses 3 + 4, 400 mm wide, 300 mm of wall on both sides)
 [[wall.legs]]
 name = "B"
-n0 = 7                      # CONFIRMED: Samuel 2026-10-06 ("1.5 across": 1.52 m over the outer faces of A and C)
-xyz_in_wall = [1040.0, 62.69, 0.0]     # ASSUMPTION: butt corner at A's far end towards ARES (200 * 5.5 - 60,
-                            # 60 + 1.69 + 1.0)
+n0 = 9                      # CONFIRMED: Samuel's photos 2026-10-08 (9 full stones in course 1, through both corners)
+runs_through = true         # CONFIRMED: photos 2026-10-08 - B runs through its corner with A (butt_corner through="next")
+                            # and through the one with C (C butts: the default)
+xyz_in_wall = [1062.69, -60.0, 0.0]    # ASSUMPTION (corner_gap_mm): beyond A's far end, flush with A's outer face:
+                            # A + (200 * 5 + 60 + 1.69 + 1.0, -60)
 rpy_in_wall_deg = [0.0, 0.0, 90.0]
 side = "front"              # CONFIRMED: Samuel 2026-10-06 (B straight ahead of ARES driving into the C)
 dist = 840.0                # CONFIRMED: Samuel 2026-10-06 (front wall 840 mm, see [wall] dist_nominal)
 [[wall.legs]]
 name = "C"
-n0 = 5                      # CONFIRMED: Samuel 2026-10-06 ("1m back")
-xyz_in_wall = [977.31, 1402.69, 0.0]   # ASSUMPTION: butt corner at B's far end towards ARES (B + (-62.69, 200 * 7 - 60))
+n0 = 5                      # CONFIRMED: Samuel's photos 2026-10-08 (5 stones from B's inside face, door included)
+xyz_in_wall = [1000.0, 1680.0, 0.0]    # ASSUMPTION (corner_gap_mm): butt corner at B's far end towards ARES (B runs
+                            # through): B + (-(60 + 1.69 + 1.0), 200 * 9 - 60); free end at x = 0 like A's start
 rpy_in_wall_deg = [0.0, 0.0, 180.0]
 side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: as leg A
+start_half = true           # CONFIRMED: photos 2026-10-08 (the piece at the free end: course 1 half + full + half)
+openings = [{ name = "door", u_from = 0.0, u_to = 600.0, courses = [0, 3] }]   # CONFIRMED: photos 2026-10-08 (600 mm
+                            # wide at B, all courses)
 
 [deck]
 holder_z = 4.0              # ASSUMPTION (2026-10-08, Samuel: one MDF plate on the deck with the peg holes,
@@ -357,15 +362,15 @@ dictionary = "DICT_APRILTAG_36h11"
 # centre: u = 100 + 200 k (k = block index from the leg start, k < 0 / k >= n0 = spare block beyond a free leg end),
 # v = block face 60 + 55 = 115 mm. Origin = top-left board corner -> (u - 40, 115 + 32, MDF 4 + paper 0.1) in the leg
 # frame. The positions follow from the PLACEHOLDER block size in [plates].
-# C layout A 5 / B 7 / C 5 (2026-10-07, tools/plan_layout.py --evaluate --legs 5,7,5; the L layout of 2026-10-05 in
-# tests/conftest.py L_BOARDS): 7 of the 8 existing boards (Samuel: no new markers / boards; the engraved "u = ..." on
-# the plates is wrong, the names/ids are what count; W7 (ids 100-109) stays a spare - with A at 5 stones no further
-# plate fits without overlapping its neighbour) on the INSIDE faces of the legs (ARES side), no spare block, plates
-# clear of each other, the other legs, ARES at its stops and the routes. A stop only looks at boards of its OWN leg,
-# with looks clear of the wall built by the end of the stop, of the ARES chassis and of a full magazine
-# (tools/make_job.py, mauer.armcheck): A 2 boards, B 3, C 2 -> 2, 3, 3, 2 usable boards at the 4 stops (+-50 mm
-# ARES margin and the arrival standoff), worst baseline 600 mm. Boards of legs B / C are in their leg frame, so they
-# follow the corner offsets (rib + corner gap).
+# C of 2026-10-08 (A 5 with a window, B 9 through both corners, C 5 with a door; tools/plan_layout.py --evaluate
+# --legs 5,9,5): all 8 existing boards W0..W7 (Samuel: no new markers; W7 = ids 100-109, the spare until now) on the
+# INSIDE faces of the legs (ARES side), plates clear of each other, the other legs, ARES at its stops (with the UR
+# control box) and the routes. A stop only looks at boards of its OWN leg, with looks clear of the wall built by the
+# end of the stop, of the ARES chassis and of a full magazine (tools/make_job.py, mauer.armcheck): boards per stop
+# [A 2, B 4, B 4, C 2], worst baseline 600 mm. C has blocks only at its 400 mm piece (no base block in the door,
+# mauer.floor.plate_site): W6 on C's block k = 3, W7 on a SPARE block beyond C's free end (k = 6). Boards of legs B / C
+# are in their leg frame, so they follow the corner offsets (rib + corner gap). The engraved "u = ..." on the plates is
+# wrong, the names / ids are what count. Board places of the C before: config/variants/c_a55.toml.
 [[targets]]
 name = "W0"
 parent = "wall"
@@ -404,16 +409,23 @@ rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W5"
 parent = "wall"
-leg = "C"           # block k = 1 of leg C (u 300)
+leg = "B"           # block k = 7 (u 1500)
 first_id = 80
-xyz = [260.0, 147.0, 4.1]
+xyz = [1460.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W6"
 parent = "wall"
-leg = "C"           # block k = 4 (u 900, C's free end)
+leg = "C"           # block k = 3 of leg C (u 700, the piece beside the door)
 first_id = 90
-xyz = [860.0, 147.0, 4.1]
+xyz = [660.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W7"
+parent = "wall"
+leg = "C"           # SPARE block k = 6 beyond C's free end (u 1300)
+first_id = 100
+xyz = [1260.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "S0"
@@ -504,8 +516,12 @@ window_clearance = 0.3      # ASSUMPTION: per side around the plain station plat
 # on the ARES side of the row.
 # Station frame: origin at the front-left corner of the station area (ARES side = the windows' front edge), x along
 # the row, y away from ARES, z up from the floor.
-xyz_in_wall = [-1837.5, 1470.0, 0.0]  # ASSUMPTION: dock where the table station had it, (-1100, 840) in the wall
-                                      # frame, ARES facing +y; the row centre line 840 mm in front of base_link
+xyz_in_wall = [-2437.5, 1470.0, 0.0]  # ASSUMPTION: 600 mm farther from the C than before (2026-10-08: with the UR
+                                      # control box 250 mm beyond ARES's back end and leg B 1.8 m long, ARES at B's far
+                                      # stop - and backed off from it - came to 30 mm from the station area, < [routes]
+                                      # clearance_mm); dock (-1700, 840) in the wall frame, ARES facing +y; the row
+                                      # centre line 840 mm in front of base_link (was -1837.5 / dock -1100, where the
+                                      # table station had it)
 rpy_in_wall_deg = [0.0, 0.0, 0.0]     # ASSUMPTION
 table_z = 0.0               # ASSUMPTION (floor station 2026-10-06): no table, the stones stand on the MDF piece on the
                             # floor (the "table" slab of the models lies under the floor); table_size is the station

@@ -555,7 +555,7 @@ def station_table_poly(cfg: Mapping, T_wall_station) -> list[Pt]:
 @dataclass
 class PlateSite:
     """A floor plate on the ARES side of a leg, its notched edge against the base blocks, centred on block k
-    (k < 0 or k >= n0: on a spare block beyond a free leg end). u = 100 + 200 k (block centre), board centre at
+    (k < 0 or k >= n0: on a spare block beyond a free leg end; also in a door = an opening in course 0, 2026-10-08). u = 100 + 200 k (block centre), board centre at
     v = block_width/2 + plate_depth/2 in the leg frame ([plates], PLACEHOLDER block size)."""
     leg: str
     k: int
@@ -588,7 +588,9 @@ def plate_site(cfg: Mapping, leg: Any, k: int, board_size_mm: tuple[float, float
     xyz = (u - w_b / 2.0, vc + h_b / 2.0, float(pc["mdf_t"]) + float(pc["paper_t"]))
     plate = [leg.to_wall(a, b) for a, b in ((u - L / 2, v0), (u + L / 2, v0), (u + L / 2, v0 + D), (u - L / 2, v0 + D))]
     block = None
-    if k < 0 or k >= math.floor(leg.n0 + 1e-9):            # beyond the full stones of course 0 (x.5 legs: the half)
+    in_door = any(getattr(o, "c_from", 1) == 0 and o.u_from < u + bl / 2 - 1e-6 and o.u_to > u - bl / 2 + 1e-6
+                  for o in getattr(leg, "openings", ()) or ())  # 2026-10-08: no base block in a course-0 opening
+    if k < 0 or k >= math.floor(leg.n0 + 1e-9) or in_door:  # beyond the full stones of course 0 (x.5 legs: the half)
         block = [leg.to_wall(a, b) for a, b in ((u - bl / 2, -bw / 2), (u + bl / 2, -bw / 2), (u + bl / 2, bw / 2),
                                                 (u - bl / 2, bw / 2))]
     return PlateSite(leg.name, k, u, xyz, (180.0, 0.0, 0.0), plate, block)
