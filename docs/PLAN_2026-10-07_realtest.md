@@ -144,12 +144,14 @@ Photos input/Medien (16..19).jpg = courses 4..1 seen from above (dark full, ligh
 through BOTH corners; one arm 5 stones (1.0 m) with a window in courses 3+4 (400 mm wide, 300 mm from both ends); the
 other arm only a 400 mm piece at its free end + a 600 mm door (all courses) next to the back leg. CB3 control box
 462 x 418 x 268 mm (UR5 manual).
-- [ ] E1 controller box in the config + armcheck.ares_boxes (motion guard, look checks) + RoboDK station; tests
-- [ ] E2 calib_handeye orbit: views and moves checked against ARES (chassis, controller, floor); T4 text
-- [ ] E3 magtest rebuilt with the box, SIM run; docs
-- [ ] E4 RoboDK station: ARES STEP turned by 180 deg for frame_x_points_to "rear" (scanners / steering at the right end)
-- [ ] E5 wallplan: openings (door, window), back leg through both corners, free first stone of a detached piece,
-      per-leg bond parity; config legs; make_job / guides / stone list / plan_layout (existing boards W0-W7 re-placed)
+- [x] E1 controller box in the config + armcheck.ares_boxes (motion guard, look checks) + floor.AresShape + RoboDK
+      station (57863ab, 2a181e1); reach key covers the ARES layout (465a2fe)
+- [x] E2 calib_handeye orbit: views and moves checked against ARES (chassis, controller); T4 text (cc36381) - found a
+      25 deg tilt bringing a jaw to 9 mm from the deck
+- [x] E3 magtest with the box: HMI SIM 40/40 (rebuild data/jobs/magtest.json after the last config change)
+- [x] E4 RoboDK station: ARES STEP turned by 180 deg for frame_x_points_to "rear", controller merged (2a181e1)
+- [x] E5 wallplan openings / start_half / rule 2 per piece (dfac8be); main config = the new C, old main = variant
+      c_a55, boards W0-W7 re-placed, station 600 mm farther (d8f43bc); guides + stone list (4928d7c)
 - [ ] E6 reach tables (new mount) + RoboDK full sim + video; guarded world sims; full test suite green
 - [ ] E7 report for Samuel (what changed, assumptions, open points: ADS port 48898, mirroring the ARES moves)
 

@@ -188,6 +188,23 @@ camera only on **Prepare / Connect**. ARES moves keep operating pattern A (the H
 MANUAL / HALT, the sequencer's AresAds writes only the move fields) - in ONE process, tested against the fake PLC,
 **not yet on the robot**. Usage and limits: `hmi/README.md`; design: `docs/HMI_DESIGN.md`.
 
+## C with a door and a window, controller on ARES (2026-10-08 evening)
+
+Samuel's photos (`input/Medien (16..19).jpg`, courses 4..1 from above) and "the whole controller sits at the other end
+of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config/variants/c_a55.toml`):
+- **Legs**: B (back, 9 stones = 1.8 m, in front of ARES at 840 mm) runs through BOTH corners; A (right, 5 stones) with
+  a **window** in courses 3+4 (400 mm wide, 300 mm from both ends); C (left, 5 stones) is only a 400 mm piece at its
+  free end beside a **door** 600 mm wide at B. Openings are cut out of the leg's running bond with half stones at the
+  jambs (`wallplan.Opening`, `layout_leg`; A's window courses differ from the photo so that no joint stands over a
+  joint, C's piece is the photo, `start_half`). 67 stones (53 full, 14 half), built B, A, C in 4 stops, 5 station
+  trips; boards W0..W7 re-placed (W7 on a spare block beyond C's free end, no base block in the door).
+- **Controller**: `[ares] controller_*` (CB3 box 462 x 418 x 268 mm, ASSUMPTION position) in the arm's collision boxes
+  (motion guard, look checks, `calib_handeye orbit`), in the ARES footprint (routes, rotations; the pick-up station
+  moved 600 mm farther from the C) and in the RoboDK ARES object; the ARES STEP is turned by 180 deg in RoboDK because
+  the UR sits at the vehicle rear (`[ares] frame_x_points_to`).
+- Floor guides `targets/guides/` (the strip runs through the door and on to W7's spare block), stone list
+  `results/steinliste.pdf`, layout `results/l_wall_plan.md`.
+
 ## Magazine dry run on ARES (2026-10-08)
 
 Samuel: test the UR's motions on ARES quickly, before the big simulation - two stones through every magazine slot,
