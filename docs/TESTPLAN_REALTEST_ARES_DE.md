@@ -212,7 +212,7 @@ Alle Befehle laufen im Repo-Wurzelverzeichnis `C:\Users\samue\ARES_Mauer` mit `p
 
 **Zweck:** Alle Geräte sind unter den erwarteten Adressen erreichbar, ohne dass sich etwas bewegt. Alle Beteiligten kennen die Stop-Funktionen. Das Zusammenspiel der Not-Halte ist bekannt.
 
-**Voraussetzungen:** ARES eingeschaltet, PLC in RUN, C6030-Laufzeit gestoppt. UR-Steuerung an, Arm "Power on" (die Bremsen dürfen zu bleiben), damit die Werkzeugspannung die Kamera versorgt. Der Laptop hängt am ARES-Netz. Keine HMI läuft.
+**Voraussetzungen:** ARES eingeschaltet, PLC in RUN, C6030-Laufzeit gestoppt. UR-Steuerung an. Die Kamera wird seit 2026-10-08 per PoE vom Switch versorgt (Kamera, UR und ARES an einem Switch zur Laptop-NIC "Ethernet"); das Hirose-Kabel (UR-Werkzeugspannung) ist an der Kamera **abgesteckt**, nie beides gleichzeitig. Der Laptop hängt am Switch. Keine HMI läuft.
 
 **Ablauf:**
 1. Software-Stand: `git log -1 --oneline` und `git status` (sauber) notieren.

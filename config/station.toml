@@ -222,8 +222,11 @@ working_dist = 320.0        # ASSUMPTION: lens -> marker [mm]; 181 × 151 mm fie
                             # (Samuel, table test): focus set on the calib board at ~320 mm from the lens front (ruler),
                             # iris F5.6, both rings locked; reference frame data/cam_check/live/
                             # live_2026-10-06_153031.png. Changing them = new intrinsics + hand-eye calibration
-power = "UR tool connector, 24 V"  # ASSUMPTION (recommendation 2026-10-02): max 600 mA (UR5 manual 1.9.4), camera
-                            # ≈ 0.18 A at 24 V. The gripper EHPS-20-A (max 2 A at 24 V) cannot run from it.
+power = "PoE from the switch" # CONFIRMED: Samuel 2026-10-08 ("die Kamera wird ueber PoE direkt vom Switch gespiesen";
+                            # camera, UR and ARES on one switch to the laptop NIC "Ethernet"). The Hirose supply (UR
+                            # tool connector, used until 2026-10-06 with tool voltage 24 V) must be unplugged at the
+                            # camera - never both (power_max_w). The gripper EHPS-20-A (max 2 A at 24 V) never ran from
+                            # the tool connector.
 ip = "192.168.50.10"        # CONFIRMED 2026-10-06: persistent IP, mask /24, gateway 192.168.50.1, DHCP off (ids_ipconfig
                             # -p ... -g 192.168.50.1 --enable-persistent-ip --disable-dhcp -R); 5/5 grabs, 123 ms. Own
                             # subnet: no clash with ARES 192.168.1/24, 192.168.200/24, 169.254/16 (MA 10_robot/

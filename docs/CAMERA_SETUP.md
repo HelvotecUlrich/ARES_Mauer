@@ -68,6 +68,10 @@ the camera NIC (`Disable-NetAdapterBinding -Name "<NIC>" -ComponentID HKR_neuGEV
 
 ## 3. Power and wiring
 
+**Since 2026-10-08 (Samuel): PoE from the switch** (camera, UR and ARES on one switch to the laptop NIC "Ethernet");
+the Hirose cable to the UR tool connector is unplugged at the camera - never both. The UR tool-connector supply below
+was the setup of the 2026-10-06 table test.
+
 - Camera: **12–24 V on the Hirose HR25 8-pin, pin 8 = VCC, pin 1 = GND, max 4.2 W – or PoE, never both** (IDS: both at
   once can destroy the camera). Planned: UR tool connector 24 V (CB3: max 600 mA, UR5 manual 1.9.4; camera ≈ 0.18 A).
   Lumberg RKMV 8-354 cable: grey = power → pin 8, red = 0 V → pin 1. The tool flange is GND.
