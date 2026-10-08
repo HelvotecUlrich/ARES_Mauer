@@ -40,3 +40,21 @@ def test_the_footprint_and_the_rotation_circle_include_the_controller(cfg):
     assert max(turned) == pytest.approx(810.0)                         # the box turns with ARES
     bare = floor.AresShape(1120.0, 600.0)
     assert bare.radius == pytest.approx(math.hypot(560.0, 300.0))      # without a controller: as before
+
+
+def test_the_reach_key_follows_the_ares_layout(cfg):
+    """RoboDK's reach study checks the arm against the ARES object - turned for the UR at the rear, with the control
+    box (2026-10-08): both enter the cache key, a stale table cannot be reused after they change."""
+    import copy
+
+    from mauer import reach_cache
+    k = reach_cache.key(cfg, 840.0)
+    c = copy.deepcopy(cfg)
+    c["ares"]["controller_out_mm"] = 300.0
+    assert reach_cache.key(c, 840.0) != k
+    c = copy.deepcopy(cfg)
+    c["ares"]["frame_x_points_to"] = "front"
+    assert reach_cache.key(c, 840.0) != k
+    c = copy.deepcopy(cfg)
+    c["ares"]["step_file"] = "other.stp"                  # not part of the layout key (the mesh name only)
+    assert reach_cache.key(c, 840.0) == k

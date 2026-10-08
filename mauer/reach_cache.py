@@ -6,8 +6,10 @@ A reach table is {course: {u_rel: ok}}: can the UR5 place a full stone of that c
 left, right, rear; robodk/simulate.py reach_table). Its cache key covers everything the table depends on: the UR5
 mount, the tool, the stone (without [brick] rib_mm - the ribs only place the corner of a wall of legs, they are part of
 the stone mesh the check uses - and without mass_kg, which does not change what the arm reaches; dropped from the key
-2026-10-06 when the stone was weighed, the cached tables re-keyed), [wall] base_z / courses, [study] approach, the wall distance and the side (the side
-enters the key only when it is not "front", so the front tables cached before 2026-10-06 keep their keys).
+2026-10-06 when the stone was weighed, the cached tables re-keyed), [wall] base_z / courses, [study] approach, the wall
+distance and the side (the side enters the key only when it is not "front", so the front tables cached before
+2026-10-06 keep their keys), and the ARES layout RoboDK checks against ([ares] frame_x_points_to and controller_*,
+2026-10-08).
 
 File layout (version 2, 2026-10-06 - one table per key, so several wall distances / sides live side by side):
     {"version": 2, "tables": {key: {"dist": mm, "side": "front" | "left" | ..., "table": {course: {u_rel: ok}}}}}
@@ -29,8 +31,11 @@ def key(cfg: Mapping, dist: float, side: str | None = None) -> str:
     """Cache key of the reach table for cfg at wall distance dist [mm], wall on `side` of ARES (default [wall] side)."""
     side = str(side or cfg["wall"].get("side", "front"))
     brick = {k: v for k, v in cfg["brick"].items() if k not in ("rib_mm", "mass_kg")}
+    a = cfg.get("ares", {}) or {}
+    layout = {k: a[k] for k in ("frame_x_points_to", "controller_out_mm", "controller_top_mm", "controller_size_mm")
+              if k in a}                                # the ARES object RoboDK checks against (2026-10-08)
     parts = ["family-v2", cfg["ur5"], cfg["tool"], brick, cfg["wall"]["base_z"], cfg["wall"]["courses"],
-             cfg["study"]["approach"], dist] + ([] if side == "front" else [side])
+             cfg["study"]["approach"], dist] + ([] if side == "front" else [side]) + ([layout] if layout else [])
     src = json.dumps(parts, sort_keys=True)
     return hashlib.sha1(src.encode()).hexdigest()[:12]
 
