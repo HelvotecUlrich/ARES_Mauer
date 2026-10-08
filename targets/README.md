@@ -5,7 +5,7 @@ and `tools/make_plates.py` (DXF). Regenerate after any config change; do not edi
 
 | Board | Use | Markers | Size (board / paper with quiet zone) | MDF plate |
 |---|---|---|---|---|
-| W0–W7 | wall: L layout 2026-10-05, see "4. Place (wall)" (was one every 800 mm on the straight wall) | AprilTag 36h11, ids 30–39 … 100–109 | 80 × 64 / 112 × 96 mm | 220 × 110 mm, notches on the block joints |
+| W0–W7 | wall: C layout 2026-10-07 (W7 spare), see "4. Place (wall)" (was one every 800 mm on the straight wall) | AprilTag 36h11, ids 30–39 … 100–109 | 80 × 64 / 112 × 96 mm | 220 × 110 mm, notches on the block joints |
 | S0, S1 | pick-up station (layout still open) | ids 200–209, 210–219 | 80 × 64 / 112 × 96 mm | 140 × 132 mm, plain |
 | calib | camera + hand-eye calibration on the ARES deck | DICT_5X5_100, ids 0–43 | 165 × 120 / 195 × 150 mm | 223 × 186 mm, plain |
 

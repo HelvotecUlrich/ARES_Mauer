@@ -4,7 +4,7 @@
 |---|---|
 | Dokument | Testplan für die ersten Realtests des Mauerroboters (UR5 CB3 auf ARES) mit der Mauer-HMI |
 | Stand | 2026-10-08, Entwurf. Samuel gibt ihn vor T0 frei |
-| Software-Basis | `main` 7ab0be8 (Planung, Motion Guard, RoboDK-gestempelte Jobs, PolyScope-3.3-IK-Prüfung 8894751, Preflight-Blocker für PLACEHOLDER 7d9459f, Konfig-Hash ohne `[hmi*]` fce214f) und Branch `hmi-integration` a443ba5 (Mauer-HMI mit den Review-Korrekturen vom 2026-10-08, 7ca642c–a443ba5; noch **nicht** in `main`, siehe S1) |
+| Software-Basis | `main` nach dem Merge der Mauer-HMI (Plan D6, 2026-10-08): Planung, Motion Guard, RoboDK-gestempelte Jobs, PolyScope-3.3-IK-Prüfung 8894751, Preflight-Blocker für PLACEHOLDER 7d9459f, Konfig-Hash ohne `[hmi*]` fce214f, Mauer-HMI mit den Review-Korrekturen vom 2026-10-08 und der REAL-Start-Checkliste (S1) |
 | Konfiguration | `config/station.toml`, Hauptkonfiguration "C A 5½ → B → C" (ohne Variante). Die Variante `c_acb` wird hier nicht getestet |
 | Job | `data/jobs/nominal_C_robodk.json` (RoboDK-verifiziert). Er wird nach dem Konfigurations-Freeze neu erzeugt (Abschnitt 3.5) |
 | Quellen | README.md, docs/ARCHITECTURE.md, docs/CAMERA_SETUP.md, hmi/README.md, docs/HMI_DESIGN.md §14 und §17, Docstrings in tools/*.py, `mauer/sequencer.py` `preflight_real`, `mauer/ares/ads.py`, targets/guides/README.md, targets/guides/floor_plan.md |
@@ -129,12 +129,12 @@ Versorgung: Kamera über den UR-Werkzeugstecker mit 24 V ([camera] power, ASSUMP
 
 | Nr. | Punkt | Spätestens vor |
 |---|---|---|
-| S1 | `hmi-integration` (mit den Review-Korrekturen) in `main` mergen, mit allem, was `main` seitdem bekommen hat (21b7731 bis 7ab0be8; Plan D6). Dabei: in `hmi/core/rigs.py` `MotionGuard(..., approach_mm=job.approach_mm)`; `SimRig` mit Motion Guard; HMI-Start bei Stop k > 0 wie `tools/run_job.py` (Magazinbelegung `restart_fill`, `declare_placed`, Abfrage "Backen leer"); die pauschale 3.3-Sperre `IK_GUARD_33` in `hmi/core/preflight.py` durch die Prüfung von `[ur] ik_check` ersetzen (C4) | T1 |
+| S1 | **Erledigt** (Plan D6, 2026-10-08): `hmi-integration` ist in `main`. Dabei: `MotionGuard(..., approach_mm=job.approach_mm)` in `hmi/core/rigs.py`; SIM mit Motion Guard (Häkchen "SIM motion guard", Standard an); REAL-Start mit Checkliste und Magazinbelegung (C1); Start bei Stop k > 0 mit dem Lauf-Log des unterbrochenen Laufs ("earlier run: Run log...") oder "start stop untouched" (C2); `IK_GUARD_33` nur noch bei `[ur] ik_check = "has_solution"` auf PolyScope 3.3 (C4) | T1 |
 | S2 | PolyScope-3.3-Variante von `ik_guard`: **erledigt** in `main` 8894751 (`[ur] ik_check = "get_inverse_kin"`). Offen ist nur die Prüfung am Roboter, dass das `qnear`-Schlüsselwort auf 3.3 funktioniert (T3 Schritt 0) | T5b |
 | S3 | Tests grün: `py.exe -m pytest -q tests` | Freeze |
 | S4 | Freeze mit RoboDK-Stempel (3.5) | T5b |
 | S5 | SIM-Probe auf dem Testlaptop bestanden (T1a) | T1b |
-| S6 | Empfohlen: Die HMI zeigt vor einem REAL-Start die Magazinbelegung und fragt "Backen leer / Magazin wie Liste / Station voll" ab (Anhang C1). Bis dahin gilt die manuelle Checkliste in T5b | T5b |
+| S6 | **Erledigt** mit S1: Nach **Start** (REAL) und den Prüfungen zeigt die HMI in der Leiste über den Tabs "REAL start - checklist" mit der Magazinbelegung und fragt "Backen leer / Magazin wie Liste / Station voll" ab (**Checked - start** / **Not ready**, Anhang C1) | T5b |
 
 ### 3.3 Material und Aufbau
 
@@ -256,12 +256,12 @@ Alle Befehle laufen im Repo-Wurzelverzeichnis `C:\Users\samue\ARES_Mauer` mit `p
 1. `py.exe -m hmi --ares --job data/jobs/nominal_C_robodk.json` (unter Windows auch `hmi.cmd --ares --job ...`). Der Titel lautet "Mauer HMI - … - config main - …", ohne "ADS off".
 2. ARES-control-Tab: Statusleiste "Connected", PLC-Build, Interface v2, PLC HB läuft. Startsequenz **Safety Run** → **AMR Reset** → **Start** → **Manual**, bis Zustand 7 MANUAL MODE. Diagnostics ohne Fehler, Akkustand im Battery-Tab notieren.
 3. Mauer-Tab: Der Job und "config main" sind sichtbar. REAL, `stops 0 to 0`, Schrittmodus an, camera loop an, save images an, dann **Prepare / Connect**. Das öffnet den UR-Link, die eigene ADS-Verbindung des Sequencers, die IDS-Kamera und die Kalibrierdateien.
-4. Die Preflight-Liste lesen. **Start** bleibt gesperrt, solange ein Punkt blockiert; in Phase 1 ist das erwartet. Bekannte Blocker vor dem Freeze (Stand `main` 7ab0be8), alle mit der Quelle job/config:
+4. Die Preflight-Liste lesen. **Start** bleibt gesperrt, solange ein Punkt blockiert; in Phase 1 ist das erwartet. Bekannte Blocker vor dem Freeze (Stand nach dem HMI-Merge), alle mit der Quelle job/config:
    - `[ur5] mount_z PLACEHOLDER`, `[ur5] mount_rz PLACEHOLDER`, `[deck] holder_z PLACEHOLDER`, `[ur] payload_cog_mm PLACEHOLDER`, `[boards.ref] square_mm PLACEHOLDER`, `[camera] settle_s PLACEHOLDER` (je "- measure it (no camera correction: …)");
    - `[half_brick] mass_kg <= 0 (UNKNOWN)` und `[half_brick] height, length, pin_across, pin_length, width PLACEHOLDER`;
    - `the planning code / CAD changed since the RoboDK verification (7a98fab5)` und `the config (config/station.toml) changed since the RoboDK verification (7a98fab5)` (bis zum neuen Stempel, Plan D8 bzw. Freeze);
    - `config/station.toml changed since the job was built (sha256 differs) - rebuild the job` (bis zum neuen Stempel);
-   - Quelle UR: keiner, wenn S1 den pauschalen Blocker `IK_GUARD_33` durch die Prüfung von `[ur] ik_check` ersetzt hat; sonst `PolyScope 3.3: get_inverse_kin_has_solution missing …`.
+   - Quelle UR: keiner (`[ur] ik_check = "get_inverse_kin"`; `PolyScope 3.3 has no get_inverse_kin_has_solution …` erscheint nur bei `ik_check = "has_solution"`).
    - Punkte der Quellen HMI, ARES oder camera dürfen nicht auftreten.
 5. UR-Tab: RTDE-Alter < 0,5 s, Controller 3.3, Robot mode RUNNING, Safety NORMAL, Gelenkwinkel wie am Pendant. Camera-Tab: **Grab** liefert ein Bild; **Live** (1 Hz) ein- und wieder ausschalten. Statusleiste über den Tabs prüfen.
 6. HALT ohne Bewegung: Leertaste. Die Statuszeile zeigt "HALT sent", ARES bleibt in MANUAL. Die HMI zeigt "HALTED"; URLink und die ADS-Verbindung des Sequencers sind gesperrt, bis **Start** (bzw. später **Resume**) gedrückt wird. Im Run-Log stehen `halt` und `halt_result` (was der UR-Abbruch gemacht hat).
@@ -444,7 +444,7 @@ Alle Befehle laufen im Repo-Wurzelverzeichnis `C:\Users\samue\ARES_Mauer` mit `p
 1. `py.exe -m hmi --ares --job data/jobs/nominal_C_robodk.json` und MANUAL herstellen (ARES-control-Tab).
 2. ARES auf die Startmarke von Stop 0 stellen (Jog oder Relativfahrt). Dann im ARES-control-Tab Relativfahrt **↓ Back** 30 mm bei 50 mm/s, **GO** zweimal. ARES steht so absichtlich 30 mm hinter der Sollage; das bleibt unter [sequencer] max_jump_mm von 50 mm. Warten, bis ARES steht (Start ist gesperrt, solange ARES fährt).
 3. Mauer-Tab: REAL, **`stops 0 to 3`**, Schrittmodus an, camera loop an, save images an. **Prepare / Connect**; die Anzeige lautet "REAL preflight ok".
-4. **Checkliste vor Start** (die HMI fragt das noch nicht ab, Anhang C1):
+4. **Checkliste vor Start.** Die ersten drei Punkte fragt die HMI nach **Start** ab (Schritt 5); die übrigen prüft der Bediener vorher:
    - ☐ Backen leer
    - ☐ Magazin wie Liste, alle anderen Plätze leer
    - ☐ Station voll
@@ -452,7 +452,7 @@ Alle Befehle laufen im Repo-Wurzelverzeichnis `C:\Users\samue\ARES_Mauer` mit `p
    - ☐ beide Not-Halte besetzt
    - ☐ Speed-Slider niedrig
    - ☐ HMI ist das aktive Fenster (kein rotes Banner)
-5. **Start.** Die HMI prüft den Preflight unmittelbar vor der ersten Bewegung noch einmal (die Liste wird dabei neu geschrieben). Die Bestätigungen erscheinen in der Leiste über den Tabs. Steht der Arm genau in der Parkpose, gibt es kein anfängliches "robot: park":
+5. **Start.** Die HMI prüft den Preflight unmittelbar vor der ersten Bewegung noch einmal (die Liste wird dabei neu geschrieben). Dann zeigt die Leiste über den Tabs "REAL start - checklist" mit der Magazinbelegung (Platz: Steintyp): mit dem Magazin vergleichen, **Checked - start** (bei Abweichung **Not ready**: nichts bewegt sich). Die weiteren Bestätigungen erscheinen in derselben Leiste. Steht der Arm genau in der Parkpose, gibt es kein anfängliches "robot: park":
    - `robot: look stop0-W0 (W0)`: Go. Das ist die erste Bewegung, die der Motion Guard plant. Camera-Tab: W0 ist grün (accepted), mit Eckenzahl und RMS in px.
    - `robot: look stop0-W1 (W1)`: Go.
    - Camera-Tab "Last frame fit": Fit-RMS, Fehler gegen Soll etwa 30 mm, Sprung < 50 mm. Wall-pose-Tab: gemessene ARES-Lage.
@@ -689,8 +689,8 @@ Alle Befehle laufen im Repo-Wurzelverzeichnis `C:\Users\samue\ARES_Mauer` mit `p
 | Leiste "Pick-up station empty …" (**Refilled** / **Abort run**) | Die Station hat zu wenig Steine für die nächsten Steinarten | Alle 16 Halter nach Liste füllen → **Refilled** |
 | Rotes Banner "Keyboard HALT (Space / Esc) inactive" | Ein anderes Fenster ist aktiv; Leertaste / Esc erreichen die HMI nicht | in die HMI klicken; der HALT-Knopf wirkt trotzdem |
 | Live stoppt, "grab failed" | Kabel, IP, Zeitüberschreitung | Netz und Kabel prüfen; **Release** → **Prepare / Connect** |
-| HMI abgestürzt oder geschlossen | Der Laufzustand ist verloren. ARES stoppt (Abbruch 500 ms nach Ende des Heartbeats, MANUAL fällt nach 2 s); ein laufender UR-Block fährt zu Ende | UR bei Bedarf am Pendant stoppen. HMI mit `--ares` neu starten, MANUAL herstellen. ARES auf die Startmarke des Stops k fahren. **Teilweise gebauter Stop k:** `py.exe tools/run_job.py data/jobs/nominal_C_robodk.json --real --step --stops k: --resume-log data/runs/<Ordner>`. **Stops < k fertig, Stop k unberührt:** `… --stops k: --stop-untouched`. Das ist Muster A mit zwei Prozessen wie in E003; `run_job` nennt die Magazinbelegung und fragt Backen, Magazin und Station ab |
-| Neuer Lauf ab Stop k > 0 | Der Sequencer nimmt ARES auf der Startmarke von k an und Stops < k als gebaut | ARES vorher auf die Startmarke von k fahren; die Magazinbelegung für den Neustart liefert `run_job.py` (Zeile oben) |
+| HMI abgestürzt oder geschlossen | Der Laufzustand ist verloren. ARES stoppt (Abbruch 500 ms nach Ende des Heartbeats, MANUAL fällt nach 2 s); ein laufender UR-Block fährt zu Ende | UR bei Bedarf am Pendant stoppen. HMI mit `--ares` neu starten, MANUAL herstellen. ARES auf die Startmarke des Stops k fahren. Mauer-Tab: REAL, `stops k to …`. **Teilweise gebauter Stop k:** "earlier run: Run log..." → den Ordner des unterbrochenen Laufs wählen (seine Steine gelten als gebaut, auch die, die er selbst aus einem früheren Log übernommen hat). **Stops < k fertig, Stop k unberührt:** "start stop untouched" anhaken. Ohne eins von beiden verweigert die HMI den Start. Die Checkliste nach **Start** nennt die Magazinbelegung für den Neustart. Ersatz ohne HMI: `py.exe tools/run_job.py data/jobs/nominal_C_robodk.json --real --step --stops k: (--resume-log data/runs/<Ordner> \| --stop-untouched)` |
+| Neuer Lauf ab Stop k > 0 | Der Sequencer nimmt ARES auf der Startmarke von k an und Stops < k als gebaut | ARES vorher auf die Startmarke von k fahren; die Magazinbelegung für den Neustart zeigt die Checkliste nach **Start** (Zeile oben) |
 
 ---
 
@@ -887,12 +887,12 @@ Bezeichnung: `A c<Lage> i<Index>`, `h` = Halbstein. u ist die Mitte entlang des 
 
 ## Anhang C – Lücken in Software und Preflight, gefunden beim Schreiben (Plan D2)
 
-Stand 2026-10-08 (`main` 7ab0be8, Plan D9).
+Stand 2026-10-08 (nach dem HMI-Merge, Plan D6 und D9).
 
-1. **C1 (offen, mit S1):** Der REAL-Start in der HMI fragt nicht ab, ob die Backen leer sind, das Magazin wie die Liste belegt und die Station voll ist. Er zeigt auch die Start- bzw. Neustart-Belegung des Magazins nicht. `tools/run_job.py --real` kann beides seit 22340be. Bis das in der HMI ist, gilt die Checkliste aus T5b.
-2. **C2 (offen, mit S1):** Für einen Start bei Stop k > 0 hat die HMI kein Gegenstück zu `--stop-untouched` oder `--resume-log`. Nach dem Merge setzt der Sequencer die Stops < k als gebaut voraus, der Bediener sieht die Füllung aber nicht. Einen teilweise gebauten Stop setzt man nach einem HMI-Neustart nur über die CLI fort.
-3. **C3 (offen, mit S1):** In `hmi/core/rigs.py` fehlt `approach_mm=job.approach_mm` beim `MotionGuard` (Plan D6).
-4. **C4 (offen, mit S1):** `hmi/core/preflight.py` sperrt mit `IK_GUARD_33` jede Steuerung mit PolyScope 3.3 pauschal. Seit `main` 8894751 gibt es `[ur] ik_check`; die Sperre muss beim Merge durch dessen Prüfung ersetzt werden, sonst bleibt Start gesperrt.
+1. **C1 (erledigt, S1):** Der REAL-Start in der HMI zeigt die Start- bzw. Neustart-Belegung des Magazins und fragt Backen leer / Magazin wie Liste / Station voll ab (Leiste über den Tabs, vor der ersten Bewegung).
+2. **C2 (erledigt, S1):** Start bei Stop k > 0: Lauf-Log des unterbrochenen Laufs ("earlier run: Run log...", `RunOptions.resume_log`, Kette über `declared_placed`) oder "start stop untouched"; ohne eins von beiden verweigert die HMI den Start.
+3. **C3 (erledigt, S1):** `hmi/core/rigs.py` baut den `MotionGuard` mit `approach_mm=job.approach_mm`.
+4. **C4 (erledigt, S1):** `IK_GUARD_33` sperrt PolyScope 3.3 nur noch bei `[ur] ik_check = "has_solution"`; mit "get_inverse_kin" (station.toml) ist Start frei.
 5. **C5 (erledigt, 7d9459f):** `preflight_real` blockiert bei PLACEHOLDERn, die außerhalb der Kameraregelung wirken: [ur5] mount_z / mount_rz, [deck] holder_z, [ur] payload_cog_mm, [boards.ref] square_mm, [camera] settle_s.
 6. **C6 (offen):** Die HMI hat keinen Weg für eine `AresAds`-Testfahrt im eigenen Prozess ohne Lauf; HMI_DESIGN §14.1 wünscht sie am aufgebockten ARES. Ersatz in diesem Plan ist die absichtliche Korrekturfahrt in T5b. Vorschlag: ein Testfahrt-Knopf im Mauer-Tab (nur REAL, nur ohne Lauf, mit Bestätigung).
 7. **C7 (erledigt, fce214f):** `config_sha256` und der RoboDK-Stempel lassen die `[hmi*]`-Tabellen aus; HMI-Einstellungen machen Jobs und Stempel nicht mehr ungültig.

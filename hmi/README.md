@@ -46,6 +46,19 @@ stop, stone, action, UR mode / safety, ARES PLC state / move, twin state). The M
 run feedback board below it (stones, stop / leg / course, station trips and refills, ARES moves and corrections,
 camera fits, time per stone, preflight, warnings / errors; SIM placement statistics at the end; Open summary).
 
+## Starting a run
+
+- **SIM**: the motion guard plans every joint move as on the real robot (option "SIM motion guard", on by default;
+  off = the simulated arm moves straight, faster).
+- **REAL Start**: the preflight runs again right before the first motion; then the bar above the tabs shows "REAL
+  start - checklist" with the magazine fill (slot: stone type; the job's initial fill, or for a later start the
+  fill for the stones after the standing ones, `mauer.job.restart_fill`) and waits for **Checked - start** (gripper
+  jaws empty, magazine as listed and every other slot empty, pick-up station full). **Not ready** starts nothing.
+- **Start at stop k > 0** (as `tools/run_job.py --resume-log / --stop-untouched`): "earlier run: Run log..." takes the
+  run log folder of the interrupted run (its placed stones, and those it took over itself, stand: skipped and part
+  of the motion guard's wall), or "start stop untouched" confirms that no stone of stop k is placed yet (stops < k
+  count as built). REAL refuses the start without one of them.
+
 ## RoboDK digital twin
 
 The Twin tab (or `--twin`) starts an OWN RoboDK (`rdk_common.connect(new_instance=True)`) on the first free API
