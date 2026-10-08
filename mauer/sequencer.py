@@ -249,6 +249,18 @@ def read_log(path: str | Path) -> list[dict]:
     return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
 
+def standing_in_log(path: str | Path) -> set[tuple]:
+    """Stones that stand after the run of this log: its "placed" stones and those it took over as standing from an
+    earlier log ("declared_placed") - the input of Sequencer.declare_placed for the next run (resume chain)."""
+    out: set[tuple] = set()
+    for e in read_log(path):
+        if e.get("event") == "placed":
+            out.add(tuple(e["stone"]))
+        elif e.get("event") == "declared_placed":
+            out |= {tuple(k) for k in e.get("stones") or []}
+    return out
+
+
 @dataclass
 class RunResult:
     state: str = "idle"                    # idle | running | done | paused | error | aborted

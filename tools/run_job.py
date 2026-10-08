@@ -241,8 +241,8 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
         return 2
     standing = {t.key for st in job.stops[:a] for t in st.stones}
     if args.resume_log:
-        from mauer.sequencer import read_log
-        standing |= {tuple(e["stone"]) for e in read_log(args.resume_log) if e.get("event") == "placed"}
+        from mauer.sequencer import standing_in_log
+        standing |= standing_in_log(args.resume_log)
     fill = (mjob.restart_fill(job, standing) if standing
             else [(sid, job.magazine.initial_kinds.get(sid, "full")) for sid in job.magazine.initial_fill])
     print("load the magazine (slot: stone type), every other slot empty:\n  "
@@ -285,8 +285,8 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
                         confirm=confirm if args.step else None, save_images=args.save_images,
                         on_station_empty=station_empty)
         if args.resume_log:
-            from mauer.sequencer import read_log
-            placed = [tuple(e["stone"]) for e in read_log(args.resume_log) if e.get("event") == "placed"]
+            from mauer.sequencer import standing_in_log
+            placed = sorted(standing_in_log(args.resume_log))
             seq.declare_placed(placed, source=f"run log {args.resume_log}")
             print(f"{len(placed)} stones of the earlier run declared as standing")
         try:

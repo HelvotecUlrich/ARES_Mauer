@@ -295,7 +295,12 @@ class URRobot:
                                                  contact_mm=self.contact_mm, open_first=True,
                                                  payload_after=self.payloads[kind], reg_error=self.reg_error,
                                                  ik_check=self.ik_check)])
-        return self._run(body, name)
+        try:
+            return self._run(body, name)
+        except RobotError as e:
+            if getattr(e.result, "t_sent", 0.0) is None:     # never sent (HALT latch, URLink.inhibit): jaws as before
+                self.holding = None
+            raise
 
     def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str):
         T_base_frame = np.asarray(T_base_frame, float)
