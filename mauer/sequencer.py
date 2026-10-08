@@ -543,7 +543,7 @@ class Sequencer:
                 kind = args[2] if action == "pick_magazine" and len(args) > 2 else getattr(slot, "kind", "full")
                 self._set_held({"from": "magazine" if action == "pick_magazine" else "station",
                                 "slot": getattr(slot, "id", None), "kind": kind, "stone": None, "unknown": True})
-            elif action.startswith("place_") and self.held is not None:
+            elif self.held is not None:                    # a place, or a dry place of the magazine test
                 self._set_held({**self.held, "unknown": True})
             raise SequencerError(f"robot {action} failed ({desc}): {e} - the arm is NOT parked; ARES stays "
                                  "interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park "
@@ -1181,7 +1181,7 @@ class Sequencer:
             self.route_progress = None
             self.pending_why = None
             self.pose_status = "ok"
-        try:
+        def body() -> RunResult:
             if resumed and self.pose_status != "ok":
                 raise SequencerError(
                     f"resume refused: the ARES pose is {'unknown' if self.pose_status == 'unknown' else 'unverified'}"
@@ -1237,6 +1237,13 @@ class Sequencer:
             self.log.write("run_done", placed=len(self.placed), reloads=self.result.reloads,
                            ares_moves=self.result.ares_moves, corrections=self.result.corrections)
             return self.result
+        return self._ending(body)
+
+    def _ending(self, body: Callable[[], RunResult]) -> RunResult:
+        """body() of a run; its exceptions become the run's end state (result.state / error and the closing log
+        record): aborted, paused (a measurement failure too), error."""
+        try:
+            return body()
         except SequencerAborted as e:
             self.result.state, self.result.error = "aborted", str(e)
             self.log.write("run_aborted", error=str(e))

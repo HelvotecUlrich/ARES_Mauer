@@ -535,7 +535,7 @@ def validate(job: Job, boards: Iterable[str] | None = None) -> list[str]:
             p.append(f"stop {i}: index {st.index} (must be 0..n-1 in order)")
         if not all(np.isfinite([st.ares.x_mm, st.ares.y_mm, st.ares.theta_rad])):
             p.append(f"stop {i}: non-finite ARES pose")
-        if not st.looks:
+        if not st.looks and job.meta.get("kind") != "magtest":     # the magazine dry run measures nothing
             p.append(f"stop {i}: no look poses")
         for lk in st.looks:
             p += _look_problems(lk, f"stop {i} look {lk.name}")
@@ -896,18 +896,18 @@ def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS, repo: str | P
 
 # ── config provenance ─────────────────────────────────────────────────────────
 _TABLE = re.compile(rb"^\[\[?[A-Za-z_][A-Za-z0-9_.]*\]\]?\s*(#.*)?$")    # a table header in column 0
-_HMI_TABLE = re.compile(rb"^\[\[?hmi[\].]")
+_NOT_PLANNING = re.compile(rb"^\[\[?(hmi|magtest)[\].]")   # tables that are no planning input of the wall jobs
 
 
 def planning_bytes(data: bytes) -> bytes:
-    """A config file without its [hmi*] tables (from such a header to the next table header) and without blank lines:
-    the Mauer HMI's display settings do not change the plan, the job or what a RoboDK run verified (test plan
-    Anhang C7, 2026-10-08). Every column-0 "[" line of the config files is a table header
-    (tests/test_config_variants.py)."""
+    """A config file without its [hmi*] and [magtest] tables (from such a header to the next table header) and without
+    blank lines: the Mauer HMI's display settings (test plan Anhang C7, 2026-10-08) and the magazine dry run's settings
+    (mauer/magtest.py checks its own table) do not change the plan, the job or what a RoboDK run verified. Every
+    column-0 "[" line of the config files is a table header (tests/test_config_variants.py)."""
     out, skip = [], False
     for line in data.splitlines(keepends=True):
         if line.startswith(b"["):
-            skip = bool(_HMI_TABLE.match(line))
+            skip = bool(_NOT_PLANNING.match(line))
         if not skip and line.strip():                # blank lines (e.g. the one before an [hmi] table) do not count
             out.append(line)
     return b"".join(out)

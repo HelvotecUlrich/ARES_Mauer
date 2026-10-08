@@ -563,6 +563,17 @@ class SimRobot:
         self.world.mag_stones[slot.id] = (sid, T_ares_stone)
         self.world.n_reloaded += 1
 
+    def dry_place(self, T_base_frame, stone, hover_mm: float, dwell_s: float):
+        """Magazine dry run (mauer/magtest.py): the held stone to hover_mm above the place pose and back - it stays in
+        the jaws (URRobot.dry_place)."""
+        self._call("dry_place")
+        T = g.transl(0.0, 0.0, float(hover_mm)) @ np.asarray(stone.T_wall_tcp, float)
+        what = f"dry place {stone.key}"
+        if self.holding is None:
+            raise RobotError(f"{what}: no stone in the gripper", action="dry_place")
+        self._guard_above(T_base_frame, T, stone.qnear_rad, what)
+        self._move_tcp(np.asarray(T_base_frame, float) @ T, what)
+
     def is_parked(self) -> bool:
         return self.parked
 

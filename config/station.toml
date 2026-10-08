@@ -613,6 +613,28 @@ arrival_standoff_mm = 40.0  # ASSUMPTION: a route (stop move, leg change, statio
 search_step_mm = 50.0       # board search when none of the expected boards is usable (after long routes ARES can be
 search_rings = 2            # > 45 mm off the prediction): looks for ARES displaced by +-50 / +-100 mm, 8 directions
 
+[magtest]
+# Magazine dry run on ARES (Samuel 2026-10-08: "2 Steine jeweils mit dem UR auf dem ARES umplatzieren, alle
+# Magazinplaetze durchtesten, dazwischen den Arm mit Stein nach vorne bewegen und ein Platzieren nur simulieren, den
+# Stein nicht fallen lassen"): mauer/magtest.py, tools/make_magtest.py, docs/MAGTEST_DE.md. ARES stands still, no
+# camera, no ADS move. The two stones start as one stack on the first position (layers 1 + 2); per step the upper one
+# goes to the next position (layer 1), the lower one on top of it (layer 2) - there and back, so every position is
+# picked and filled in both layers and the magazine ends as it started. Every move: pick -> forward over a place pose
+# of the front leg -> lower to hover_mm above the place height, hold dwell_s, jaws stay CLOSED -> up -> put the stone
+# down in the next slot (real open).
+stones = 2                  # CONFIRMED: Samuel 2026-10-08 ("2 Steine")
+layers = 2                  # CONFIRMED: Samuel 2026-10-08 (layers 1 + 2; layer 3 would need a third stone below)
+hover_mm = 50.0             # CONFIRMED: Samuel 2026-10-08 ("50 mm drueber, 2 s halten")
+dwell_s = 2.0               # CONFIRMED: Samuel 2026-10-08
+front_courses = [0, 1, 2, 3]  # ASSUMPTION: every course of [wall] courses
+front_u_mm = [0.0, -200.0, 200.0, -400.0, 400.0, -600.0, 600.0]  # ASSUMPTION: along the front leg (ARES y), inside
+                            # out - the far reach last: the rough tipping check (README 2026-10-02) left ~1 mm CoG
+                            # margin at u = +-800 with an empty deck; the operator stops in step mode if ARES sways
+positions = ["r0y0", "r0y1", "r0y2", "r1y2", "r1y1", "r1y0"]  # ASSUMPTION: walk order over the magazine positions
+                            # ([deck] magazine_rows_dx x magazine_y, r<row>y<column>; neighbours only). r1y0 holds
+                            # half stones in the wall job - its holder has the 4 cones of a full stone ([deck])
+rounds = 2                  # ASSUMPTION: there and back twice = 40 moves, every front target (7 u x 4 courses) once
+
 [hmi]
 # Mauer HMI (hmi/, copy of MA 10_robot/hmi/amr_hmi v2, commit 5935c5b, 2026-10-07). ADS target, timeout and the
 # relative-move defaults are NOT repeated here: hmi/core/config.py takes them from [ares_ads] (ams_net_id, host_ip,

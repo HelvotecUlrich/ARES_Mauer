@@ -2,9 +2,11 @@
 
     Robot   park(), goto_look(look), shot(camera) -> Shot, pick_magazine(slot, T_base_ares, kind="full"),
             place_wall(T_base_wall, stone), pick_station(T_base_station, slot), place_magazine(slot, T_base_ares,
-            kind="full"), is_parked(), is_idle(), abort(). kind = stone type "full" / "half" (stone.kind, slot.kind
-            for the station holders) - it sets the payload. Every motion is one atomic robot program; a failed one raises RobotError (the arm is then NOT
-            parked - the sequencer never moves ARES in that state).
+            kind="full"), dry_place(T_base_frame, stone, hover_mm, dwell_s) (magazine dry run: down to hover_mm
+            above the place pose and back, the stone stays held), is_parked(), is_idle(), abort(). kind = stone
+            type "full" / "half" (stone.kind, slot.kind for the station holders) - it sets the payload. Every
+            motion is one atomic robot program; a failed one raises RobotError (the arm is then NOT parked - the
+            sequencer never moves ARES in that state).
     Ares    translate(dx_mm, dy_mm) / rotate(dtheta_deg) -> mauer.ares.MoveOutcome, preflight() -> [problems],
             status(), idle() -> bool, abort(). Body frame at the start pose: +x forward, +y left, +theta CCW.
     Camera  mauer.camera.Camera (grab() -> Frame); shots are taken through Robot.shot so that the flange pose of the
@@ -89,6 +91,7 @@ class Robot(Protocol):
     def place_wall(self, T_base_wall: np.ndarray, stone) -> Any: ...
     def pick_station(self, T_base_station: np.ndarray, slot) -> Any: ...
     def place_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full") -> Any: ...
+    def dry_place(self, T_base_frame: np.ndarray, stone, hover_mm: float, dwell_s: float) -> Any: ...
     def is_parked(self) -> bool: ...
     def is_idle(self) -> bool: ...
     def abort(self) -> Any: ...
@@ -335,6 +338,25 @@ class URRobot:
     def place_magazine(self, slot, T_base_ares, kind: str = "full"):
         self.held_kind = kind
         return self._place(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_place_mag")
+
+    def dry_place(self, T_base_frame, stone, hover_mm: float, dwell_s: float):
+        """Magazine dry run (mauer/magtest.py): the held stone down to hover_mm above stone.T_wall_tcp in the frame,
+        dwell_s, back up - guarded like a place, payload WITH the stone, no gripper command; the jaws keep it."""
+        T_base_frame = np.asarray(T_base_frame, float)
+        T_frame_tcp = g.transl(0.0, 0.0, float(hover_mm)) @ np.asarray(stone.T_wall_tcp, float)
+        name = "mauer_dry_place"
+        q = self._qnear(stone.qnear_rad, T_base_frame @ T_frame_tcp)
+        column = T_base_frame @ T_frame_tcp                           # target TCP: the descent column
+        if self.guard is not None:
+            q = self._q_above(T_base_frame, T_frame_tcp, q, name)
+            path = self._guarded(q, name, None, column)
+        else:
+            path = self._vias(None)
+        body = "\n".join([self._preamble(True), *path,
+                          self.script.dry_place_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
+                                                      float(dwell_s), contact_mm=self.contact_mm,
+                                                      reg_error=self.reg_error, ik_check=self.ik_check)])
+        return self._run(body, name)
 
     def is_parked(self) -> bool:
         st = self.link.state()

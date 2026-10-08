@@ -345,6 +345,18 @@ def place_stone(T_base_frame: np.ndarray, T_frame_tcp_place: np.ndarray, approac
                          payload_after, reg_error, "place_stone", ik_check)
 
 
+def dry_place_stone(T_base_frame: np.ndarray, T_frame_tcp_hover: np.ndarray, approach_mm: float,
+                    qnear_rad: Sequence[float], speeds: Speeds, dwell_s: float, *, contact_mm: float | None = None,
+                    reg_error: int = REG_ERROR, ik_check: str = "has_solution") -> str:
+    """A place WITHOUT letting go (magazine dry run, mauer/magtest.py): the held stone goes down to the hover pose
+    T_frame_tcp_hover (the place pose raised along the frame z) like place_stone goes to the place pose, stays there
+    dwell_s and comes back up. No gripper output and no payload change - the stone stays in the jaws."""
+    if not (np.isfinite(dwell_s) and dwell_s >= 0.0):
+        raise ValueError(f"dwell_s must be >= 0, got {dwell_s}")
+    return _contact_move("dp", T_base_frame, T_frame_tcp_hover, approach_mm, qnear_rad, speeds, contact_mm,
+                         f"sleep({num(dwell_s)})", None, reg_error, "dry_place_stone", ik_check)
+
+
 def pick_stone(T_base_frame: np.ndarray, T_frame_tcp_pick: np.ndarray, approach_mm: float,
                qnear_rad: Sequence[float], speeds: Speeds, do_close: int, pulse_s: float, wait_s: float, *,
                do_open: int | None = None, contact_mm: float | None = None, open_first: bool = False,
