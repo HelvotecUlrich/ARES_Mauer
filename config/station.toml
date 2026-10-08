@@ -166,20 +166,26 @@ magazine_layers = 3         # ASSUMPTION: layers per magazine stack as simulated
                             # from layers = 2 above, which only drives the reach-study grid)
 
 [deck_plate]
-# Magazine plate on the ARES deck (tools/make_deck_plate.py -> targets/deck_plate/deck_plate.dxf, 2026-10-08): 4 mm
-# MDF ([plates] mdf_t) behind the UR with the peg holes ([guides] peg_hole_d) of the locating cones of every magazine
-# holder ([deck] magazine_rows_dx / magazine_y, 4 cones per holder at the sockets of a full stone), screwed with M6 /
-# slot nuts 20 mm from the ARES outer edge (Samuel 2026-10-08). The deck (1120 x 600) does not fit the 800 x 600
-# laser bed: the plate covers the magazine area only and is inset from the deck edge.
-inset_mm = 10.0             # ASSUMPTION: plate edge inside the deck edge at the sides and the rear (580 mm wide fits the
-                            # 600 mm bed with [guides] sheet_margin); its rear corners follow the deck's R 80 concentric
-front_x = 40.0              # ASSUMPTION: front edge of the plate in the ARES frame [mm] (front magazine stones end at
+# Plates on the ARES deck (tools/make_deck_plate.py -> targets/deck_plate/, 2026-10-08): 4 mm MDF ([plates] mdf_t)
+# with the peg holes ([guides] peg_hole_d) of the locating cones of every magazine holder ([deck] magazine_rows_dx /
+# magazine_y, 4 cones per holder at the sockets of a full stone), screwed with M6 / slot nuts 20 mm from the ARES outer
+# edge (Samuel 2026-10-08). The deck (1120 x 600, R 80) does not fit the 800 x 600 laser bed in one piece. Variants:
+# - "magazine" (Samuel 2026-10-08: make it now): full ARES width, from split_x to front_x, all magazine stones on it,
+#   dovetail sockets on its rear edge;
+# - "rear" (later, maybe with a control cabinet on it): split_x to the deck's rear edge, R 80 corners, dovetail tails;
+# - "onepiece": the first design, inset_mm inside the deck edge so it fits the bed.
+front_x = 40.0              # ASSUMPTION: front edge of the plates in the ARES frame [mm] (front magazine stones end at
                             # x = -12, the UR base starts at mount_x - 75)
+split_x = -400.0            # ASSUMPTION: joint magazine / rear plate (rear magazine stones end at x = -355)
+dovetail_y = [-150.0, 150.0]  # ASSUMPTION: dovetail centres on the joint ([guides] dovetail, joint_clearance)
+inset_mm = 10.0             # ASSUMPTION: "onepiece" only - plate edge inside the deck edge (580 mm fits the 600 mm bed)
 bolt_edge_mm = 20.0         # CONFIRMED: Samuel 2026-10-08 - M6 / slot nuts 20 mm from the ARES outer edge
 bolt_hole_d = 6.6           # ASSUMPTION: M6 clearance hole (finished, kerf-compensated like the peg holes)
-bolt_rear_y = [-150.0, 0.0, 150.0]   # ASSUMPTION: holes along the rear edge (x = -length/2 + bolt_edge_mm)
-bolt_side_x = [-440.0, -183.0, 20.0] # ASSUMPTION: holes along both sides (y = +-(width/2 - bolt_edge_mm)), outside the
-                                     # stone footprints (they overhang the sides by 5 mm)
+bolt_side_x = [-380.0, -183.0, 20.0]  # ASSUMPTION: "magazine": holes along both sides (y = +-(width/2 - bolt_edge_mm)),
+                                      # outside the stone footprints (the stones overhang the sides by 5 mm)
+rear_bolt_side_x = [-440.0]           # ASSUMPTION: "rear": holes along both sides
+bolt_rear_y = [-150.0, 0.0, 150.0]    # ASSUMPTION: "rear" / "onepiece": holes along the rear edge
+onepiece_bolt_side_x = [-440.0, -183.0, 20.0]  # ASSUMPTION: "onepiece": holes along both sides
 
 [camera]
 # Eye-in-hand camera on the tool flange beside the gripper, looking along the tool z axis (Samuel 2026-10-02). It

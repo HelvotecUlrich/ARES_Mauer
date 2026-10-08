@@ -1,20 +1,25 @@
-"""Magazine plate on the ARES deck (2026-10-08): one 4 mm MDF plate behind the UR with the peg holes of the locating
-cones of every magazine holder, screwed to the deck with M6 / slot nuts 20 mm from the ARES outer edge.
+"""Plates on the ARES deck (2026-10-08): 4 mm MDF with the peg holes of the locating cones of every magazine holder,
+screwed to the deck with M6 / slot nuts 20 mm from the ARES outer edge. Three variants ([deck_plate]):
 
-    py.exe tools/make_deck_plate.py        # -> targets/deck_plate/deck_plate.dxf + deck_plate.png (preview)
+    magazine   full ARES width (600), split_x .. front_x: all magazine stones, dovetail SOCKETS on the rear edge (now)
+    rear       deck rear edge .. split_x, R 80 corners, dovetail TAILS (later, maybe a control cabinet on it)
+    onepiece   the first design: rear edge .. front_x, inset_mm inside the deck edge so it fits the 800 x 600 bed
 
-Everything comes from config/station.toml: the deck outline ([ares] length, width, deck_corner_r), the plate
-([deck_plate]), the holders ([ur5] mount_x + [deck] magazine_rows_dx, magazine_y; stones with their long axis along
-ARES y as tools/make_job.py _magazine), the cones ([guides] pin_along / pin_across: 4 per holder at the sockets of a
-full stone; a half-stone holder ([deck] half_positions) takes two halves end to end on the same 4 cones) and the
-holes ([guides] peg_hole_d, kerf_mm: cut circles kerf smaller, outline kerf/2 outside, as tools/make_guides.py).
-Drawing in the ARES frame (x forward, y left; DXF x = ARES x, DXF y = ARES y), origin = base_link. Layers CUT red /
-ENGRAVE blue (tools/make_plates.py). Engraved: stone footprints, holder names, FRONT arrow, ARES centreline, UR axis.
+    py.exe tools/make_deck_plate.py        # -> targets/deck_plate/deck_plate_<variant>.dxf + deck_plates.png
+
+Everything comes from config/station.toml: the deck ([ares] length, width, deck_corner_r), [deck_plate], the holders
+([ur5] mount_x + [deck] magazine_rows_dx, magazine_y; stones with their long axis along ARES y as tools/make_job.py
+_magazine), the cones ([guides] pin_along / pin_across: 4 per holder at the sockets of a full stone; the half-stone
+holder ([deck] half_positions) takes two halves end to end on the same 4 cones), the dovetail ([guides] dovetail,
+joint_clearance, as tools/make_guides.py) and the holes ([guides] peg_hole_d, kerf_mm: cut circles kerf smaller,
+outlines kerf/2 outside). Drawn in plate coordinates (ARES x, y shifted so each plate starts at 0, 0); layers CUT red /
+ENGRAVE blue (tools/make_plates.py). Engraved: stone footprints, holder names, ARES centreline, FRONT arrow.
 """
 from __future__ import annotations
 
 import math
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,71 +31,86 @@ from mauer import config  # noqa: E402
 
 Pt = tuple[float, float]
 ARC_SEG_DEG = 3.0           # polyline segment of the rounded corners
+WEB_MM = 3.0                # minimum MDF between a hole and an edge (check)
 
 
-def rounded_rect(x0: float, x1: float, y0: float, y1: float, r_rear: float) -> list[Pt]:
-    """Outline with rounded REAR corners (x = x0) of radius r_rear, square front corners (x = x1), counter-clockwise."""
-    pts: list[Pt] = [(x1, y0), (x1, y1)]
-    n = max(2, int(round(90.0 / ARC_SEG_DEG)))
-    for cx, cy, a0 in ((x0 + r_rear, y1 - r_rear, 90.0), (x0 + r_rear, y0 + r_rear, 180.0)):
-        for i in range(n + 1):
-            a = math.radians(a0 + 90.0 * i / n)
-            pts.append((cx + r_rear * math.cos(a), cy + r_rear * math.sin(a)))
-    return pts
+@dataclass
+class Plate:
+    name: str
+    outline: list[Pt]                       # nominal, counter-clockwise, ARES frame
+    cones: list[Pt] = field(default_factory=list)
+    bolts: list[Pt] = field(default_factory=list)
+    holders: list[tuple[str, Pt]] = field(default_factory=list)
+    texts: list[tuple[Pt, float, str]] = field(default_factory=list)
+    lines: list[tuple[Pt, Pt]] = field(default_factory=list)
 
 
-def plate(cfg: dict) -> dict:
+def arc(cx: float, cy: float, r: float, a0: float, a1: float) -> list[Pt]:
+    n = max(2, int(round(abs(a1 - a0) / ARC_SEG_DEG)))
+    return [(cx + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
+             cy + r * math.sin(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
+
+
+def dovetail(x: float, yc: float, gd: dict, female: bool, downward: bool) -> list[Pt]:
+    """The four points of one dovetail on the joint line x = const, widening towards +x (into the magazine plate):
+    neck width n at the joint, n + 2 flare at depth d. female: the socket, joint_clearance wider per side."""
+    n, d, f = (float(v) for v in gd["dovetail"])
+    c = float(gd["joint_clearance"]) if female else 0.0
+    lo, hi = yc - n / 2 - c, yc + n / 2 + c
+    pts = [(x, lo), (x + d, lo - f), (x + d, hi + f), (x, hi)]
+    return pts[::-1] if downward else pts
+
+
+def plates(cfg: dict) -> list[Plate]:
     a, dp, dk, gd, u = cfg["ares"], cfg["deck_plate"], cfg["deck"], cfg["guides"], cfg["ur5"]
     L, W, R = float(a["length"]), float(a["width"]), float(a["deck_corner_r"])
-    ins, kerf = float(dp["inset_mm"]), float(gd.get("kerf_mm", 0.0))
-    x_rear, x_front, y_half = -L / 2 + ins, float(dp["front_x"]), W / 2 - ins
-    outline = rounded_rect(x_rear, x_front, -y_half, y_half, R - ins)
-    holders, cones = [], []
+    xr, xs, xf, yh = -L / 2, float(dp["split_x"]), float(dp["front_x"]), W / 2
+    e = float(dp["bolt_edge_mm"])
     a_u, a_v = float(gd["pin_along"]) / 2, float(gd["pin_across"]) / 2
     half = {str(p) for p in dk.get("half_positions", [])}
+    holders, cones = [], []
     for ri, dx in enumerate(dk["magazine_rows_dx"]):
         for yi, y in enumerate(dk["magazine_y"]):
             x = float(u["mount_x"]) + float(dx)
-            name = f"r{ri}y{yi}" + (" half" if f"r{ri}y{yi}" in half else "")
-            holders.append((name, (x, float(y))))
+            holders.append((f"r{ri}y{yi}" + (" half" if f"r{ri}y{yi}" in half else ""), (x, float(y))))
             cones += [(x + sv * a_v, float(y) + su * a_u) for su in (-1, 1) for sv in (-1, 1)]   # long axis along y
-    e = float(dp["bolt_edge_mm"])
-    bolts = [(-L / 2 + e, float(y)) for y in dp["bolt_rear_y"]]
-    bolts += [(float(x), s * (W / 2 - e)) for x in dp["bolt_side_x"] for s in (-1, 1)]
-    return dict(outline=outline, holders=holders, cones=cones, bolts=bolts, kerf=kerf,
-                peg_d=float(gd["peg_hole_d"]), bolt_d=float(dp["bolt_hole_d"]), x_rear=x_rear, x_front=x_front,
-                y_half=y_half, mount_x=float(u["mount_x"]), stone=(float(cfg["brick"]["length"]),
-                                                                 float(cfg["brick"]["width"])))
+    ys = sorted(float(y) for y in dp["dovetail_y"])
+    side = lambda xs_: [(float(x), s * (yh - e)) for x in xs_ for s in (-1, 1)]            # noqa: E731
+    rear_bolts = [(xr + e, float(y)) for y in dp["bolt_rear_y"]]
+    note = f"UR axis {float(u['mount_x']) - xf:.0f} mm ahead of the front edge"
+    arrow = [((xf - 15.0, 0.0), (xf - 30.0, 8.0)), ((xf - 15.0, 0.0), (xf - 30.0, -8.0))]
+
+    # magazine plate: rectangle, sockets on the rear edge (walked downwards, from +y to -y)
+    mag = [(xs, -yh), (xf, -yh), (xf, yh), (xs, yh)]
+    for yc in reversed(ys):
+        mag += dovetail(xs, yc, gd, female=True, downward=True)
+    p_mag = Plate("magazine", mag, cones, side(dp["bolt_side_x"]), holders,
+                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xs + 25.0, -230.0), 5.0, "ARES deck - magazine - " + note)],
+                  [((xs + 30.0, 0.0), (xf - 15.0, 0.0))] + arrow)
+
+    # rear plate: rounded rear corners, tails on the front edge (walked upwards)
+    rear = [(xs, -yh)]
+    for yc in ys:
+        rear += dovetail(xs, yc, gd, female=False, downward=False)
+    rear += [(xs, yh)] + arc(xr + R, yh - R, R, 90.0, 180.0) + arc(xr + R, -yh + R, R, 180.0, 270.0)
+    p_rear = Plate("rear", rear, [], side(dp["rear_bolt_side_x"]) + rear_bolts, [],
+                   [((xs - 40.0, -150.0), 6.0, "ARES deck - rear (later)")],
+                   [((xr + 40.0, 0.0), (xs - 15.0, 0.0)), ((xs - 15.0, 0.0), (xs - 30.0, 8.0)),
+                    ((xs - 15.0, 0.0), (xs - 30.0, -8.0))])
+
+    # onepiece: the first design (inset to fit the bed)
+    ins = float(dp["inset_mm"])
+    one = [(xf, -yh + ins), (xf, yh - ins)] + arc(xr + R, yh - R, R - ins, 90.0, 180.0) \
+        + arc(xr + R, -yh + R, R - ins, 180.0, 270.0)
+    p_one = Plate("onepiece", one, cones, side(dp["onepiece_bolt_side_x"]) + rear_bolts, holders,
+                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xr + 30.0, -230.0), 5.0, "ARES deck plate - " + note)],
+                  [((xr + 25.0, 0.0), (xf - 15.0, 0.0))] + arrow)
+    return [p_mag, p_rear, p_one]
 
 
-def problems(pl: dict, cfg: dict) -> list[str]:
-    """Geometry checks: every hole inside the plate with an edge web, bolts clear of the stones and the cones."""
-    out = []
-    web = 3.0
-    cone_r = float(cfg["guides"]["socket_r_mouth"]) - float(cfg["guides"]["socket_clearance"])
-    sl, sw = pl["stone"]
-    for kind, pts, d in (("cone", pl["cones"], pl["peg_d"]), ("bolt", pl["bolts"], pl["bolt_d"])):
-        for x, y in pts:
-            if not (pl["x_rear"] + d / 2 + web <= x <= pl["x_front"] - d / 2 - web
-                    and abs(y) <= pl["y_half"] - d / 2 - web):
-                out.append(f"{kind} hole at ({x:.1f}, {y:.1f}) closer than {web} mm to the plate edge / outside")
-    r_corner = float(cfg["ares"]["deck_corner_r"]) - float(cfg["deck_plate"]["inset_mm"])
-    cx = pl["x_rear"] + r_corner
-    for x, y in pl["bolts"]:
-        cy = math.copysign(pl["y_half"] - r_corner, y)
-        if x < cx and abs(y) > abs(cy) and math.hypot(x - cx, y - cy) > r_corner - pl["bolt_d"] / 2 - web:
-            out.append(f"bolt hole at ({x:.1f}, {y:.1f}) outside the rounded corner")
-        for _, (hx, hy) in pl["holders"]:
-            if abs(x - hx) < sw / 2 + 10.0 and abs(y - hy) < sl / 2 + 10.0:
-                out.append(f"bolt hole at ({x:.1f}, {y:.1f}) under a stone (holder at {hx:.1f}, {hy:.1f})")
-        for qx, qy in pl["cones"]:
-            if math.hypot(x - qx, y - qy) < cone_r + 10.0:
-                out.append(f"bolt hole at ({x:.1f}, {y:.1f}) under a cone")
-    return out
-
-
+# ── geometry helpers ──────────────────────────────────────────────────────────
 def offset(poly: list[Pt], d: float) -> list[Pt]:
-    """Polygon (counter-clockwise) moved d outward (miter), for the kerf compensation of the outline."""
+    """Counter-clockwise polygon moved d outward (miter), for the kerf compensation of the outline."""
     out = []
     n = len(poly)
     for i in range(n):
@@ -103,67 +123,129 @@ def offset(poly: list[Pt], d: float) -> list[Pt]:
     return out
 
 
-def dxf(pl: dict) -> mp.Dxf:
-    """Cut / engrave in plate coordinates: ARES (x, y) shifted so the plate starts at (0, 0) - laser software places
-    files by their extents; the engraved centreline / FRONT arrow / UR note keep the orientation on ARES."""
-    d = mp.Dxf()
-    k = pl["kerf"]
-    ox, oy = -pl["x_rear"] + k, pl["y_half"] + k
+def inside(poly: list[Pt], p: Pt) -> bool:
+    x, y, c = p[0], p[1], False
+    for (ax, ay), (bx, by) in zip(poly, poly[1:] + poly[:1]):
+        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+            c = not c
+    return c
+
+
+def edge_dist(poly: list[Pt], p: Pt) -> float:
+    best = math.inf
+    for (ax, ay), (bx, by) in zip(poly, poly[1:] + poly[:1]):
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy)))
+        best = min(best, math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy))
+    return best
+
+
+def area(poly: list[Pt]) -> float:
+    return 0.5 * sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(poly, poly[1:] + poly[:1]))
+
+
+def problems(pl: Plate, cfg: dict) -> list[str]:
+    """Every hole inside its plate with WEB_MM of MDF to the edge; bolts clear of the stones and the cones; the
+    outline counter-clockwise; the plate fits the laser bed ([guides] sheet, sheet_margin) in one orientation."""
+    gd = cfg["guides"]
+    out = [] if area(pl.outline) > 0 else [f"{pl.name}: outline not counter-clockwise"]
+    sl, sw = float(cfg["brick"]["length"]), float(cfg["brick"]["width"])
+    cone_r = float(gd["socket_r_mouth"]) - float(gd["socket_clearance"])
+    for kind, pts, d in (("cone", pl.cones, float(gd["peg_hole_d"])),
+                         ("bolt", pl.bolts, float(cfg["deck_plate"]["bolt_hole_d"]))):
+        for q in pts:
+            if not inside(pl.outline, q) or edge_dist(pl.outline, q) < d / 2 + WEB_MM:
+                out.append(f"{pl.name}: {kind} hole at ({q[0]:.1f}, {q[1]:.1f}) outside / closer than {WEB_MM} mm "
+                           "to the edge")
+    for x, y in pl.bolts:
+        for _, (hx, hy) in pl.holders:
+            if abs(x - hx) < sw / 2 + 10.0 and abs(y - hy) < sl / 2 + 10.0:
+                out.append(f"{pl.name}: bolt hole at ({x:.1f}, {y:.1f}) under a stone")
+        if any(math.hypot(x - qx, y - qy) < cone_r + 10.0 for qx, qy in pl.cones):
+            out.append(f"{pl.name}: bolt hole at ({x:.1f}, {y:.1f}) under a cone")
+    xs, ys = [q[0] for q in pl.outline], [q[1] for q in pl.outline]
+    w, h = max(xs) - min(xs), max(ys) - min(ys)
+    bw, bh = (float(v) - 2 * float(gd.get("sheet_margin", 0.0)) for v in gd["sheet"])
+    if not ((w <= bw and h <= bh) or (w <= bh and h <= bw)):
+        out.append(f"{pl.name}: {w:.0f} x {h:.0f} mm does not fit the bed {bw:.0f} x {bh:.0f} (sheet - margins)")
+    return out
+
+
+# ── output ────────────────────────────────────────────────────────────────────
+def dxf(pl: Plate, cfg: dict) -> mp.Dxf:
+    """Cut / engrave with the plate's lower-left corner at (0, 0) (laser software places files by their extents)."""
+    gd = cfg["guides"]
+    k = float(gd.get("kerf_mm", 0.0))
+    ox, oy = -min(q[0] for q in pl.outline) + k, -min(q[1] for q in pl.outline) + k
     T = lambda q: (q[0] + ox, q[1] + oy)                                       # noqa: E731
-    d.poly(mp.CUT, [T(q) for q in offset(pl["outline"], k / 2)])
-    for c in pl["cones"]:
-        d.circle(mp.CUT, T(c), (pl["peg_d"] - k) / 2)
-    for c in pl["bolts"]:
-        d.circle(mp.CUT, T(c), (pl["bolt_d"] - k) / 2)
-    sl, sw = pl["stone"]
-    ym = pl["y_half"] - 2.0                     # the stones overhang the plate at the sides: engrave inside only
-    for name, (x, y) in pl["holders"]:
+    d = mp.Dxf()
+    d.poly(mp.CUT, [T(q) for q in offset(pl.outline, k / 2)])
+    for c in pl.cones:
+        d.circle(mp.CUT, T(c), (float(gd["peg_hole_d"]) - k) / 2)
+    for c in pl.bolts:
+        d.circle(mp.CUT, T(c), (float(cfg["deck_plate"]["bolt_hole_d"]) - k) / 2)
+    sl, sw = float(cfg["brick"]["length"]), float(cfg["brick"]["width"])
+    ym = max(q[1] for q in pl.outline) - 2.0          # the stones overhang the sides: engrave inside only
+    for name, (x, y) in pl.holders:
         y0, y1 = max(y - sl / 2, -ym), min(y + sl / 2, ym)
         d.poly(mp.ENGRAVE, [T(q) for q in ((x - sw / 2, y0), (x + sw / 2, y0), (x + sw / 2, y1), (x - sw / 2, y1))])
         d.text(mp.ENGRAVE, T((x - 4.0, y - 3.0 * len(name))), 6.0, name, rot_deg=90.0)
-    xr, xf = pl["x_rear"], pl["x_front"]
-    d.line(mp.ENGRAVE, T((xr + 15.0, 0.0)), T((xf - 15.0, 0.0)))               # ARES centreline (y = 0)
-    d.line(mp.ENGRAVE, T((xf - 15.0, 0.0)), T((xf - 30.0, 8.0)))               # FRONT arrow head
-    d.line(mp.ENGRAVE, T((xf - 15.0, 0.0)), T((xf - 30.0, -8.0)))
-    d.text(mp.ENGRAVE, T((xf - 35.0, -100.0)), 7.0, "FRONT", rot_deg=90.0)
-    d.text(mp.ENGRAVE, T((xr + 20.0, -200.0)), 5.0,
-           f"ARES deck plate - UR axis {pl['mount_x'] - xf:.0f} mm ahead of the front edge", rot_deg=90.0)
+    for a, b in pl.lines:
+        d.line(mp.ENGRAVE, T(a), T(b))
+    for q, h, s in pl.texts:
+        d.text(mp.ENGRAVE, T(q), h, s, rot_deg=90.0)
     return d
 
 
-def preview(pl: dict, path: Path, px_mm: float = 1.5) -> None:
+def preview(pls: list[Plate], cfg: dict, path: Path, px_mm: float = 1.0) -> None:
+    """Top: magazine + rear as mounted on the deck (grey); bottom: onepiece."""
     from PIL import Image, ImageDraw
-    x0, x1, yh = pl["x_rear"] - 20, pl["x_front"] + 20, pl["y_half"] + 20
-    W, H = int((x1 - x0) * px_mm), int(2 * yh * px_mm)
-    img = Image.new("RGB", (W, H), "white")
+    a = cfg["ares"]
+    L, W, R = float(a["length"]), float(a["width"]), float(a["deck_corner_r"])
+    gap = 60.0
+    x0, y_top = -L / 2 - 20, W / 2 + 20
+    img = Image.new("RGB", (int((L + 40) * px_mm), int((2 * (W + 40) + gap) * px_mm)), "white")
     dr = ImageDraw.Draw(img)
-    P = lambda x, y: ((x - x0) * px_mm, (yh - y) * px_mm)                     # noqa: E731
-    dr.line([P(*q) for q in pl["outline"] + pl["outline"][:1]], fill="red", width=2)
-    sl, sw = pl["stone"]
-    ym = pl["y_half"] - 2.0
-    for name, (x, y) in pl["holders"]:
-        dr.rectangle([P(x - sw / 2, min(y + sl / 2, ym)), P(x + sw / 2, max(y - sl / 2, -ym))], outline="blue")
-        dr.text(P(x - 10, y + 5), name, fill="blue")
-    for (x, y), d in [(c, pl["peg_d"]) for c in pl["cones"]] + [(c, pl["bolt_d"]) for c in pl["bolts"]]:
-        dr.ellipse([P(x - d / 2, y + d / 2), P(x + d / 2, y - d / 2)], outline="red", width=2)
-    dr.line([P(pl["x_rear"] + 15, 0), P(pl["x_front"] - 15, 0)], fill="blue")
-    dr.text(P(pl["x_front"] - 70, 15), "FRONT ->", fill="blue")
+    sl, sw = float(cfg["brick"]["length"]), float(cfg["brick"]["width"])
+    pd, bd = float(cfg["guides"]["peg_hole_d"]), float(cfg["deck_plate"]["bolt_hole_d"])
+    deck = [(L / 2, -W / 2), (L / 2, W / 2)] + arc(-L / 2 + R, W / 2 - R, R, 90, 180) \
+        + arc(-L / 2 + R, -W / 2 + R, R, 180, 270)
+    for row, group in enumerate(([p for p in pls if p.name != "onepiece"], [p for p in pls if p.name == "onepiece"])):
+        dy = row * (W + 40 + gap)
+        P = lambda x, y: ((x - x0) * px_mm, (y_top - y + dy) * px_mm)          # noqa: E731
+        dr.line([P(*q) for q in deck + deck[:1]], fill=(170, 170, 170), width=1)
+        dr.text(P(L / 2 - 230, -W / 2 + 15), "ARES deck (grey)   FRONT ->", fill=(120, 120, 120))
+        for pl in group:
+            dr.line([P(*q) for q in pl.outline + pl.outline[:1]], fill="red", width=2)
+            ym = max(q[1] for q in pl.outline) - 2.0
+            for name, (x, y) in pl.holders:
+                dr.rectangle([P(x - sw / 2, min(y + sl / 2, ym)), P(x + sw / 2, max(y - sl / 2, -ym))],
+                             outline="blue")
+                dr.text(P(x - 12, y + 5), name, fill="blue")
+            for (x, y), dd in [(c, pd) for c in pl.cones] + [(c, bd) for c in pl.bolts]:
+                dr.ellipse([P(x - dd / 2, y + dd / 2), P(x + dd / 2, y - dd / 2)], outline="red", width=2)
+            xs = [q[0] for q in pl.outline]
+            dr.text(P((min(xs) + max(xs)) / 2 - 25, 25), pl.name, fill="black")
     img.save(path)
 
 
 def main() -> int:
     cfg = config.load()
-    pl = plate(cfg)
-    bad = problems(pl, cfg)
-    for b in bad:
-        print("PROBLEM:", b)
+    pls = plates(cfg)
     out = ROOT / "targets" / "deck_plate"
     out.mkdir(parents=True, exist_ok=True)
-    dxf(pl).write(out / "deck_plate.dxf")
-    preview(pl, out / "deck_plate.png")
-    print(f"written {out / 'deck_plate.dxf'}: plate x {pl['x_rear']:g}..{pl['x_front']:g}, y +-{pl['y_half']:g} "
-          f"({pl['x_front'] - pl['x_rear']:g} x {2 * pl['y_half']:g} mm), {len(pl['cones'])} peg holes "
-          f"d {pl['peg_d']:g}, {len(pl['bolts'])} M6 holes d {pl['bolt_d']:g} (finished; kerf {pl['kerf']:g} comp.)")
+    for old in ("deck_plate.dxf", "deck_plate.png"):    # the first single plate (2026-10-08) = "onepiece" now
+        (out / old).unlink(missing_ok=True)
+    bad = []
+    for pl in pls:
+        bad += problems(pl, cfg)
+        dxf(pl, cfg).write(out / f"deck_plate_{pl.name}.dxf")
+        xs, ys = [q[0] for q in pl.outline], [q[1] for q in pl.outline]
+        print(f"written deck_plate_{pl.name}.dxf: x {min(xs):g}..{max(xs):g}, y {min(ys):g}..{max(ys):g} "
+              f"({max(xs) - min(xs):g} x {max(ys) - min(ys):g} mm), {len(pl.cones)} peg holes, {len(pl.bolts)} M6")
+    preview(pls, cfg, out / "deck_plates.png")
+    for b in bad:
+        print("PROBLEM:", b)
     return 1 if bad else 0
 
 
