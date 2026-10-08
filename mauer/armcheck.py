@@ -241,12 +241,18 @@ def station_boxes(cfg: Mapping, slots: Iterable, table: tuple[float, float] | No
 
 
 def ares_boxes(cfg: Mapping, magazine_slots: Iterable = ()) -> list[Box]:
-    """Boxes in the ARES frame: the chassis up to the deck top ([ares] length x width x deck_top_z) and a FULL magazine
+    """Boxes in the ARES frame: the chassis up to the deck top ([ares] length x width x deck_top_z), the UR control box
+    at the far end ([ares] controller_*, config.ares_controller_box) and a FULL magazine
     (full stones in every given slot, T_ares_tcp - the state on arrival at a stop and at the dock). RoboDK found the
     looks of the C putting the gripper / wrist into ARES and the forearm into the magazine (2026-10-06)."""
     a = cfg["ares"]
     L, W, H = float(a["length"]), float(a["width"]), float(a["deck_top_z"])
     out = [Box("ARES chassis", np.array([0.0, 0.0, H / 2.0]), np.eye(3), np.array([L / 2.0, W / 2.0, H / 2.0]))]
+    from .config import ares_controller_box
+    ctl = ares_controller_box(dict(cfg))
+    if ctl is not None:                               # the UR control box at the far end (Samuel 2026-10-08)
+        lo, hi = ctl
+        out.append(Box("UR controller", (lo + hi) / 2.0, np.eye(3), (hi - lo) / 2.0))
     out += [_stone_box(cfg, f"magazine stone {s.id}", s.T_ares_tcp, getattr(s, "kind", "") or "full")
             for s in magazine_slots]
     return out

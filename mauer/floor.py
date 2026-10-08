@@ -178,19 +178,22 @@ def circle_dist(c: Pt, r: float, P: Sequence[Pt]) -> float:
 class AresShape:
     length: float = 1120.0          # [ares] length (CONFIRMED: chassis mesh x +-560)
     width: float = 600.0            # [ares] width (CONFIRMED: chassis mesh y +-300)
+    back_mm: float = 0.0            # beyond the -x end: the UR control box ([ares] controller_out_mm, 2026-10-08)
 
     @classmethod
     def from_config(cls, cfg: Mapping) -> "AresShape":
         a = cfg["ares"]
-        return cls(float(a["length"]), float(a["width"]))
+        return cls(float(a["length"]), float(a["width"]), float(a.get("controller_out_mm", 0.0) or 0.0))
 
     @property
     def radius(self) -> float:
-        """Half diagonal: radius of the circle swept by a rotation about base_link."""
-        return math.hypot(self.length, self.width) / 2.0
+        """Radius of the circle swept by a rotation about base_link: the farthest footprint corner."""
+        return math.hypot(self.length / 2.0 + self.back_mm, self.width / 2.0)
 
     def footprint(self, p: Pose2D) -> list[Pt]:
-        return rect_poly(p.x_mm, p.y_mm, p.theta_rad, self.length, self.width)
+        """Chassis plus the control box sticking out at the -x end (one rectangle over the full width)."""
+        c, s, off = math.cos(p.theta_rad), math.sin(p.theta_rad), -self.back_mm / 2.0
+        return rect_poly(p.x_mm + c * off, p.y_mm + s * off, p.theta_rad, self.length + self.back_mm, self.width)
 
 
 @dataclass

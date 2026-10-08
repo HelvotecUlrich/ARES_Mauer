@@ -96,6 +96,20 @@ def T_flange_tcp(cfg: dict) -> np.ndarray:
     return transl(0.0, 0.0, cfg["tool"]["tcp_z"]) @ rotz(np.pi / 2)
 
 
+def ares_controller_box(cfg: dict) -> tuple[np.ndarray, np.ndarray] | None:
+    """(lo, hi) corners [mm] of the UR control box on ARES in the ARES frame ([ares] controller_*, Samuel 2026-10-08):
+    at the end opposite the UR (-x), controller_out_mm beyond the chassis, its top controller_top_mm over the deck;
+    laterally over the full ARES width (position unknown). None if the config has no controller."""
+    a = cfg.get("ares", {}) or {}
+    if "controller_out_mm" not in a:
+        return None
+    d, w, h = (float(v) for v in a["controller_size_mm"])
+    x0 = -float(a["length"]) / 2.0 - float(a["controller_out_mm"])
+    top = float(a["deck_top_z"]) + float(a["controller_top_mm"])
+    half_w = max(w, float(a["width"])) / 2.0
+    return np.array([x0, -half_w, top - h]), np.array([x0 + d, half_w, top])
+
+
 def T_ares_base(cfg: dict) -> np.ndarray:
     """UR5 base frame in the ARES frame – identical to robodk/rdk_common.ur5_base_pose()."""
     from .geometry import rotz, transl
