@@ -165,12 +165,15 @@ widgets; `hmi.main_window` the window. `mauer` never imports `hmi`; pyads, ids_p
 
 | Trigger | ARES | UR | Run |
 |---|---|---|---|
-| HALT (button, Space, Esc, any tab) | `AdsWorker.halt()` first (abort + jog bits FALSE); `AresAds.abort()` only without the worker | REAL: `URLink.abort()` in `mauer-halt` | pending confirmation released with "no", run "error" / "aborted", step mode on for the resume |
+| HALT (button, Space, Esc, any tab) | `AdsWorker.halt()` first (abort + jog bits FALSE); the run's `AresAds` latched (no start edge until Start / Resume); `AresAds.abort()` only without the worker | REAL: `URLink` latched (no program but the abort until Start / Resume), `URLink.abort()` in `mauer-halt` | pending confirmation released with "no", "halt" in the run log, run "error" / "aborted", step mode on for the resume |
 | Pause / Abort | - | - | at the next motion boundary with empty jaws (`Sequencer.held`) |
 | Decline (confirmation bar) | - | - | at once, also with a stone held ("Jaws empty" before the resume) |
 | E-stop | hardware | hardware | the sequencer sees the failure ("error") |
 
-HALT is an operating function; the E-stops remain the safety function.
+HALT is an operating function; the E-stops remain the safety function. The latch (`URLink.inhibit` /
+`AresAds.inhibit`, review 2026-10-08) closes the gap between a confirmation and the program / start edge it allows
+(motion planning, the AresAds preflight): a motion is either sent before the abort, which stops it, or refused; the
+Sequencer sees the backends through `hmi.core.rigs.HaltGate`, so a refused motion ends the run "aborted".
 
 ## Calibration files (`calib/`, versioned)
 `camera_intrinsics.json` and `handeye.json` with values, date, number of views/poses, residuals, OpenCV version and

@@ -108,7 +108,7 @@ hmi/
   core/                services, no widgets (QObject allowed)
     __init__.py
     config.py          station.toml -> amr config dict + checks                       CORE
-    ads_link.py        probing pyads factory, start_ads_worker(), NullAdsWorker       CORE
+    ads_link.py        probing pyads factory, create_ads_worker(), NullAdsWorker      CORE
     context.py         HmiContext                                                     CORE
     session.py         JobSession, load_job_file, build_from_config, list_*           CORE
     rigs.py            RigInfo, SimRig, RealRig, RealFactories                         CORE
@@ -658,6 +658,9 @@ def _station_empty_cb(self) -> None:                          # Sequencer.on_sta
   4. REAL: start `mauer-halt`, which calls `rig.robot.abort()` (`URRobot.abort()` → `link.abort()`: stopl program plus Dashboard stop, at most about 2 s), and calls `rig.ads.abort()` (300 ms pulse) only when `not ads_connected_fn()`;
   5. `message(warning, ...)` with the helper's results.
   It returns at once. `_halt` and `_abort_soft` are cleared by the next `start()` / `resume()`.
+  Since the review of 2026-10-08 (section 17) also: REAL `RealRig.latch(True)` right after step 1 (URLink / AresAds
+  refuse every program but the abort / every start edge until Start or Resume), and a `halt` record in the run log
+  (`halt_result` with the helper's text). The Sequencer gets the robot and ARES behind `HaltGate`.
 
 | Trigger | ARES | UR | Sequencer | Result |
 |---|---|---|---|---|
@@ -676,7 +679,7 @@ HALT is an operating function, not a safety function; the E-stops remain the saf
 4. REAL: `OdomPose(odom_at_stop).delta_to(now)` exceeds `resume_odom_tol_mm` / `_deg` → "ARES moved by (dx, dy, dθ) since the run stopped" → **Apply odometry** (`seq.set_pose(Pose2D.from_T(pose_est.T @ planar_T(dx, dy, radians(dθ))), "operator: odometry since the stop")`) or **Set pose**.
 5. REAL: `recheck()`; any blocking item → refused.
 
-Then: clear the flags, `seq.resume()` if `seq.paused`, and `seq.run(seq.stop_k if seq.stop_k is not None else opts.start_stop, opts.stop_after)`. This is the same `Sequencer` object; state lives only in memory (`sequencer.py` `resumed` logic).
+Then: `seq.run(seq.stop_k if seq.stop_k is not None else opts.start_stop, opts.stop_after)`. This is the same `Sequencer` object; state lives only in memory (`sequencer.py` `resumed` logic). The flags (`_halt`, `_abort_soft`, `halted`, the latch, `seq.paused`) are cleared by `resume()` in the GUI thread BEFORE the checks, not after them (section 17, R1): a HALT / Abort pressed during the checks refuses the resume, a Pause makes `seq.run` raise `SequencerPaused` at once. REAL `start()` runs check 5 as well, in the run thread right before `seq.run` (R4).
 
 ### 8.4 Controller states and the enable matrix
 
@@ -688,11 +691,11 @@ Then: clear the flags, `seq.resume()` if `seq.paused`, and `seq.run(seq.stop_k i
 | step, SIM speed | always (live) |
 | prepare SIM | `loaded` |
 | prepare REAL | `loaded` and `ares_enabled` (`--ares`) |
-| start | `ready` and (SIM or `preflight.ok`) |
+| start | `ready` and (SIM or `preflight.ok`); REAL: not while the ADS status shows `bMoveActive` / `bAmrMoving` |
 | pause | `running` |
 | abort | `running` / `pausing` |
-| resume | `paused` / `aborted` / `error` (the worker checks the rest, 8.3) |
-| confirm pose | `paused` / `aborted` / `error` and `pose_status != "ok"` |
+| resume | `paused` / `aborted` / `error`; REAL: not while ARES moves (the worker checks the rest, 8.3) |
+| confirm pose | `paused` / `aborted` / `error` and `pose_status == "odometry"` (an unknown pose needs Set pose) |
 | set pose | `paused` / `aborted` / `error` |
 | apply odometry | REAL, `paused` / `aborted` / `error`, odometry moved |
 | jaws empty | `paused` / `aborted` / `error` and held |
@@ -774,11 +777,12 @@ self._ctx.controller.halt()             # Mauer: never blocks
 
 **`closeEvent`**
 - If the state is in {`preparing`, `running`, `pausing`, `aborting`, `releasing`}: `event.ignore()` and the status message "Stop the run first (Pause / Abort / HALT), then close". Closing the HMI stops the heartbeat; the PLC then aborts a move after 500 ms and drops MANUAL after 2 s.
-- Otherwise:
-  1. `_closing = True` and remove the event filter (amr);
-  2. `ctx.run_shutdown_hooks()` (twin stop and similar; each guarded);
-  3. `controller.shutdown(10 s)`: release a pending confirm, soft abort, join the run thread, `seq.close()`, then camera, `ads.close()`, `link.stop()`, then quit `mauer-run`;
-  4. `worker.request_stop()` (amr; the heartbeat stops LAST);
+- Also refused while the worker is connected and its last status shows `bMoveActive` (a GO move of the ARES control tab): "ARES relative move running - wait for its end or HALT, then close" (section 17, R7).
+- Otherwise (order changed by the review, R7: the old order kept the heartbeat and held jog bits alive for up to ~26 s while the window was frozen without HALT keys):
+  1. `_closing = True`, the jog state released locally, the event filter removed (amr);
+  2. `worker.request_stop()` FIRST, as amr_hmi (jog bits FALSE, the heartbeat stops);
+  3. `ctx.run_shutdown_hooks()` (twin stop and similar; each guarded; RoboDK is closed before the HMI exits);
+  4. `controller.shutdown(10 s)`: release a pending confirm, soft abort, join the run thread, `seq.close()`, then camera, `ads.close()`, `link.stop()`, then quit `mauer-run`;
   5. `worker_thread.quit()` / `wait(3000)`.
 
 `hmi/core/context.py`
@@ -807,7 +811,8 @@ def probing_factory(ads_cfg: Mapping) -> Callable[[], Any]
     # mauer.ares.ads.tcp_reachable(target_host(ams_net_id, host_ip), ADS_TCP_PORT 48898, TCP_PROBE_MAX_S) first
     # (pyads blocks ~20 s on an unreachable target, ads.py:57-61), then pyads.Connection (lazy import). Raises
     # OSError with the reason -> AdsWorker.connect_now reports "connect failed: ..." and retries.
-def start_ads_worker(amr_cfg: dict) -> tuple[AdsWorker, QThread]   # thread "ads-worker", started
+def create_ads_worker(amr_cfg: dict) -> tuple[AdsWorker, QThread]  # thread "ads-worker", NOT started: hmi/main.py
+    # starts it after MainWindow connected the worker's signals (section 17, R18)
 class NullAdsWorker(QObject):    # same signals and API as AdsWorker; never connects. start() emits
     # connection(False, "ADS off: start the HMI with --ares"); send/pulse/halt record and emit
     # command_error("ADS off: not sent"); is_connected False; request_stop() no-op
@@ -1316,3 +1321,35 @@ The feature branches `hmi-camera`, `hmi-status` and `hmi-twin` were merged into 
 7. `tests/test_hmi_integration.py`: one window with every feature (fake twin) through a step-mode SIM run with a
    station trip, HALT (Space) from the Camera tab while a stone is held, refused resume, Jaws empty, resume to the
    end; camera, wall pose, UR panel, status strip, run feedback and twin agree on the result.
+
+## 17. Review fixes (2026-10-08)
+
+A review of `hmi-integration` (4588955) listed 23 findings; several were the same defect found twice. Every one was
+checked against the code before it was fixed; none was rejected. Numbers are those of the review.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1, 11, 16 | HALT / Pause / Abort pressed while Resume's checks ran (REAL 0.3-1 s) were wiped by `_do_resume`, which cleared the flags after the checks: the run went on | `resume()` clears `_halt`, `_abort_soft`, `halted`, the latch and `seq.paused` in the GUI thread BEFORE queueing the checks; `_do_resume` refuses when HALT / Abort is set after them; a Pause makes `seq.run` raise `SequencerPaused` at once |
+| 2, 10, 19 | HALT was a one-shot `URLink.abort()`: a block confirmed just before HALT and still being planned (IK, motion guard, tens of ms) was sent after the abort and ran to its end; ARES was covered only by the 300 ms abort pulse | HALT latch: `URLink.inhibit()` / `release_inhibit()` (`send_program` refuses every program but the abort, checked under the send lock; `URLinkInhibited`, `BlockResult.t_sent` None) and `AresAds.inhibit()` (checked with the start edge under the connection lock; `AresInhibited`). `RunController.halt()` latches both in the GUI thread before the helper's abort; Start / Resume release them. `hmi.core.rigs.HaltGate` wraps the robot and ARES for the Sequencer: a motion while HALT is set, or one refused with nothing sent, raises `SequencerAborted` (run "aborted", held stone unchanged) |
+| 3, 13 | Pause / Abort racing the end of a run left the controller in "pausing" / "aborting" (BUSY: no close, release, resume) | one `RLock` for every transition; `pause()` / `abort()` compare-and-set under it; `_do_run` sets its end state under it and drops a pause request that came too late |
+| 4, 17 | REAL Start used the preflight of Prepare (minutes old); a GO move could still drive ARES while the arm unfolded | REAL `start()` runs `check_ads()` + the preflight in the run thread right before `seq.run` (`_start_refusal`, back to "ready" with the reason); `can("start")` / `can("resume")` are false while the ADS status shows `bMoveActive` / `bAmrMoving` (`MOVING`). Jog / GO stay allowed in "ready" (positioning before Start, test plan T5b) |
+| 5 | The preflight compared the job with station.toml on disk, the run used the config parsed at load | `JobSession.config_sha256` = hash of exactly the parsed bytes (`session.load_config`, hashed before and after the parse); `preflight.config_drift` adds "changed on disk since the job was loaded" (REAL blocking, SIM informative) |
+| 6, 20 | REAL "Jaws empty" cleared `Sequencer.held` only; `URRobot.holding` kept the stone (payload of the next park, the guard's phantom stone) | `clear_held` clears the rig's robot record for both rigs (`robot.holding = None`). Done in the controller, not in `Sequencer.clear_held` (mauer/ untouched for it; tools/run_job.py never clears held) |
+| 7, 12 | `closeEvent` ran the twin stop (up to 15 s) and the controller shutdown with the HALT keys removed while heartbeat and jog bits stayed alive | worker stopped FIRST (amr_hmi order), then hooks and controller; closing refused while `bMoveActive` (10.1). The twin still stops synchronously - nothing can move by then |
+| 8 | RTDE lost during a block: the run thread waited up to the block timeout (180 s), HALT could not wake it | `URLink.run_block`: no sample for `RTDE_LOST_S` 5 s → abort, fail; latched during a block → fail once the program stopped, at most `HALT_WAIT_S` 3 s |
+| 9 | Space / Esc HALT silently inactive while another window (RoboDK, Explorer, an editor) is in front | red banner above the tabs (REAL rig open, `_halt_scope()` false; `changeEvent` / `applicationStateChanged`); Open log folder / snapshot folder / summary, twin on / Restart / Save view disabled while a run is active (`WINDOW_LOCK`). `[hmi.twin] visible` stays true: a minimised RoboDK does not render (11.3) |
+| 14 | the odometry reference of the resume check came from the GUI's ADS status (up to ~100 ms + latency old) | `_odom_now()`: REAL, the run's own `AresAds.status().odom` in the run thread (end of a run, Set pose, Apply odometry); the worker status only as the fallback |
+| 15 | HALT and the helper's result were not in run.jsonl | `halt` (state, held, pending request, mode) from `halt()`, `halt_result` (the helper's text) from `mauer-halt`; both are warnings in the Run log tab |
+| 18 | `--ares`: the worker thread started before `MainWindow` connected its signals - the first `connected` / interface signal could be lost (tab disabled, preflight "not connected", "HALT NOT sent") | `ads_link.create_ads_worker` returns the thread unstarted; `hmi.main.build` starts it after the window exists |
+| 21 | Pause between Start and `seq.run` ended "error" (with step mode forced) | `_do_run` maps `SequencerPaused` to "paused" |
+| 22 | stops shown 1-based in the progress / status strip / twin caption, 0-based elsewhere; legs 0-based in the Mauer tab | `snapshot.stop_text`: "stop k (0-n)" 0-based everywhere; route legs 1-based ("leg 1/2") everywhere, also the resumed-route action |
+| 23 | Confirm pose enabled for an unknown pose (the sequencer refuses) | enabled only for `pose_status == "odometry"`, else "pose unknown - use Set pose" |
+
+Tests added: `test_ur_link.py` (latch refuses all but the abort; HALT ends a running block; no stop seen; RTDE lost
+aborts), `test_ares_ads.py` (latch before and during the preflight window), `test_hmi_run_controller.py` (HALT /
+Pause / Abort during a slow resume check, Pause racing the run end, Pause before `seq.run`, HaltGate, the `halt`
+record), `test_hmi_real_rig.py` (REAL start re-check, MOVING, HALT during the start checks, latch on / off, the
+`halt_result` record, Jaws empty clears `URRobot.holding`, HALT while a real `URRobot` plans on a loopback fake
+controller sends no block), `test_hmi_session.py` (session hash, config drift), `test_hmi_mauer_tab.py` (close
+refused during a move and the worker stopped before the hooks, the keyboard banner, the window locks, `build(--ares)`
+receives the first connection). The two race tests were checked to fail against the old controller code.

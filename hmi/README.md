@@ -85,6 +85,13 @@ with a stone held.
   HMI's ADS worker is not connected (it cannot verify that);
 - REAL: the preflight has a blocking item (**Re-check** runs it again).
 
+Start and Resume clear HALT and the abort request at once (GUI thread), before their checks run. A HALT, Pause or
+Abort pressed while the checks run (REAL: about 0.3-1 s) therefore stops the run before its first motion. REAL
+**Start** runs the preflight again right before the first motion (the one of Prepare may be old) and waits while
+the HMI's ADS status shows ARES moving (relative move or jog); **Resume** waits for that too. **Confirm pose** accepts
+an odometry estimate only; an unknown pose needs **Set pose**. Stops are numbered from 0 everywhere (as in the run
+log and the Stops boxes), the legs of a route from 1.
+
 After an error or a HALT the resume runs in step mode (the operator may switch it off). The run state lives in
 memory only: closing the HMI loses the resume ability (a new run of stop k assumes ARES at its start mark).
 
@@ -94,13 +101,21 @@ HALT (button, Space, Esc - on every tab, also while an HMI child window such as 
 
 | | ARES | UR | Run |
 |---|---|---|---|
-| HALT | ADS worker: ONE write `bCmdMoveAbort` TRUE + all jog bits FALSE, reset after 300 ms (amr_hmi, first); the sequencer's AresAds abort pulse only if the worker is not connected | REAL: `URLink.abort()` (stopl program + Dashboard stop) in a helper thread | pending confirmation released with "no", run ends "error" / "aborted", step mode on for the resume |
+| HALT | ADS worker: ONE write `bCmdMoveAbort` TRUE + all jog bits FALSE, reset after 300 ms (amr_hmi, first); the sequencer's AresAds latched (no start edge until Start / Resume); its abort pulse only if the worker is not connected | REAL: URLink latched (no robot program but the abort until Start / Resume), `URLink.abort()` (stopl program + Dashboard stop) in a helper thread | pending confirmation released with "no", "halt" (and REAL "halt_result") in the run log, run ends "error" (a motion was stopped) / "aborted" (nothing was sent), step mode on for the resume |
 | Pause / Abort | - | - | at the next motion boundary with empty jaws |
 | E-stop | hardware | hardware | the sequencer sees the failure ("error") |
 
 HALT is an operating function, not a safety function: the E-stops on ARES and the UR are the safety function.
-Closing the HMI is refused while a run is active; closing stops the heartbeat (the PLC aborts a running move after
-500 ms and drops MANUAL after 2 s).
+Space / Esc reach the HMI only while it (or one of its dialogs) is the active window. With a REAL rig open, a red
+banner above the tabs says when another window is active; while a run is active the buttons that open other windows
+(Open log folder, Open snapshot folder, Open summary, twin Restart / Save view / switching the twin on) are disabled.
+
+A robot block whose RTDE stream stays silent for 5 s (`mauer/ur/link.py` RTDE_LOST_S) is aborted and fails, instead
+of waiting for the block timeout (180 s); a block running when HALT latches gives up within 3 s (HALT_WAIT_S).
+
+Closing the HMI is refused while a run is active or a relative move of the ARES control tab runs. Closing stops the
+ADS worker first (jog bits FALSE, heartbeat ends: the PLC aborts a move after 500 ms and drops MANUAL after 2 s), then
+the twin (its RoboDK closes) and the run controller.
 
 ## Operating pattern A in one process
 
@@ -128,6 +143,10 @@ REAL run is loaded.
 - The C has 12 half stones and `[half_brick]` is still PLACEHOLDER / UNKNOWN (mass, dimensions): the real-run
   preflight blocks on it (2026-10-08).
 - In REAL the plan view (and the twin) show the sequencer's belief: the nominal wall and the estimated ARES pose.
+- A REAL start shows neither the magazine fill the run expects nor asks "jaws empty / magazine as listed / station
+  full" (tools/run_job.py --real does since main 22340be); a start at stop k > 0 has no counterpart of run_job's
+  `--resume-log` / `--stop-untouched` yet (to be added with the merge into main: docs/TESTPLAN_REALTEST_ARES_DE.md
+  S1, Anhang C1 / C2).
 
 ## Configuration
 
