@@ -78,7 +78,8 @@ class UrSource:
             q = ik_near(np.asarray(r.T_bf, float), self._q_prev if self._q_prev is not None else r.park_q)
         if q is not None:
             self._q_prev = np.asarray(q, float)
-        held = rig.world.kind_of.get(r.holding[0], "full") if r.holding is not None else None
+        h = r.holding                   # read once: the run thread may set it to None meanwhile
+        held = rig.world.kind_of.get(h[0], "full") if h is not None else None
         return _none_snapshot("sim", self._q_prev, T_base_tcp_mm=np.asarray(r.T_bf, float) @ r.T_flange_tcp,
                               robot_mode="RUNNING", safety_mode="NORMAL", safety_ok=True, power_on=True,
                               program_running=False, held_kind=held, parked=bool(r.parked))
