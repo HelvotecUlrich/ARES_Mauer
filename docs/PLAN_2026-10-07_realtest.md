@@ -34,30 +34,33 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
       rerun after the park / look changes in progress (stamps the jobs RoboDK-verified).
 
 ### B - Mauer HMI (hmi/, copy of amr_hmi)
-- [ ] B1 copy amr_hmi (attribution, tests green with offscreen Qt)
-- [ ] B2 Mauer tab: job/plan view, progress (stop, stone, trip), run modes (sim / real), step confirmations as
+- [x] B1 copy amr_hmi (attribution, tests green with offscreen Qt)
+- [x] B2 Mauer tab: job/plan view, progress (stop, stone, trip), run modes (sim / real), step confirmations as
       dialogs, pause / abort, preflight list, run log view
-- [ ] B3 camera view: live image (IDS via mauer camera backend, or the sim camera), ChArUco detections overlaid,
+- [x] B3 camera view: live image (IDS via mauer camera backend, or the sim camera), ChArUco detections overlaid,
       last measurement (board, reprojection error)
-- [ ] B4 UR panel: connection, robot/safety mode, joints, TCP, gripper, payload, program state
-- [ ] B5 ARES panel: amr_hmi widgets (state, battery, odometry map, relative move) + sequencer pose estimate
-- [ ] B6 shared ownership: one ADS worker, one UR link, one camera for HMI + sequencer (no second connections)
+- [x] B4 UR panel: connection, robot/safety mode, joints, TCP, gripper, payload, program state
+- [x] B5 ARES panel: amr_hmi widgets (state, battery, odometry map, relative move) + sequencer pose estimate
+- [x] B6 shared ownership: one ADS worker, one UR link, one camera for HMI + sequencer (no second connections)
 
 ### C - RoboDK digital twin
-- [ ] C1 `robodk/twin.py`: station, mirror UR joints (RTDE), ARES pose (sequencer estimate / odometry), stones
+- [x] C1 `robodk/twin.py`: station, mirror UR joints (RTDE), ARES pose (sequencer estimate / odometry), stones
       placed / held / magazine / station from the sequencer events; ~5-10 Hz; works with --sim and --real
-- [ ] C2 HMI toggle + status
+- [x] C2 HMI toggle + status
 
 ### D - real test preparation
-- [ ] D1 test plan (German, operator document): network, preflight, ADS + small relative move, UR mount check,
+- [x] D1 test plan (German, operator document): network, preflight, ADS + small relative move, UR mount check,
       hand-eye calibration on ARES, floor layout check with the boards, single stone pick/place (step mode), one
       stop, station trip, leg change, full wall; pass criteria and what to log
-- [ ] D2 preflight additions found while writing D1; HMI shows them
+- [x] D2 preflight additions found while writing D1; HMI shows them
 - [x] D3 motion guard (mauer/motionguard.py, required by URRobot) + checked park pose + look rolls by smallest
       joint change; guarded world sims main 76/76, c_acb 74/74
 - [x] D4 RoboDK-verified job stamp (simulate.py robodk_stamp) for preflight_real
 - [x] D5 review of the planning core (workflow review-planning-core: 10 findings fixed, 48e79b9)
-- [ ] D6 merge the HMI branch (hmi-integration) into main: URRobot needs guard=MotionGuard(...) there
+- [x] D6 merge the HMI branch (hmi-integration) into main (277d1e8): main merged into it first (348ba08), then the
+      D6 changes (7f21181: REAL start checklist + magazine fill, start at stop k > 0 with a run log / "stop untouched",
+      SIM with the motion guard, approach_mm, IK_GUARD_33 only for ik_check has_solution; c773dec standing_in_log,
+      unsent pick leaves the jaws empty); 669 passed / 40 skipped; offscreen smoke SIM + twin ok
 - [x] D7 PolyScope 3.3 IK check ([ur] ik_check = "get_inverse_kin", 8894751; found by the test plan agent) + the IK
       error code into [ur] reg_error (was register 26); stamp carries the git state of the run start (87757fa)
 - [ ] D8 after D6: RoboDK reruns main + c_acb (both stamps are stale after D7 / D6), commit reports
@@ -103,3 +106,7 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   "has_solution" on PolyScope 3.3; REAL start: show magazine fill (job.restart_fill / initial fill), confirm jaws empty
   / magazine as listed / station full, start at stop k > 0 needs a run log (declare_placed) or "stop untouched";
   update the test plan (S1, S2, S6, Anhang C done items); full suite; merge into main; then D8 (RoboDK reruns).
+- 2026-10-08 07:30: D6 done (HMI in main, 277d1e8; B1-B6, C1-C2, D1-D2 done: docs/HMI_DESIGN.md,
+  hmi/README.md, docs/TESTPLAN_REALTEST_ARES_DE.md). Jobs rebuilt (make_job main + c_acb; the config hash no longer
+  counts [hmi*] and blank lines). D8 running: RoboDK main then c_acb with video, logs scratchpad rdk_main_d8.log /
+  rdk_cacb_d8.log (task bj5tc78fm). After it: commit the reports, send the videos (phone copies), final report.
