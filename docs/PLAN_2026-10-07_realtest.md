@@ -58,6 +58,9 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - [x] D4 RoboDK-verified job stamp (simulate.py robodk_stamp) for preflight_real
 - [x] D5 review of the planning core (workflow review-planning-core: 10 findings fixed, 48e79b9)
 - [ ] D6 merge the HMI branch (hmi-integration) into main: URRobot needs guard=MotionGuard(...) there
+- [x] D7 PolyScope 3.3 IK check ([ur] ik_check = "get_inverse_kin", 8894751; found by the test plan agent) + the IK
+      error code into [ur] reg_error (was register 26); stamp carries the git state of the run start (87757fa)
+- [ ] D8 after D6: RoboDK reruns main + c_acb (both stamps are stale after D7 / D6), commit reports
 
 ## Status log
 - 2026-10-07: plan written; decisions D1-D5.
@@ -79,3 +82,9 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - 2026-10-08 02:47: guarded full sims against 22340be: main 76/76 (243 detours, 661 s), c_acb 74/74 (230, 605 s),
   nothing refused. RoboDK reruns started (main, then c_acb, both with video). HMI integrate done (639 passed; smoke run
   SIM + twin on port 20640; screenshot /mnt/c/Users/samue/ARES_Mauer_wt/hmi_screenshot.png); review + test plan running.
+- 2026-10-08 03:20: RoboDK main rerun 76/76 + 62/62 (fb8ed83, stamp at 7a98fab, now stale by D7). c_acb rerun did
+  not start (the wait loop's grep is ugrep -I: it skipped the log with Windows bytes - use /usr/bin/grep -a); both
+  reruns after D6 (D8). D7 done. HMI workflow: reviews (3 lenses) + German test plan done, fix agent running in
+  /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration. After it: merge main into hmi-integration (D6 notes above, also
+  SimRig with guard=True, REAL start at stop k > 0: magazine fill + jaws-empty confirmation; hmi preflight IK_GUARD_33
+  block -> [ur] ik_check), then into main.
