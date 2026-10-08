@@ -31,7 +31,8 @@ to mm) and fPosTheta_deg (wrapped to (-180, 180]): wheel odometry since the last
 
 Only read_list_by_name / write_list_by_name (ADS sum read / sum write) are used, so any object with these methods
 works (pyads.Connection, tests/fake_plc.py). One AresAds per thread; abort() may be called from another thread
-(connection calls are serialised by a lock).
+(connection calls are serialised by a lock), inhibit() / release_inhibit() from any thread: the HALT latch of the
+Mauer HMI (review 2026-10-08) - while set, move() writes no start edge (AresInhibited).
 """
 from __future__ import annotations
 
@@ -153,6 +154,10 @@ class AresNotReady(AresError):
 
 class MoveRefused(AresError, ValueError):
     """Move parameters refused locally (the PLC would reject them) - nothing was written."""
+
+
+class AresInhibited(AresNotReady):
+    """The HALT latch is set (AresAds.inhibit) - no start edge was written."""
 
 
 class _NoAck(AresConnectionError):
@@ -512,6 +517,7 @@ class AresAds:
         self._build = ""
         self._names: list[str] = []
         self._last_id = 0
+        self._inhibit: str | None = None          # HALT latch: reason; None = moves allowed
 
     # ── connection ────────────────────────────────────────────────────────────
     @property
@@ -732,6 +738,26 @@ class AresAds:
         finally:
             self._write({"bCmdMoveAbort": False})
 
+    def inhibit(self, reason: str = "HALT") -> None:
+        """Latch a HALT: no start edge is written until release_inhibit() (move() raises AresInhibited). Sets a flag
+        only (never blocks - callable from a GUI thread); the edge write checks it under the connection lock."""
+        self._inhibit = str(reason) or "HALT"
+
+    def release_inhibit(self) -> None:
+        """Lift the HALT latch (the operator restarts / resumes explicitly)."""
+        self._inhibit = None
+
+    @property
+    def inhibited(self) -> str | None:
+        """Reason of the HALT latch, None when moves are allowed."""
+        return self._inhibit
+
+    def _refuse_if_inhibited(self) -> None:
+        reason = self._inhibit
+        if reason is not None:
+            raise AresInhibited([f"{reason}: ARES moves inhibited until the run is started / resumed again - no "
+                                 "move command written"])
+
     def _abort_quietly(self) -> str:
         try:
             self.abort()
@@ -765,6 +791,7 @@ class AresAds:
         reason = check_move(dx_mm, dy_mm, dtheta_deg, speed, rot_speed, accel)
         if reason is not None:
             raise MoveRefused(f"move refused: {reason}")
+        self._refuse_if_inhibited()
         pf = self.check()
         if not pf.ok:
             raise AresNotReady(pf.problems)
@@ -791,7 +818,9 @@ class AresAds:
         # is treated as "the move may have started": abort pulse, start bit reset.
         start_reset = False
         try:
-            self._write({"bCmdMoveStart": True})
+            with self._lock:                  # HALT latch checked together with the edge write (inhibit())
+                self._refuse_if_inhibited()
+                self._write({"bCmdMoveStart": True})
             while True:
                 s = self.status()
                 acked = s.move_cmd_ack == mid
@@ -808,7 +837,7 @@ class AresAds:
             s2 = self.status()                # confirmation: ack and verdict from a read after the ack was visible
             if s2.move_cmd_ack == mid:
                 s = s2
-        except _NoAck:
+        except (_NoAck, AresInhibited):       # no ack: abort already sent; inhibited: no edge was written
             raise
         except AresConnectionError as exc:    # the command may have started
             raise AresConnectionError(f"{exc} - move #{mid} may have started, {self._abort_quietly()}",

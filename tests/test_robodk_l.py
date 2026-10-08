@@ -17,8 +17,8 @@ import pytest
 pytestmark = pytest.mark.robodk
 
 
-@pytest.fixture(autouse=True)
-def _opt_in(request):
+@pytest.fixture(autouse=True, scope="module")    # module scope: skips BEFORE the module fixture rdk
+def _opt_in(request):                               # starts a RoboDK instance
     """Opt-in: these start a separate RoboDK instance."""
     import os
     if "robodk" not in (request.config.getoption("markexpr") or "") and os.environ.get("MAUER_ROBODK") != "1":

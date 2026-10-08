@@ -349,6 +349,32 @@ def test_failed_edge_write_aborts_and_resets():
     assert plc.F["eMoveState"] == A.MOVE_ABORTED and plc.F["eMoveResult"] == A.RES_ABORT_USER
 
 
+def test_halt_latch_refuses_the_start_edge():
+    """Review 2026-10-08: the Mauer HMI latches HALT on the sequencer's AresAds. Inhibited, move() writes nothing; a
+    latch set while the preflight's heartbeat window runs stops the start edge (the parameters stay unused)."""
+    plc, ares = make()
+    ares.inhibit("HALT")
+    with pytest.raises(A.AresInhibited, match="HALT: ARES moves inhibited"):
+        ares.translate(0.0, 300.0)
+    assert plc.written() == []
+    ares.release_inhibit()
+    plain_sleep = ares._sleep
+
+    def sleep(s: float) -> None:
+        if s == A.HB_WINDOW_S:                              # inside check(): HALT pressed now
+            ares.inhibit("HALT")
+        plain_sleep(s)
+    ares._sleep = sleep
+    with pytest.raises(A.AresInhibited):
+        ares.translate(0.0, 300.0)
+    assert [w.value for w in plc.written() if w.name == "bCmdMoveStart"] == [False, False]
+    ares._sleep = plain_sleep
+    ares.release_inhibit()
+    plc.run(0.5)
+    o = ares.translate(0.0, 300.0)
+    assert o.ok and ares.inhibited is None
+
+
 # ── preflight ─────────────────────────────────────────────────────────────────
 def _hb_stopped(p: FakePlc) -> None:
     p.hmi_alive = False

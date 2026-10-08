@@ -204,6 +204,7 @@ class FakePlc:
         self._hmi_wd = _Ton(self)
         self._hmi_ok = True
         self._manual_req = True
+        self._manual_req_prev = True         # READY -> MANUAL on a rising edge of the request (_amr_state_machine)
         self._stop_req = False
         # MOVE_PRG
         self._start_prev = False
@@ -612,7 +613,11 @@ class FakePlc:
             self.dist_mm += abs(ds)
 
     def _amr_state_machine(self) -> None:
-        """Subset of FB_AMR_StateMachine (MA snapshot POUs/FB_AMR_StateMachine.TcPOU:226-240)."""
+        """Subset of FB_AMR_StateMachine (MA snapshot POUs/FB_AMR_StateMachine.TcPOU:209-240). READY -> MANUAL (the
+        amr_hmi startup step "Manual", TcPOU:218) is taken on a RISING edge of the manual request here: the PLC
+        uses the level, but tests force READY (amr_state = 6) while the emulated HMI holds the request TRUE."""
+        rise = self._manual_req and not self._manual_req_prev
+        self._manual_req_prev = self._manual_req
         if self.safety_stop:
             self.amr_state = ST_SAFETY_STOP
         elif self.fault and self.amr_state != ST_SAFETY_STOP:
@@ -622,6 +627,8 @@ class FakePlc:
                 self.amr_state = ST_STANDBY                    # drives off, no PLC ramp
             elif not self._manual_req:
                 self.amr_state = ST_READY
+        elif self.amr_state == ST_READY and rise and not self._stop_req:
+            self.amr_state = ST_MANUAL
 
     def _plant(self, dt: float) -> None:
         """Wheels follow the command with the move acceleration (forced traction ramp); no slip."""

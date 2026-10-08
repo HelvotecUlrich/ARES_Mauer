@@ -254,6 +254,7 @@ def test_robot_block_error_stops_safely(cfg, job10, tmp_path):
     assert ev.index("robot_error") < ev.index("run_error") < ev.index("interlock") == len(ev) - 1
     # operator recovers: takes the stone out of the jaws, parks; resume places the rest without repeating any
     w.robot.holding = None
+    seq.clear_held()                                          # the operator confirms the jaws are empty
     w.robot.park()
     seq.run(start_stop=0)
     keys = [r.key for r in w.records]
@@ -831,3 +832,32 @@ def test_full_c(ccfg, cjob, tmp_path, capsys):
               end="")
     assert p["n"] == p["seated"] == cjob.n_stones and p["horiz_mm"]["max"] < 6.0
     assert w.violations == [] and _floor_hits(w, seq) == []
+
+
+def test_standing_in_log_follows_the_resume_chain(tmp_path):
+    """Run 2 took run 1's stones over (declared_placed) and placed more: run 3 starts after all of them."""
+    import json
+    from mauer.sequencer import standing_in_log
+    recs = [{"event": "declared_placed", "source": "run log run1", "stones": [["A", 0, 0], ["A", 0, 1]]},
+            {"event": "placed", "stone": ["A", 0, 2]}, {"event": "picked", "stone": ["A", 0, 3]}]
+    (tmp_path / "run.jsonl").write_text("\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+    assert standing_in_log(tmp_path) == {("A", 0, 0), ("A", 0, 1), ("A", 0, 2)}
+
+
+def test_ur_robot_pick_refused_before_sending_leaves_the_jaws_empty(cfg, job10):
+    """URRobot.holding is pessimistic from a pick's start; a block the link refused before sending it (HALT latch,
+    t_sent None) cannot have closed the jaws (HMI review 2026-10-08)."""
+    from mauer.ur.link import BlockResult
+    c = copy.deepcopy(cfg)
+    c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"] = 1.5, 3.0
+    link = _FakeLink(job10.park_q_rad)
+    r = URRobot(link, c, job10, guard=_guard(c, job10))
+    slot = job10.magazine.slot(job10.stops[0].stones[0].slot)
+    link.run_block = lambda body, **kw: BlockResult(ok=False, block_id=1, name="b", error="inhibited")
+    with pytest.raises(RobotError):
+        r.pick_magazine(slot, g.inv(job10.T_ares_base))
+    assert r.holding is None
+    link.run_block = lambda body, **kw: BlockResult(ok=False, block_id=1, name="b", t_sent=1.0, error="stop")
+    with pytest.raises(RobotError):
+        r.pick_magazine(slot, g.inv(job10.T_ares_base))
+    assert r.holding == "full"                                   # sent: the jaws may hold the stone

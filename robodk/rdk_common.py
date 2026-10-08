@@ -23,6 +23,8 @@ camera), never -HIDDEN (crashes on Cam2D_Add); the window is minimised instead, 
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import struct
 import sys
 import time
@@ -45,12 +47,26 @@ PI = 3.141592653589793
 DEG = PI / 180.0
 NEW_INSTANCE_PORT = 20599                          # own API port; the user's RoboDK listens on 20500/20501
 NEW_INSTANCE_ARGS = ("-NEWINSTANCE", "-NOSPLASH", "-EXIT_LAST_COM")
+QT_ENV = ("QT_QPA_PLATFORM", "QT_QPA_PLATFORM_PLUGIN_PATH", "QT_PLUGIN_PATH")   # never passed on to a new RoboDK
 
 
 def load_config(variant: str | None = None) -> dict:
     """config/station.toml (with the overlay config/variants/<variant>.toml: mauer.config.load)."""
     from mauer import config as mconfig
     return mconfig.load(variant=variant)
+
+
+@contextlib.contextmanager
+def qt_free_env():
+    """os.environ without the Qt platform variables while a RoboDK process is started (robolink starts it with the
+    inherited environment): RoboDK is a Qt application of its own, and QT_QPA_PLATFORM=offscreen (set by
+    tests/conftest.py for the HMI tests) makes it exit at once ("RoboDK Application not properly started", checked
+    2026-10-08 by the twin)."""
+    saved = {k: os.environ.pop(k) for k in QT_ENV if k in os.environ}
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
 
 
 def connect(new_instance: bool = False, port: int | None = None, minimized: bool = True) -> Robolink:
@@ -65,7 +81,8 @@ def connect(new_instance: bool = False, port: int | None = None, minimized: bool
         RDK = Robolink() if port is None else Robolink(port=port)
     else:
         port = port or NEW_INSTANCE_PORT
-        RDK = Robolink(port=port, args=list(NEW_INSTANCE_ARGS))
+        with qt_free_env():                       # the process starts here (also from the offscreen Qt tests)
+            RDK = Robolink(port=port, args=list(NEW_INSTANCE_ARGS))
         if RDK.NEW_INSTANCE is None:              # connected to an already running RoboDK on that port
             try:
                 RDK.Disconnect()

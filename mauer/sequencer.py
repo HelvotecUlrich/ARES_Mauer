@@ -31,10 +31,15 @@ Routes (job v2: moves between stops, leg change between the legs of an L, statio
 Interruptions (pause, a declined step, an ARES or robot error) keep the route progress (route, next leg); run() with
   the same stop resumes it: an interrupted station trip continues to the station (and does the reload), an interrupted
   return or move between stops continues its remaining legs - never a straight line from wherever ARES stands to the
-  first waypoint of another route. The first move of a resume is checked against the floor model of the job (legs,
-  plates, table; mauer.floor.job_obstacles) and refused if it would cross an obstacle. A move that ended not ok
+  first waypoint of another route. A direct move between stops (no route) counts as a two-waypoint route while it
+  runs, so an interrupted one is driven to its end on resume (2026-10-07). The first move of a resume is checked
+  against the floor model of the job (legs, plates, table; mauer.floor.job_obstacles) and refused if it would cross
+  an obstacle. A move that ended not ok
   (aborted by the PLC) updates the estimate from the odometry of the outcome and marks it unverified; an ARES error
   without an outcome marks the pose unknown - a resume then needs confirm_pose() / set_pose(pose) by the operator.
+Held stone (2026-10-07): `held` tracks the stone between pick and put-down; a pause takes effect only with empty
+  jaws (the place of a held stone still runs), a robot error during a pick or place marks the jaw state unknown, and
+  run() refuses to resume while a stone may be held until the operator calls clear_held().
 Rotations of more than `rotate_keep_dir_deg` keep the direction of the previous rotation (E003: ~1.2 deg loss after
 reversing the rotation direction, mauer/ares/ads.py AresAds.rotate).
 
@@ -44,6 +49,10 @@ comparison case for the simulation.
 Every measurement and decision goes to a JSON-lines run log (log_dir/run.jsonl, default data/runs/<timestamp>/),
 optionally with the images (save_images). Step mode: `confirm(description) -> bool` is called before every motion
 (each ARES command, each robot program); False aborts the run (SequencerAborted).
+Hooks for the Mauer HMI (hmi/, docs/HMI_DESIGN.md section 7): RunLog listeners get every record in the writer's
+thread (writes are serialised by a lock, so the GUI thread may call pause()); `on_shot(image, shot_record)` taps
+every camera image after its measurement; an `ares_cmd` record precedes every ARES command, `station_refilled`
+follows the operator's station refill.
 
 Real runs: `preflight_real()` refuses to start while safety-relevant values are PLACEHOLDER/unknown and lists all
 problems at once (tools/run_job.py --real; there is no override for real runs).
@@ -57,6 +66,7 @@ import datetime as _dt
 import json
 import logging
 import math
+import threading
 import time
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
@@ -184,7 +194,8 @@ def _jsonable(x: Any) -> Any:
 
 
 class RunLog:
-    """JSON-lines log: one object per line {"t": now(), "event": ..., ...}; flushed after every line."""
+    """JSON-lines log: one object per line {"t": now(), "event": ..., ...}; flushed after every line. Writes may come
+    from several threads (the run thread, the HMI's pause()); listeners get each record in the writer's thread."""
 
     def __init__(self, folder: Path, now: Callable[[], float] = time.time):
         self.folder = Path(folder)
@@ -193,11 +204,27 @@ class RunLog:
         self.now = now
         self._f = open(self.path, "a", encoding="utf-8")
         self.n_images = 0
+        self._lock = threading.Lock()
+        self._listeners: list[Callable[[dict], None]] = []
+
+    def add_listener(self, fn: Callable[[dict], None]) -> None:
+        """fn(record) after every write, in the writer's thread; its exceptions are logged and swallowed."""
+        self._listeners = [*self._listeners, fn]
+
+    def remove_listener(self, fn: Callable[[dict], None]) -> None:
+        self._listeners = [f for f in self._listeners if f != fn]
 
     def write(self, event: str, **data: Any) -> dict:
         rec = {"t": self.now(), "event": event, **_jsonable(data)}
-        self._f.write(json.dumps(rec) + "\n")
-        self._f.flush()
+        line = json.dumps(rec) + "\n"
+        with self._lock:
+            self._f.write(line)
+            self._f.flush()
+        for fn in self._listeners:
+            try:
+                fn(rec)
+            except Exception as e:                   # noqa: BLE001 - a listener must never stop the run
+                log.warning("run-log listener %r failed on %s: %s", fn, event, e)
         return rec
 
     def image(self, img: np.ndarray, name: str) -> str:
@@ -210,8 +237,9 @@ class RunLog:
         return rel
 
     def close(self) -> None:
-        if not self._f.closed:
-            self._f.close()
+        with self._lock:
+            if not self._f.closed:
+                self._f.close()
 
 
 def read_log(path: str | Path) -> list[dict]:
@@ -219,6 +247,18 @@ def read_log(path: str | Path) -> list[dict]:
     if p.is_dir():
         p = p / "run.jsonl"
     return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+
+def standing_in_log(path: str | Path) -> set[tuple]:
+    """Stones that stand after the run of this log: its "placed" stones and those it took over as standing from an
+    earlier log ("declared_placed") - the input of Sequencer.declare_placed for the next run (resume chain)."""
+    out: set[tuple] = set()
+    for e in read_log(path):
+        if e.get("event") == "placed":
+            out.add(tuple(e["stone"]))
+        elif e.get("event") == "declared_placed":
+            out |= {tuple(k) for k in e.get("stones") or []}
+    return out
 
 
 @dataclass
@@ -366,7 +406,8 @@ class Sequencer:
     def __init__(self, job: Job, cfg: Mapping, robot, ares, camera, intr, T_flange_cam: np.ndarray,
                  log_dir: str | Path | None = None, confirm: Callable[[str], bool] | None = None,
                  now: Callable[[], float] = time.time, *, camera_loop: bool = True, save_images: bool = False,
-                 on_station_empty: Callable[[], Any] | None = None, params: SequencerParams | None = None):
+                 on_station_empty: Callable[[], Any] | None = None, params: SequencerParams | None = None,
+                 on_shot: Callable[[np.ndarray, dict], None] | None = None):
         self.job, self.cfg = job, cfg
         self.robot, self.ares, self.camera = robot, ares, camera
         self.intr = intr
@@ -374,6 +415,7 @@ class Sequencer:
         self.confirm, self.now = confirm, now
         self.camera_loop, self.save_images = bool(camera_loop), bool(save_images)
         self.on_station_empty = on_station_empty
+        self.on_shot = on_shot                   # frame tap (image, 'shot' record), run thread, after the measurement
         self.p = params or SequencerParams.from_config(cfg)
         self.vcfg = dict(cfg.get("vision", {}))
         self.specs = board_specs(cfg)
@@ -402,6 +444,7 @@ class Sequencer:
         self.route_progress: RouteProgress | None = None
         self.pending_why: str | None = None      # limits of the next wall measurement after a finished route / return
         self.pose_status = "ok"                # "ok" | "odometry" (move not ok: odometry estimate) | "unknown"
+        self.held: dict | None = None            # stone in the jaws: {"from", "slot", "kind", "stone", "unknown"}
         self.board_leg = {str(t["name"]): t.get("leg") for t in cfg.get("targets", []) if t.get("parent") == "wall"}
         # the standoff the job's looks were checked for (tools/make_job.py); 0 = route ends at the stop (old jobs)
         self.standoff_mm = float((job.meta.get("route_check") or {}).get("arrival_standoff_mm", 0.0) or 0.0)
@@ -466,11 +509,23 @@ class Sequencer:
         self.log.write("warning", msg=msg, **data)
 
     def _confirm(self, desc: str) -> None:
-        if self.paused:
+        # a pause takes effect only with empty jaws: while a stone is held its place still runs (and is confirmed)
+        if self.paused and self.held is None:
             raise SequencerPaused("run paused", self.stop_k)
         if self.confirm is not None and not self.confirm(desc):
+            if self.paused and self.held is None:       # pause pressed while the step waited for the operator
+                raise SequencerPaused("run paused", self.stop_k)
             self.log.write("declined", what=desc)
             raise SequencerAborted(f"operator declined: {desc}", self.stop_k)
+
+    def _set_held(self, held: dict | None) -> None:
+        self.held = held
+        self.log.write("held", held=held)
+
+    def clear_held(self, source: str = "operator") -> None:
+        """Operator: the jaws are empty (stone taken out or placed by hand, arm parked) - lifts the resume refusal."""
+        self.log.write("held_cleared", held=self.held, source=source)
+        self.held = None
 
     # ── robot ────────────────────────────────────────────────────────────────
     def _robot(self, action: str, desc: str, *args) -> Any:
@@ -483,6 +538,13 @@ class Sequencer:
             return getattr(self.robot, action)(*args)
         except RobotError as e:
             self.log.write("robot_error", action=action, what=desc, error=str(e))
+            if action in ("pick_magazine", "pick_station"):        # the jaws may or may not hold the stone now
+                slot = next((a for a in args if hasattr(a, "id")), None)
+                kind = args[2] if action == "pick_magazine" and len(args) > 2 else getattr(slot, "kind", "full")
+                self._set_held({"from": "magazine" if action == "pick_magazine" else "station",
+                                "slot": getattr(slot, "id", None), "kind": kind, "stone": None, "unknown": True})
+            elif action.startswith("place_") and self.held is not None:
+                self._set_held({**self.held, "unknown": True})
             raise SequencerError(f"robot {action} failed ({desc}): {e} - the arm is NOT parked; ARES stays "
                                  "interlocked. Inspect, recover the arm (protective stop / stone in the jaws), park "
                                  f"it, then resume from stop {self.stop_k}", self.stop_k) from e
@@ -544,6 +606,7 @@ class Sequencer:
 
     def _ares_cmd(self, kind: str, *args, why: str = "") -> Any:
         what = f"ARES {kind}{tuple(round(a, 2) for a in args)}"
+        self.log.write("ares_cmd", kind=kind, args=list(args), why=why, pose=self.pose_est, pose_src=self.pose_src)
         try:
             out = getattr(self.ares, kind)(*args)
         except (MoveRefused, AresNotReady) as e:               # nothing was written: ARES did not move
@@ -800,8 +863,13 @@ class Sequencer:
                     if b not in observed:
                         missing[b] = f"look {lk.name}{tag}: {bp.reason}"
                     boards[b] = {"ok": False, "reason": bp.reason, "n_corners": bp.n_corners}
-            self.log.write("shot", parent=parent, look=lk.name + tag, T_base_flange=shot.T_base_flange,
-                           image=img_rel, max_qd=getattr(shot, "max_qd", None), boards=boards)
+            rec = self.log.write("shot", parent=parent, look=lk.name + tag, T_base_flange=shot.T_base_flange,
+                                 image=img_rel, max_qd=getattr(shot, "max_qd", None), boards=boards)
+            if self.on_shot is not None:
+                try:
+                    self.on_shot(shot.frame.image, rec)
+                except Exception as e:               # noqa: BLE001 - a display tap must never stop the run
+                    log.warning("on_shot failed: %s", e)
             if any(v["ok"] for v in boards.values()):
                 obs = {b: Ts[-1] for b, Ts in observed.items()}
                 T_est = g.inv(fit_frame(obs, self.placements, self.specs, parent).T_base_parent)
@@ -961,6 +1029,7 @@ class Sequencer:
                                      "(operator), then resume", k)
             self.on_station_empty()
             self.station = SlotState.station(st)
+            self.log.write("station_refilled", station=len(self.station))
         plan = reload_plan(self.magazine, self.station, upcoming)
         if not plan:
             raise SequencerError(f"pick-up station holds no {upcoming[0] if upcoming else ''} stone for the next "
@@ -990,9 +1059,11 @@ class Sequencer:
         for sid, mid, kind in plan:
             self._robot("pick_station", f"pick station slot {sid} ({kind})", T_base_station, st.slot(sid))
             self.station.take(sid)
+            self._set_held({"from": "station", "slot": sid, "kind": kind, "stone": None, "unknown": False})
             self._robot("place_magazine", f"place magazine slot {mid} ({kind})", self.job.magazine.slot(mid),
                         self.T_base_ares, kind)
             self.magazine.fill(mid, kind)
+            self._set_held(None)
             n += 1
         self._park()
         self.log.write("reload_transfer", moved=n, wanted=n_need, magazine=len(self.magazine),
@@ -1065,11 +1136,13 @@ class Sequencer:
         self._robot("pick_magazine", f"pick magazine slot {mid} ({t.kind})", self.job.magazine.slot(mid),
                     self.T_base_ares, t.kind)
         self.magazine.take(mid)
+        self._set_held({"from": "magazine", "slot": mid, "kind": t.kind, "stone": list(t.key), "unknown": False})
         T_cmd = self.T_base_wall @ t.T_wall_tcp
         self._robot("place_wall", f"place stone {t.label} (u {t.u_mm:.0f} mm, top {t.z_top_mm:.0f} mm)",
                     self.T_base_wall, t)
         self.placed.add(t.key)
         self.result.placed.append(t.key)
+        self._set_held(None)                      # after placed: a snapshot at 'held' shows the stone in the wall
         self.log.write("placed", stop=k, stone=t.key, slot=mid, T_base_tcp=T_cmd, frame_src=self.pose_src)
 
     # ── run ──────────────────────────────────────────────────────────────────
@@ -1083,6 +1156,9 @@ class Sequencer:
             raise ValueError(f"start_stop {start_stop} / stop_after {stop_after} outside 0..{n - 1}")
         if self.paused:
             raise SequencerPaused("run is paused - resume() first", start_stop)
+        if self.held is not None:
+            raise SequencerError(f"a stone may be in the jaws ({self.held}) - take it out / check the gripper, park "
+                                 "the arm, then clear_held() and resume", start_stop)
         self.result.state = "running"
         self.result.error = None
         self.log.write("run_start", start_stop=start_stop, last_stop=last, camera_loop=self.camera_loop,
@@ -1143,7 +1219,11 @@ class Sequencer:
                                            standoff_mm=self._standoff())
                         why = "after route"
                     else:
+                        # kept as a two-waypoint route while it runs: an interrupted direct move (declined, paused,
+                        # ARES error) is resumed like a route leg instead of measuring stop k from stop k - 1
+                        self.route_progress = RouteProgress("stop", k, [prev, stop.ares], f"stop {k - 1} -> stop {k}")
                         self._drive_to(stop.ares, prev, f"stop {k - 1} -> stop {k}")
+                        self.route_progress = None
                 if not (k == start_stop and measured):
                     self._measure_wall(k, why)
                 for t in stop.stones:
@@ -1173,6 +1253,10 @@ class Sequencer:
             self.result.state, self.result.error = "error", str(e)
             self.log.write("run_error", error=str(e), stop=self.stop_k, kind=type(e).__name__)
             raise SequencerError(str(e), self.stop_k) from e
+        except Exception as e:                        # anything else (CameraError, a bug): a defined end state
+            self.result.state, self.result.error = "error", f"{type(e).__name__}: {e}"
+            self.log.write("run_error", error=str(e), stop=self.stop_k, kind=type(e).__name__)
+            raise SequencerError(f"{type(e).__name__}: {e}", self.stop_k) from e
 
     def close(self) -> None:
         self.log.close()

@@ -575,3 +575,56 @@ arrival_standoff_mm = 40.0  # ASSUMPTION: a route (stop move, leg change, statio
                             # tools/make_job.py checks the looks for ARES at this standoff too
 search_step_mm = 50.0       # board search when none of the expected boards is usable (after long routes ARES can be
 search_rings = 2            # > 45 mm off the prediction): looks for ARES displaced by +-50 / +-100 mm, 8 directions
+
+[hmi]
+# Mauer HMI (hmi/, copy of MA 10_robot/hmi/amr_hmi v2, commit 5935c5b, 2026-10-07). ADS target, timeout and the
+# relative-move defaults are NOT repeated here: hmi/core/config.py takes them from [ares_ads] (ams_net_id, host_ip,
+# port, timeout_ms, speed_mms, rot_speed_degs, accel_mms2), the PLC limits from the mauer/ares/ads.py constants.
+poll_interval_ms = 100          # CONFIRMED: amr_hmi value (status sum read)
+heartbeat_interval_ms = 100     # CONFIRMED: amr_hmi value; must stay < 250 (AresAds HB_WINDOW_S, pattern A)
+reconnect_interval_s = 5.0      # CONFIRMED: amr_hmi value
+jog_speed_mms = 200.0           # CONFIRMED: amr_hmi value
+jog_rot_speed_degs = 20.0       # CONFIRMED: amr_hmi value
+default_speed_limit_mms = 500.0 # CONFIRMED: amr_hmi value (fSpeedLimit_mms)
+jog_accel_mms2 = 1000.0         # CONFIRMED: amr_hmi value; written as fAccel_mms on MANUAL entry, also caps the move
+                                # acceleration in the PLC (mauer/ares/ads.py:382-383) - keep >= [ares_ads] accel_mms2
+accel_outside_manual_mms2 = 200.0  # CONFIRMED: amr_hmi value
+watchdog_timeout_s = 2.0        # CONFIRMED: informative, FB_HMI_Interface T#2S (amr_hmi value)
+ur_poll_hz = 10.0               # ASSUMPTION: UR panel refresh (URLink.state() is lock-protected, 125 Hz receiver)
+camera_preview_scale = 0.25     # ASSUMPTION: 618 x 516 px preview of the 2472 x 2064 frame (draw 1 ms, 2026-10-07)
+camera_live_hz = 1.0            # ASSUMPTION: REAL live view while no run is active (grab 123 ms, 2026-10-06)
+camera_display_hz = 5.0         # ASSUMPTION: camera view paints at most this many images per second (~2 ms each);
+                                # a faster shot replaces the waiting one
+sim_step_s = 0.3                # ASSUMPTION: SIM pacing, wait before every motion (unpaced a full sim takes 8 s)
+confirm_arm_s = 0.5             # ASSUMPTION: Go of a step confirmation is enabled this long after it appears
+resume_odom_tol_mm = 2.0        # ASSUMPTION: PLC odometry change since the run stopped that blocks a resume
+                                # (= PLC minimum move fMinMove_mm)
+resume_odom_tol_deg = 0.2       # ASSUMPTION: same for the heading (= fMinMove_deg)
+log_view_max_lines = 5000       # ASSUMPTION
+runs_dir = "data/runs"          # ASSUMPTION: HMI run logs go to <runs_dir>/<stamp>_hmi_<sim|real>/
+
+[hmi.frame]
+# Physical direction mapping of jog / relative move / odometry map (amr_hmi config.yaml frame). The two flags are
+# confirmed TOGETHER (both true or both false); needs PLC >= v2.1 ([ares_ads] min_plc_build).
+plus_y_is_left = true           # CONFIRMED: MA DECISIONS D21, direction test with PLC v2.1 28.09.2026
+plus_omega_is_ccw = true        # CONFIRMED: same test
+verified = true                 # CONFIRMED: same test
+
+[hmi.move]
+# Relative-move panel presets (operator values, amr_hmi config.yaml move).
+default_distance_mm = 1000.0    # CONFIRMED: amr_hmi value
+default_angle_deg = 90.0        # CONFIRMED: amr_hmi value
+test_distance_mm = 100.0        # CONFIRMED: amr_hmi value ("Load test move", physical Left)
+test_speed_mms = 50.0           # CONFIRMED: amr_hmi value
+
+[hmi.twin]
+# RoboDK digital twin (robodk/twin.py): an OWN RoboDK instance (rdk_common.connect(new_instance=True)); never the
+# user's RoboDK (API 20500/20501), not robodk/simulate.py (20599), not the tests (20596-20598).
+port = 20630                    # ASSUMPTION: first API port tried (>= 20630)
+port_tries = 10                 # ASSUMPTION: ports port .. port + 9
+rate_hz = 10.0                  # ASSUMPTION: tick measured 11 ms (visible window, 2026-10-07) -> ~11 % of one thread
+socket_timeout_s = 5.0          # ASSUMPTION: API timeout after the build (connect() leaves 600 s)
+build_timeout_s = 120.0         # ASSUMPTION: API timeout during build_station.build (3.6 s measured; STEP import
+                                # if a mesh cache is missing)
+visible = true                  # ASSUMPTION: normal window (a minimised RoboDK does not render, measured 2026-10-07)
+ghost_wall = true               # ASSUMPTION: Wall_nominal shown as a transparent ghost

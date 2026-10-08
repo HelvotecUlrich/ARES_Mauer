@@ -42,6 +42,7 @@ height/tilt on the sprung casters not yet measured.
 | `cad/` | ARES STEP (not versioned, 37.6 MB, see `cad/README.md`) |
 | `robodk/library/UR5.robot` | RoboDK library file (not versioned, download link in `cad/README.md`) |
 | `results/` | study outputs (CSV, summary, snapshots) |
+| `hmi/` | Mauer HMI (copy of the MA amr_hmi v2 + job runs, camera, UR / ARES state, RoboDK twin), `hmi/README.md` |
 
 ## Running
 
@@ -173,6 +174,19 @@ Plan and state of the work: **`docs/PLAN_2026-10-07_realtest.md`**.
 - **RoboDK-verified jobs**: a complete clean `robodk/simulate.py` run writes `data/jobs/nominal_C[_variant]_robodk.json`
   (meta `reach_check` "robodk"), which `preflight_real` requires for the real robot.
 - **Time-lapse**: `py.exe robodk/simulate.py --animate --video results/l_wall_sim.mp4` (`robodk/timelapse.py`).
+
+## Mauer HMI (2026-10-07)
+
+`py.exe -m hmi --job data/jobs/nominal_C.json` (Windows: `hmi --job data\jobs\nominal_C.json`) opens the Mauer HMI:
+the ARES HMI v2 from the MA repo (copied into `hmi/amr/`; connection, startup, jog, relative move, odometry map,
+dashboard, diagnostics, battery, HALT on every tab) plus a **Mauer** tab (load / build a job with its config variant,
+SIM or REAL run in a worker thread, step-mode confirmations in a bar above the tabs, pause / resume / abort,
+recovery, preflight, plan view, run feedback), **Camera** (images with the ChArUco detections, last frame fit),
+**UR**, **Wall pose**, **Run log** and **Twin** (`--twin`: the run mirrored in an own RoboDK instance on an API port
+>= 20630). Without `--ares` it never opens an ADS connection; REAL connects the UR, the sequencer's AresAds and the IDS
+camera only on **Prepare / Connect**. ARES moves keep operating pattern A (the HMI's ADS worker owns heartbeat /
+MANUAL / HALT, the sequencer's AresAds writes only the move fields) - in ONE process, tested against the fake PLC,
+**not yet on the robot**. Usage and limits: `hmi/README.md`; design: `docs/HMI_DESIGN.md`.
 
 ## C wall with ARES inside (2026-10-06, simulation only)
 

@@ -144,6 +144,37 @@ error without outcome makes it unknown (→ `set_pose(pose)`); the first measure
 the route / station jump limits. A frame fit over boards of two legs that does not agree names the legs.
 Real runs refuse to start while safety-relevant config values are PLACEHOLDER/unknown (payload, host, calibration).
 
+## HMI (`hmi/`)
+The Mauer HMI (`py.exe -m hmi`, usage `hmi/README.md`, design and contract `docs/HMI_DESIGN.md`). `hmi.amr` is the
+MA amr_hmi v2 (commit 5935c5b) with relative imports and the run-lock hooks; its config comes from `station.toml`
+`[hmi*]` / `[ares_ads]` (`hmi.core.config.amr_cfg`). `hmi.core` holds the services (no widgets): `session`
+(job + its config variant), `rigs` (`SimRig` on `mauer.simworld`, `RealRig` = URLink + AresAds + camera +
+calibration), `preflight`, `snapshot` (immutable `RunSnapshot` / `ShotView`), `sources` (read-only UR / ARES state),
+`run_controller` (`RunController`: states, enable matrix, confirm protocol, pause / abort / HALT, resume checks),
+`overlay` (ChArUco detections drawn on the preview), `twin_link` (frames for `robodk/twin.py`). `hmi.views` holds the
+widgets; `hmi.main_window` the window. `mauer` never imports `hmi`; pyads, ids_peak and RoboDK are imported lazily.
+
+| Resource | Owner | Driven by | Read by |
+|---|---|---|---|
+| ADS #1 (heartbeat, MANUAL, HALT, jog, GO, odometry reset) | `AdsWorker` (only with `--ares`) | `ads-worker` QThread | GUI via the worker queue (HALT priority 0) |
+| ADS #2 (the run's relative moves) | `RealRig` (`AresAds`) | `mauer-run` | `mauer-halt`: abort pulse only without the worker |
+| UR (RTDE, script, Dashboard) | `RealRig` (`URLink`, one for all) | `mauer-run` (URRobot blocks) | UR panel, status strip, twin: `link.state()`; `mauer-halt`: `link.abort()` |
+| camera | `RealRig` / `SimRig` | `mauer-run` only (shots, manual grabs, overlay) | GUI: `ShotView` previews by signal |
+| `Sequencer` + `RunLog` | `RunController` | `mauer-run` | GUI: run-log listener signals, `pause()` |
+| RoboDK twin instance (port >= 20630) | `robodk/twin.py` `Twin` | `mauer-twin` | nobody (passive mirror) |
+
+| Trigger | ARES | UR | Run |
+|---|---|---|---|
+| HALT (button, Space, Esc, any tab) | `AdsWorker.halt()` first (abort + jog bits FALSE); the run's `AresAds` latched (no start edge until Start / Resume); `AresAds.abort()` only without the worker | REAL: `URLink` latched (no program but the abort until Start / Resume), `URLink.abort()` in `mauer-halt` | pending confirmation released with "no", "halt" in the run log, run "error" / "aborted", step mode on for the resume |
+| Pause / Abort | - | - | at the next motion boundary with empty jaws (`Sequencer.held`) |
+| Decline (confirmation bar) | - | - | at once, also with a stone held ("Jaws empty" before the resume) |
+| E-stop | hardware | hardware | the sequencer sees the failure ("error") |
+
+HALT is an operating function; the E-stops remain the safety function. The latch (`URLink.inhibit` /
+`AresAds.inhibit`, review 2026-10-08) closes the gap between a confirmation and the program / start edge it allows
+(motion planning, the AresAds preflight): a motion is either sent before the abort, which stops it, or refused; the
+Sequencer sees the backends through `hmi.core.rigs.HaltGate`, so a refused motion ends the run "aborted".
+
 ## Calibration files (`calib/`, versioned)
 `camera_intrinsics.json` and `handeye.json` with values, date, number of views/poses, residuals, OpenCV version and
 the dataset folder they came from. Raw images and robot poses go to `data/` (not versioned, large).
@@ -155,3 +186,5 @@ the dataset folder they came from. Raw images and robot poses go to `data/` (not
 | URSim | `vision.synth` / files | URSim CB3 3.15.8 (Docker) | fake PLC |
 | RoboDK simulation | RoboDK Cam2D on the flange | RoboDK UR5 | ARES frame moved with injected error |
 | real | IDS peak | UR5 | CX9240 via ADS, amr_hmi open |
+| HMI SIM (`py.exe -m hmi`) | `mauer.simcam.SynthCamera` (rendered) | `mauer.simworld.SimRobot` | `SimAres` (no ADS) |
+| HMI REAL (`py.exe -m hmi --ares`) | IDS peak | UR5 (URLink) | CX9240: HMI ADS worker + the sequencer's AresAds (pattern A, one process) |
