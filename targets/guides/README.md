@@ -17,7 +17,9 @@ floor in one row).
 
 ## Order
 
-1. **Test first.** Cut `laser_test.dxf`, print two `locating_cone.stl`. Check:
+1. **Test first.** Cut `peg_fit_test.dxf` (`tools/make_peg_test.py`: peg holes 7.5-8.4 mm finished, labelled) and
+   push a printed cone into each: the smallest hole that takes the peg by hand without play -> `[guides] peg_hole_d`,
+   regenerate. Then cut `laser_test.dxf`, print two `locating_cone.stl`. Check:
    - the cones' pegs go into the peg holes of `test1` without play and without force (`[guides] peg_hole_d`);
    - a stone, pins up, drops onto the two cones and stands flat on the MDF without play (`socket_clearance`);
    - an existing wall board plate (W0..W7) drops with one V-notch onto the V-tab of `test1`, its edge against the
