@@ -183,6 +183,13 @@ front_x = 40.0              # ASSUMPTION: front edge of the plates in the ARES f
                             # x = -12, the UR base starts at mount_x - 75)
 split_x = -400.0            # ASSUMPTION: joint magazine / rear plate (rear magazine stones end at x = -355)
 dovetail_y = [-150.0, 150.0]  # ASSUMPTION: dovetail centres on the joint ([guides] dovetail, joint_clearance)
+cover_depth = 315.0         # CONFIRMED: Samuel 2026-10-08 - two MDF covers ("cover_left" / "cover_right", split at the UR
+                            # centreline) on the deck front from the ARES front edge 315 mm back, around the UR
+ur_plate = 180.0            # CONFIRMED: Samuel 2026-10-08 - the UR stands on an 180 x 180 mm aluminium plate;
+                            # ASSUMPTION: centred on the UR base ([ur5] mount_x, mount_y)
+ur_plate_gap = 2.0          # CONFIRMED: Samuel 2026-10-08 - MDF 2 mm away from the aluminium plate all round
+cover_bolt_front_y = [-150.0, 150.0]  # ASSUMPTION: cover holes along the front edge (x = length/2 - bolt_edge_mm)
+cover_bolt_side_x = [270.0, 440.0]    # ASSUMPTION: cover holes along both sides (y = +-(width/2 - bolt_edge_mm))
 inset_mm = 10.0             # ASSUMPTION: "onepiece" only - plate edge inside the deck edge (580 mm fits the 600 mm bed)
 bolt_edge_mm = 20.0         # CONFIRMED: Samuel 2026-10-08 - M6 / slot nuts 20 mm from the ARES outer edge
 bolt_hole_d = 6.6           # ASSUMPTION: M6 clearance hole (finished, kerf-compensated like the peg holes)

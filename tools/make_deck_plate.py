@@ -119,7 +119,21 @@ def plates(cfg: dict) -> list[Plate]:
     p_one = Plate("onepiece", one, cones, side(dp["onepiece_bolt_side_x"]) + rear_bolts, holders,
                   [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xr + 30.0, -230.0), 5.0, "ARES deck plate - " + note)],
                   [((xr + 25.0, 0.0), (xf - 15.0, 0.0))] + arrow)
-    return [p_mag, p_rear, p_one]
+    # front covers around the UR's aluminium plate, split at y = 0 (each one goes in beside the mounted UR)
+    xb, xfr = L / 2 - float(dp["cover_depth"]), L / 2
+    hp = float(dp["ur_plate"]) / 2 + float(dp["ur_plate_gap"])
+    ux = float(u["mount_x"])
+    right = ([(xb, 0.0), (xb, -yh)] + arc(xfr - R, -yh + R, R, 270.0, 360.0)
+             + [(xfr, 0.0), (ux + hp, 0.0), (ux + hp, -hp), (ux - hp, -hp), (ux - hp, 0.0)])
+    left = [(x, -y) for x, y in reversed(right)]
+    covers = []
+    for name, poly, s_ in (("cover_left", left, 1.0), ("cover_right", right, -1.0)):
+        bolts = [(xfr - e, s_ * abs(float(y))) for y in dp["cover_bolt_front_y"][:1]] \
+            + [(float(x), s_ * (yh - e)) for x in dp["cover_bolt_side_x"]]
+        covers.append(Plate(name, poly, [], bolts, [],
+                            [((xb + 30.0, s_ * 150.0 - 40.0), 6.0, f"{'LEFT' if s_ > 0 else 'RIGHT'} - FRONT ->")],
+                            []))
+    return [p_mag, p_rear, p_one] + covers
 
 
 # ── geometry helpers ──────────────────────────────────────────────────────────
