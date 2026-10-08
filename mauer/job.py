@@ -854,34 +854,72 @@ def git_state(paths: Sequence[str] = STAMP_PATHS) -> dict:
     return {"git_commit": commit, "git_dirty": dirty}
 
 
-def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS) -> list[str]:
+def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS, repo: str | Path | None = None) -> list[str]:
     """Why a RoboDK-verified job (meta reach_check "robodk") no longer matches the code: stamped from a dirty tree, or
-    the planning code / CAD / config changed since its commit; [] if it matches or git is not available."""
+    the planning code / CAD / config changed since its commit; [] if it matches or git is not available. The config
+    files count without their [hmi*] tables (planning_bytes): HMI display settings do not change what was verified."""
     import subprocess
     from . import REPO
+    repo = str(repo or REPO)
     rs = job.meta.get("robodk_sim") or {}
     if rs.get("git_dirty"):
         return ["the RoboDK-verified job was stamped from uncommitted changes - commit, rerun robodk/simulate.py"]
     commit = rs.get("git_commit")
     if not commit:
         return ["the RoboDK-verified job has no code commit (stamped by an older simulate.py) - rerun it"]
+    code = [p for p in paths if p != "config"]
+    changed = []
     try:
-        r = subprocess.run(["git", "-C", str(REPO), "diff", "--quiet", commit, "--", *paths], timeout=30)
+        r = subprocess.run(["git", "-C", repo, "diff", "--quiet", commit, "--", *code], timeout=30)
+        names = (subprocess.run(["git", "-C", repo, "diff", "--name-only", commit, "--", "config"],
+                                capture_output=True, timeout=30) if "config" in paths else None)
+        if r.returncode not in (0, 1) or (names is not None and names.returncode != 0):
+            return [f"the code commit of the RoboDK verification ({commit[:8]}) is not in this repo - rerun "
+                    "robodk/simulate.py"]
+        for name in (names.stdout.decode().split() if names is not None else []):
+            old = subprocess.run(["git", "-C", repo, "show", f"{commit}:{name}"], capture_output=True, timeout=30)
+            now = Path(repo) / name
+            if (old.returncode != 0 or not now.exists()
+                    or planning_bytes(old.stdout) != planning_bytes(now.read_bytes())):
+                changed.append(name)
     except (OSError, subprocess.SubprocessError):
         return []
+    out = []
     if r.returncode != 0:
-        return [f"the planning code / CAD / config changed since the RoboDK verification ({commit[:8]}) - rerun "
-                "robodk/simulate.py"]
-    return []
+        out.append(f"the planning code / CAD changed since the RoboDK verification ({commit[:8]}) - rerun "
+                   "robodk/simulate.py")
+    if changed:
+        out.append(f"the config ({', '.join(changed)}) changed since the RoboDK verification ({commit[:8]}) - rerun "
+                   "robodk/simulate.py")
+    return out
 
 
 # ── config provenance ─────────────────────────────────────────────────────────
+_TABLE = re.compile(rb"^\[\[?[A-Za-z_][A-Za-z0-9_.]*\]\]?\s*(#.*)?$")    # a table header in column 0
+_HMI_TABLE = re.compile(rb"^\[\[?hmi[\].]")
+
+
+def planning_bytes(data: bytes) -> bytes:
+    """A config file without its [hmi*] tables (from such a header to the next table header) and without blank lines:
+    the Mauer HMI's display settings do not change the plan, the job or what a RoboDK run verified (test plan
+    Anhang C7, 2026-10-08). Every column-0 "[" line of the config files is a table header
+    (tests/test_config_variants.py)."""
+    out, skip = [], False
+    for line in data.splitlines(keepends=True):
+        if line.startswith(b"["):
+            skip = bool(_HMI_TABLE.match(line))
+        if not skip and line.strip():                # blank lines (e.g. the one before an [hmi] table) do not count
+            out.append(line)
+    return b"".join(out)
+
+
 def config_sha256(path: str | Path | None = None, variant: str | None = None) -> str:
-    """sha256 of config/station.toml - and of the variant overlay after it, if the config is a variant."""
-    data = Path(path or STATION_TOML).read_bytes()
+    """sha256 of config/station.toml - and of the variant overlay after it, if the config is a variant - without
+    their [hmi*] tables (planning_bytes)."""
+    data = planning_bytes(Path(path or STATION_TOML).read_bytes())
     if variant:
         from .config import variant_path
-        data += b"\n# variant " + variant.encode() + b"\n" + variant_path(variant).read_bytes()
+        data += b"\n# variant " + variant.encode() + b"\n" + planning_bytes(variant_path(variant).read_bytes())
     return hashlib.sha256(data).hexdigest()
 
 
