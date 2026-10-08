@@ -13,7 +13,7 @@ _magazine), the cones ([guides] pin_along / pin_across: 4 per holder at the sock
 holder ([deck] half_positions) takes two halves end to end on the same 4 cones), the dovetail ([guides] dovetail,
 joint_clearance, as tools/make_guides.py) and the holes ([guides] peg_hole_d, kerf_mm: cut circles kerf smaller,
 outlines kerf/2 outside). Drawn in plate coordinates (ARES x, y shifted so each plate starts at 0, 0); layers CUT red /
-ENGRAVE blue (tools/make_plates.py). Engraved: stone footprints, holder names, ARES centreline, FRONT arrow.
+ENGRAVE blue (tools/make_plates.py). Engraved: stone footprints, holder names, ARES centreline, ARES / HSLU.
 """
 from __future__ import annotations
 
@@ -85,8 +85,6 @@ def plates(cfg: dict) -> list[Plate]:
     ys = sorted(float(y) for y in dp["dovetail_y"])
     side = lambda xs_: [(float(x), s * (yh - e)) for x in xs_ for s in (-1, 1)]            # noqa: E731
     rear_bolts = [(xr + e, float(y)) for y in dp["bolt_rear_y"]]
-    note = f"UR axis {float(u['mount_x']) - xf:.0f} mm ahead of the front edge"
-    arrow = [((xf - 15.0, 0.0), (xf - 30.0, 8.0)), ((xf - 15.0, 0.0), (xf - 30.0, -8.0))]
 
     # magazine plate: rectangle, sockets on the rear edge (walked downwards, from +y to -y)
     mag = [(xs, -yh), (xf, -yh), (xf, yh), (xs, yh)]
@@ -97,29 +95,24 @@ def plates(cfg: dict) -> list[Plate]:
     w_logo = CAP_W * LOGO_H * 4
     logo = [centred("ARES", LOGO_H, x_gap, 0.0)] + [centred("HSLU", LOGO2_H, x_gap, s_ * (w_logo / 2 + 70.0))
                                                      for s_ in (-1, 1)]
-    p_mag = Plate("magazine", mag, cones, side(dp["bolt_side_x"]), holders,
-                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xs + 25.0, -230.0), 5.0, "ARES deck - magazine - " + note)]
-                  + logo,
+    p_mag = Plate("magazine", mag, cones, side(dp["bolt_side_x"]), holders, logo,
                   [((xs + 30.0, 0.0), (x_gap - LOGO_H / 2 - 8.0, 0.0)), ((x_gap + LOGO_H / 2 + 8.0, 0.0),
-                                                                         (xf - 15.0, 0.0))] + arrow)
+                                                                         (xf - 15.0, 0.0))])
 
     # rear plate: rounded rear corners, tails on the front edge (walked upwards)
     rear = [(xs, -yh)]
     for yc in ys:
         rear += dovetail(xs, yc, gd, female=False, downward=False)
     rear += [(xs, yh)] + arc(xr + R, yh - R, R, 90.0, 180.0) + arc(xr + R, -yh + R, R, 180.0, 270.0)
-    p_rear = Plate("rear", rear, [], side(dp["rear_bolt_side_x"]) + rear_bolts, [],
-                   [((xs - 40.0, -150.0), 6.0, "ARES deck - rear (later)")],
-                   [((xr + 40.0, 0.0), (xs - 15.0, 0.0)), ((xs - 15.0, 0.0), (xs - 30.0, 8.0)),
-                    ((xs - 15.0, 0.0), (xs - 30.0, -8.0))])
+    p_rear = Plate("rear", rear, [], side(dp["rear_bolt_side_x"]) + rear_bolts, [], [],
+                   [((xr + 40.0, 0.0), (xs - 15.0, 0.0))])
 
     # onepiece: the first design (inset to fit the bed)
     ins = float(dp["inset_mm"])
     one = [(xf, -yh + ins), (xf, yh - ins)] + arc(xr + R, yh - R, R - ins, 90.0, 180.0) \
         + arc(xr + R, -yh + R, R - ins, 180.0, 270.0)
-    p_one = Plate("onepiece", one, cones, side(dp["onepiece_bolt_side_x"]) + rear_bolts, holders,
-                  [((xf - 35.0, -100.0), 7.0, "FRONT"), ((xr + 30.0, -230.0), 5.0, "ARES deck plate - " + note)],
-                  [((xr + 25.0, 0.0), (xf - 15.0, 0.0))] + arrow)
+    p_one = Plate("onepiece", one, cones, side(dp["onepiece_bolt_side_x"]) + rear_bolts, holders, [],
+                  [((xr + 25.0, 0.0), (xf - 15.0, 0.0))])
     # front covers around the UR's aluminium plate, split at y = 0 (each one goes in beside the mounted UR)
     xb, xfr = L / 2 - float(dp["cover_depth"]), L / 2
     hp = float(dp["ur_plate"]) / 2 + float(dp["ur_plate_gap"])
@@ -134,8 +127,7 @@ def plates(cfg: dict) -> list[Plate]:
         word = "ARES" if s_ > 0 else "HSLU"               # Samuel 2026-10-08: ARES left, HSLU right, read from the
         y_word = s_ * (hp + 5.0 + (yh - 35.0)) / 2        # front; centred beside the cut-out, clear of the side holes
         covers.append(Plate(name, poly, [], bolts, [],
-                            [((xb + 30.0, s_ * 150.0 - 40.0), 6.0, f"{'LEFT' if s_ > 0 else 'RIGHT'} - FRONT ->"),
-                             centred(word, COVER_H, ux, y_word)],
+                            [centred(word, COVER_H, ux, y_word)],
                             []))
     return [p_mag, p_rear, p_one] + covers
 
@@ -195,6 +187,16 @@ def problems(pl: Plate, cfg: dict) -> list[str]:
                 out.append(f"{pl.name}: bolt hole at ({x:.1f}, {y:.1f}) under a stone")
         if any(math.hypot(x - qx, y - qy) < cone_r + 10.0 for qx, qy in pl.cones):
             out.append(f"{pl.name}: bolt hole at ({x:.1f}, {y:.1f}) under a cone")
+    a, dp = cfg["ares"], cfg["deck_plate"]
+    xt = float(a["length"]) / 2 - float(a["deck_corner_r"]) - float(dp["corner_bolt_clear"])   # side holes |x| <= xt
+    yt = float(a["width"]) / 2 - float(a["deck_corner_r"]) - float(dp["corner_bolt_clear"])    # front / rear |y| <= yt
+    e = float(dp["bolt_edge_mm"])
+    for x, y in pl.bolts:
+        on_side = abs(abs(y) - (float(a["width"]) / 2 - e)) < 1e-6
+        on_end = abs(abs(x) - (float(a["length"]) / 2 - e)) < 1e-6
+        if (on_side and abs(x) > xt + 1e-6) or (on_end and abs(y) > yt + 1e-6):
+            out.append(f"{pl.name}: bolt hole at ({x:.1f}, {y:.1f}) closer than {dp['corner_bolt_clear']} mm to a "
+                       "corner radius (corner connector)")
     xs, ys = [q[0] for q in pl.outline], [q[1] for q in pl.outline]
     w, h = max(xs) - min(xs), max(ys) - min(ys)
     bw, bh = (float(v) - 2 * float(gd.get("sheet_margin", 0.0)) for v in gd["sheet"])

@@ -189,15 +189,18 @@ ur_plate = 180.0            # CONFIRMED: Samuel 2026-10-08 - the UR stands on an
                             # ASSUMPTION: centred on the UR base ([ur5] mount_x, mount_y)
 ur_plate_gap = 2.0          # CONFIRMED: Samuel 2026-10-08 - MDF 2 mm away from the aluminium plate all round
 cover_bolt_front_y = [-150.0, 150.0]  # ASSUMPTION: cover holes along the front edge (x = length/2 - bolt_edge_mm)
-cover_bolt_side_x = [270.0, 440.0]    # ASSUMPTION: cover holes along both sides (y = +-(width/2 - bolt_edge_mm))
+cover_bolt_side_x = [270.0, 420.0]    # ASSUMPTION: cover holes along both sides (y = +-(width/2 - bolt_edge_mm))
 inset_mm = 10.0             # ASSUMPTION: "onepiece" only - plate edge inside the deck edge (580 mm fits the 600 mm bed)
 bolt_edge_mm = 20.0         # CONFIRMED: Samuel 2026-10-08 - M6 / slot nuts 20 mm from the ARES outer edge
+corner_bolt_clear = 55.0    # CONFIRMED: Samuel 2026-10-08 - no screw point closer than 55 mm to the end of a corner
+                            # radius along the edge (corner connectors in the profile): sides |x| <= 560 - 80 - 55 = 425,
+                            # front / rear |y| <= 300 - 80 - 55 = 165
 bolt_hole_d = 6.6           # ASSUMPTION: M6 clearance hole (finished, kerf-compensated like the peg holes)
 bolt_side_x = [-380.0, -183.0, 20.0]  # ASSUMPTION: "magazine": holes along both sides (y = +-(width/2 - bolt_edge_mm)),
                                       # outside the stone footprints (the stones overhang the sides by 5 mm)
-rear_bolt_side_x = [-440.0]           # ASSUMPTION: "rear": holes along both sides
+rear_bolt_side_x = [-420.0]           # ASSUMPTION: "rear": holes along both sides
 bolt_rear_y = [-150.0, 0.0, 150.0]    # ASSUMPTION: "rear" / "onepiece": holes along the rear edge
-onepiece_bolt_side_x = [-440.0, -183.0, 20.0]  # ASSUMPTION: "onepiece": holes along both sides
+onepiece_bolt_side_x = [-420.0, -183.0, 20.0]  # ASSUMPTION: "onepiece": holes along both sides
 
 [camera]
 # Eye-in-hand camera on the tool flange beside the gripper, looking along the tool z axis (Samuel 2026-10-02). It
