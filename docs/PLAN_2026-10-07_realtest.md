@@ -154,4 +154,9 @@ other arm only a 400 mm piece at its free end + a 600 mm door (all courses) next
       c_a55, boards W0-W7 re-placed, station 600 mm farther (d8f43bc); guides + stone list (4928d7c)
 - [ ] E6 reach tables (new mount) + RoboDK full sim + video; guarded world sims; full test suite green
 - [ ] E7 report for Samuel (what changed, assumptions, open points: ADS port 48898, mirroring the ARES moves)
+- 2026-10-08 17:40: E1-E5 done. Validation running: unguarded world sim 67/67 seated (max 2.58 mm); guarded world sims
+  seeds 1+2 67/67 seated, no violation (seed 3 running, scratchpad guarded_main.log); suite 9 failed / 0 errors (all
+  in tests encoding the old main C - diagnosis workflow wf_05321a78-cff); review workflow wf_f8838819-133 over the day's
+  diff (6 lenses + 2 skeptics); RoboDK full sim + video of the new C running (scratchpad rdk_newc.log; rerun at the
+  end if code in the stamp paths changes). Ultracode on (Samuel): workflows per task.
 
