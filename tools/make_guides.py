@@ -293,19 +293,41 @@ def corner_geometry(a, b, h: float, L: float) -> tuple[str, float]:
                      f"through beyond {a.name}'s end; got {math.degrees(dth):.1f} deg, u {u:.1f}, v {v:.1f} mm)")
 
 
-def course0(p: GuideParams, lg) -> list[tuple[float, float, str]]:
-    """First-course stones of a leg on its strip: (u0, u1, kind) - floor(n0) full stones from u = 0, and for a leg of
-    x.5 stones a half stone at the end (robodk/wallplan.layout_leg, 2026-10-07: A of 5 1/2 stones)."""
+def blocks0(p: GuideParams, lg, spare_to: int | None = None) -> list[tuple[float, float, str]]:
+    """The strip's block grid of a leg (cuts, V-tabs for the board plates): (u0, u1, kind) - floor(n0) blocks of a
+    pitch from u = 0, for a leg of x.5 stones a half block at the end; spare_to = k: blocks up to k beyond the free
+    end (the plate of a board on a spare block, 2026-10-08), kind "spare"."""
     P = p.pitch
     nf = int(math.floor(lg.n0 + 1e-9))
     out = [(k * P, (k + 1) * P, "full") for k in range(nf)]
     if lg.n0 - nf > 1e-9:
         out.append((nf * P, lg.n0 * P, "half"))
+    end = out[-1][1]
+    for k in range(int(math.ceil(end / P - 1e-9)), (spare_to + 1) if spare_to is not None else 0):
+        out.append((k * P, (k + 1) * P, "spare"))
     return out
 
 
+def course0(p: GuideParams, lg) -> list[tuple[float, float, str]]:
+    """First-course stones of a leg on its strip: (u0, u1, kind) from robodk/wallplan.layout_leg - floor(n0) full
+    stones from u = 0 (a leg of x.5 stones: a half stone at the end, 2026-10-07), the leg's bond shift (start_half) and
+    no stone in a door (an opening in course 0, 2026-10-08)."""
+    import make_job as mj
+    wp = mj.load_wallplan()
+    cfg = {"brick": {"length": p.pitch, "head_joint": 0.0, "width": 120.0, "height": 120.0, "bed_joint": 0.0},
+           "half_brick": {"length": p.pitch / 2.0, "height": 120.0},
+           "wall": {"courses": max([1] + [o.c_to + 1 for o in getattr(lg, "openings", ())]), "bond_offset": 0.5,
+                    "base_z": 0.0}}
+    st = sorted((s for s in wp.layout_leg(cfg, lg) if s.course == 0), key=lambda s: s.u)
+    return [(s.u - s.length / 2.0, s.u + s.length / 2.0, s.kind) for s in st]
+
+
 def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece]:
-    """The MDF pieces of all legs in wall order (see the module docstring)."""
+    """The MDF pieces of all legs in wall order (see the module docstring). The pieces follow the block grid
+    (blocks0: cuts cut_offset after a block joint, V-tabs at the joints - through a door too, so that the piece
+    beside it stays located by the corner piece); the peg holes and engraved footprints are those of the course-0
+    stones (course0), which must not cross a cut. The last leg's strip runs on beyond its free end to the blocks
+    of plates on spare blocks there."""
     h, P, off = p.h, p.pitch, p.cut_offset
     kmax = int((p.seg_max - p.dovetail[1] - off) // P)
     plate_at = {}
@@ -314,7 +336,12 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
     pieces: list[Piece] = []
     nl = len(legs)
     for i, lg in enumerate(legs):
-        st = course0(p, lg)
+        spare = [s.k for s in sites if s.leg == lg.name and s.k >= math.floor(lg.n0 + 1e-9)]
+        if spare and i < nl - 1:
+            raise ValueError(f"leg {lg.name}: a plate on a spare block beyond its end is only possible at the free end "
+                             "of the last leg")
+        st = blocks0(p, lg, max(spare) if spare else None)
+        real = course0(p, lg)
         n = len(st)
         J = [u0 for u0, _, _ in st] + [st[-1][1]]          # course-0 joints, J[0] = 0, J[n] = leg length
         L = J[-1]
@@ -333,11 +360,12 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
             if not (i == nl - 1 and b == n):
                 feats[1] = [(h, "socket")]
             pc = Piece(f"{lg.name}{a}-{lg.name}{b - 1}", (lg.x, lg.y, lg.theta), decorate(p, poly, feats))
-            _stones(p, pc, lg.name, st, range(a, b), lambda q: q, 0.0, plate_at)
+            _stones(p, pc, lg.name, st, real, range(a, b), lambda q: q, 0.0, plate_at)
             pieces.append(pc)
         if i < nl - 1:
             nb = legs[i + 1]
-            stb = course0(p, nb)
+            stb = blocks0(p, nb)
+            realb = course0(p, nb)
             Jb = [u0 for u0, _, _ in stb] + [stb[-1][1]]
             nbn = len(stb)
             kind, c0 = corner_geometry(lg, nb, h, L)
@@ -369,22 +397,35 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
                 feats[2] = [(h, "socket")]
             pc = Piece(f"{lg.name}{n - p.arm}-{nb.name}{p.arm - 1}", (lg.x, lg.y, lg.theta), decorate(p, poly, feats),
                        notes=f"corner {lg.name}/{nb.name} ({(lg if kind == 'prev' else nb).name} runs through)")
-            _stones(p, pc, lg.name, st, range(n - p.arm, n), lambda q: q, 0.0, plate_at)
-            _stones(p, pc, nb.name, stb, range(0, p.arm), to_a, math.pi / 2, plate_at)
+            _stones(p, pc, lg.name, st, real, range(n - p.arm, n), lambda q: q, 0.0, plate_at)
+            _stones(p, pc, nb.name, stb, realb, range(0, p.arm), to_a, math.pi / 2, plate_at)
             pieces.append(pc)
     return pieces
 
 
-def _stones(p: GuideParams, pc: Piece, leg: str, st: list, ks, to_local, ang: float, plate_at: dict) -> None:
-    """Holes, engraved block footprints and labels of the first-course stones ks (indices into st = course0 of
-    `leg`) on piece pc (to_local maps the leg's (u, v) into the piece frame, ang = the leg's rotation in the piece
-    frame)."""
-    for k in ks:
-        u0, u1, kind = st[k]
-        c = to_local(((u0 + u1) / 2.0, 0.0))
+def _stones(p: GuideParams, pc: Piece, leg: str, st: list, real: list, ks, to_local, ang: float, plate_at: dict
+            ) -> None:
+    """Holes, engraved footprints and labels of the first-course stones (real = course0 of `leg`) on the blocks ks
+    (indices into st = blocks0 of `leg`) of piece pc, and the plate labels of those blocks (to_local maps the leg's
+    (u, v) into the piece frame, ang = the leg's rotation in the piece frame). ValueError for a stone that crosses
+    the piece's end (e.g. a shifted bond over a cut)."""
+    ks = list(ks)
+    if not ks:
+        return
+    lo, hi = st[ks[0]][0], st[ks[-1]][1]
+    for j, (u0, u1, kind) in enumerate(real):
+        c_u = (u0 + u1) / 2.0
+        if not lo - 1e-6 <= c_u < hi - 1e-6:
+            continue
+        if u0 < lo - 1e-6 or u1 > hi + 1e-6:
+            raise ValueError(f"leg {leg}: course-0 stone {u0:g}..{u1:g} mm crosses the end of piece {pc.name} - the "
+                             "guides cut the strip at block joints only")
+        c = to_local((c_u, 0.0))
         pc.holes += stone_holes(p, kind, c, ang)
-        pc.blocks.append((f"{leg}{k}", c, ang, kind))
+        pc.blocks.append((f"{leg}{int(math.floor(c_u / p.pitch + 1e-9))}", c, ang, kind))
+    for k in ks:
         if (leg, k) in plate_at:
+            u0, u1, _ = st[k]
             q = to_local(((u0 + u1) / 2.0, p.h - 9.0))
             pc.texts.append((q, 5.0, f"plate {plate_at[(leg, k)]} ->"))
 
@@ -573,8 +614,8 @@ def piece_label_anchor(pc: Piece, p: GuideParams) -> tuple[Pt, float]:
     """Start and direction (rad, piece frame) of the engraved piece name: inside the lower-left corner of the first
     stone block (behind the piece joint cut_offset after the stone joint), along the block (review 2026-10-07: from the bbox corner the name of a corner L-piece placed turned
     on the sheet lay entirely outside the piece); a piece without blocks: bbox corner."""
-    if not pc.blocks:
-        x0, y0, _, _ = pc.bbox()
+    if not pc.blocks:                  # e.g. the strip to a spare block (2026-10-08): inside its first outline corner
+        x0, y0 = pc.outline[0]         # (the bbox corner can lie beside a dovetail, outside the piece)
         return (x0 + 6.0, y0 + 4.0), 0.0
     _, c, ang, kind = pc.blocks[0]
     L, W = stone_size(p, kind)
@@ -954,9 +995,8 @@ def build(cfg: dict, with_job: bool = True) -> dict:
         raise ValueError("make_guides needs a wall of legs ([[wall.legs]])")
     sites = mj.target_sites(cfg, legs)
     for s in sites:
-        lg = next(lg for lg in legs if lg.name == s.leg)
-        if s.k < 0 or s.k >= sum(kind == "full" for _, _, kind in course0(p, lg)):
-            raise ValueError(f"plate {s.board} on a spare block - the guides have no spare blocks")
+        if s.k < 0:
+            raise ValueError(f"plate {s.board} on a spare block before a leg's start - not supported by the guides")
     leg_pcs = leg_pieces(cfg, p, legs, sites)
     st_plates = _station_plates(cfg)
     st_pcs = station_pieces(cfg, p, st_plates)

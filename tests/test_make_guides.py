@@ -99,7 +99,8 @@ def test_every_first_course_stone_has_two_cones_in_diagonal_sockets(data):
                                 else [(round((u0 + u1) / 2, 6), round(s * b, 6)) for s in (-1, 1)]))
         assert holes[lg.name] == pytest.approx(want, abs=1e-6), lg.name
     names = [pc.name for pc in data["leg_pieces"]]
-    assert names == ["A0-A1", "A2-A3", "A4-B1", "B2-B4", "B5-C1", "C2-C4"]  # A 5 1/2 / B 7 / C 5 (2026-10-07)
+    assert names == ["A0-A2", "A3-B1", "B2-B4", "B5-B6", "B7-C1", "C2-C4", "C5-C6"]   # the C of 2026-10-08: A 5 /
+    # B 9 (through both corners) / C 5 with the door on B7-C1 and the strip to W7's spare block on C5-C6
 
 
 def _tab_apexes(data):
@@ -264,9 +265,11 @@ def test_corner_where_c_runs_through_is_one_piece_and_the_ends_line_up():
     assert A.to_wall(0.0, 0.0)[0] == pytest.approx(C.to_wall(C.n0 * P, 0.0)[0], abs=1e-9)
 
 
-def test_a_leg_of_five_and_a_half_stones_ends_with_a_half_stone_on_the_corner_piece(data):
-    """Main config 2026-10-07: A 5 1/2 stones - course 0 = 5 full stones + a half stone at the corner end, on the
-    corner L-piece A4-B1 with the two cones of its own pin pair; A's joints (V-tabs) stay at whole pitches."""
+def test_a_leg_of_five_and_a_half_stones_ends_with_a_half_stone_on_the_corner_piece():
+    """The C of 2026-10-07 (variant c_a55): A 5 1/2 stones - course 0 = 5 full stones + a half stone at the corner
+    end, on the corner L-piece A4-B1 with the two cones of its own pin pair; A's joints (V-tabs) stay at whole
+    pitches."""
+    data = mg.build(config.load(variant="c_a55"), with_job=False)
     p = data["params"]
     A = next(lg for lg in data["legs"] if lg.name == "A")
     st = mg.course0(p, A)
@@ -286,3 +289,29 @@ def test_every_piece_name_is_engraved_on_the_piece(data):
             for t in (0.0, 60.0, 120.0):
                 q = (x + t * math.cos(ang), y + t * math.sin(ang))
                 assert _inside(q, pc.outline), (pc.name, t)
+
+
+def _covered(data, w):
+    return any(_inside(w, [pc.to_wall(q) for q in pc.outline]) for pc in data["leg_pieces"])
+
+
+def test_the_strip_runs_through_the_door_and_beyond_the_free_end_to_the_spare_block(data):
+    """The C of 2026-10-08: leg C's strip runs through the door (the 400 mm piece stays located by the corner L-piece
+    at B, not measured) with cones only under the course-0 stones beside the door - half, full, half (start_half) -
+    and on beyond C's free end to the spare block of board W7 (k = 6), whose plate finds its V-tab."""
+    p = data["params"]
+    C = _leg(data, "C")
+    assert mg.course0(p, C) == [(600.0, 700.0, "half"), (700.0, 900.0, "full"), (900.0, 1000.0, "half")]
+    holes = _holes_in_leg(data)["C"]
+    assert len(holes) == 6 and all(u > 600.0 for u, _ in holes)
+    for u in (100.0, 300.0, 500.0, 800.0, 1100.0, 1300.0):                    # door, the piece, the spare block
+        assert _covered(data, C.to_wall(u, 0.0)), u
+    assert not _covered(data, C.to_wall(1500.0, 0.0))
+    w7 = next(s for s in data["sites"] if s.board == "W7")
+    assert w7.leg == "C" and w7.k == 6 and w7.spare
+
+
+def test_the_window_courses_leave_course_0_and_the_guides_of_leg_a_alone(data):
+    p = data["params"]
+    A = _leg(data, "A")
+    assert [k for _, _, k in mg.course0(p, A)] == ["full"] * 5

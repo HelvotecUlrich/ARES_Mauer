@@ -51,3 +51,80 @@ xyz_in_wall = [1000.0, 1525.38, 0.0]   # ASSUMPTION (corner_gap_mm): beyond B's 
 rpy_in_wall_deg = [0.0, 0.0, 180.0]
 side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: as leg A
+
+# Board places: the main config's of 2026-10-07 (W0-W6), which this variant used until the main config became the
+# C with a door and a window (2026-10-08) - kept here (same as config/variants/c_a55.toml).
+# C layout A 5 / B 7 / C 5 (2026-10-07, tools/plan_layout.py --evaluate --legs 5,7,5; the L layout of 2026-10-05 in
+# tests/conftest.py L_BOARDS): 7 of the 8 existing boards (Samuel: no new markers / boards; the engraved "u = ..." on
+# the plates is wrong, the names/ids are what count; W7 (ids 100-109) stays a spare - with A at 5 stones no further
+# plate fits without overlapping its neighbour) on the INSIDE faces of the legs (ARES side), no spare block, plates
+# clear of each other, the other legs, ARES at its stops and the routes. A stop only looks at boards of its OWN leg,
+# with looks clear of the wall built by the end of the stop, of the ARES chassis and of a full magazine
+# (tools/make_job.py, mauer.armcheck): A 2 boards, B 3, C 2 -> 2, 3, 3, 2 usable boards at the 4 stops (+-50 mm
+# ARES margin and the arrival standoff), worst baseline 600 mm. Boards of legs B / C are in their leg frame, so they
+# follow the corner offsets (rib + corner gap).
+[[targets]]
+name = "W0"
+parent = "wall"
+leg = "A"           # block k = 0 of leg A (u 100)
+first_id = 30
+xyz = [60.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W1"
+parent = "wall"
+leg = "A"           # block k = 3 (u 700)
+first_id = 40
+xyz = [660.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W2"
+parent = "wall"
+leg = "B"           # block k = 1 of leg B (u 300)
+first_id = 50
+xyz = [260.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W3"
+parent = "wall"
+leg = "B"           # block k = 3 (u 700)
+first_id = 60
+xyz = [660.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W4"
+parent = "wall"
+leg = "B"           # block k = 5 (u 1100)
+first_id = 70
+xyz = [1060.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W5"
+parent = "wall"
+leg = "C"           # block k = 1 of leg C (u 300)
+first_id = 80
+xyz = [260.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "W6"
+parent = "wall"
+leg = "C"           # block k = 4 (u 900, C's free end)
+first_id = 90
+xyz = [860.0, 147.0, 4.1]
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "S0"
+parent = "station"
+first_id = 200
+xyz = [197.5, 112.3, 4.1]  # ASSUMPTION (floor station 2026-10-06): face up on its plain MDF plate (140 x 132 mm) in a
+                            # window of the station MDF piece on the ARES side of the row: plate centre (237.5, 76.3) =
+                            # row centre -500 mm, board origin = plate centre + (-40, +36), z = [plates] mdf_t 4 + paper
+                            # 0.1. make_job's look search (mauer.armcheck, full station, ARES chassis) found looks for
+                            # S0 and S1 at every offset 150..650 mm; 500 -> 1000 mm baseline
+rpy_deg = [180.0, 0.0, 0.0]
+[[targets]]
+name = "S1"
+parent = "station"
+first_id = 210
+xyz = [1197.5, 112.3, 4.1]  # ASSUMPTION: plate centre (1237.5, 76.3) = row centre +500 mm (see S0)
+rpy_deg = [180.0, 0.0, 0.0]

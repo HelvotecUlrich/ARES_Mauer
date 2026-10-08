@@ -3,41 +3,41 @@
   {
    "n0": [
     5,
-    7,
+    9,
     5
    ],
-   "course0": 17,
+   "course0": 19,
    "feasible": true,
    "why": "",
-   "stones": 74,
-   "half": 12,
+   "stones": 67,
+   "half": 14,
    "stops": [
     [
      "A",
-     120.0,
-     22
+     140.0,
+     19
     ],
     [
      "B",
      640.0,
-     29
+     26
     ],
     [
      "B",
-     800.0,
-     1
+     1200.0,
+     12
     ],
     [
      "C",
-     840.0,
-     22
+     1160.0,
+     10
     ]
    ],
    "n_stops": 4,
    "reachable_sites_per_stop": [
     5,
-    5,
-    6,
+    7,
+    8,
     4
    ],
    "boards": [
@@ -97,23 +97,34 @@
      ]
     },
     {
-     "leg": "C",
-     "k": 1,
-     "u": 300.0,
+     "leg": "B",
+     "k": 7,
+     "u": 1500.0,
      "spare": false,
      "xyz": [
-      260.0,
+      1460.0,
       147.0,
       4.1
      ]
     },
     {
      "leg": "C",
-     "k": 4,
-     "u": 900.0,
+     "k": 3,
+     "u": 700.0,
      "spare": false,
      "xyz": [
-      860.0,
+      660.0,
+      147.0,
+      4.1
+     ]
+    },
+    {
+     "leg": "C",
+     "k": 6,
+     "u": 1300.0,
+     "spare": true,
+     "xyz": [
+      1260.0,
       147.0,
       4.1
      ]
@@ -121,28 +132,28 @@
    ],
    "boards_per_stop": [
     2,
-    3,
-    3,
+    4,
+    4,
     2
    ],
-   "spares": 0,
+   "spares": 1,
    "min_baseline_mm": 600.0,
-   "wall_moves": 3,
+   "wall_moves": 4,
    "routes": {
     "leg_change_AB": {
      "translations": 1,
      "rotations": 0,
-     "length_mm": 124.30943689036651,
+     "length_mm": 82.69000000000005,
      "rotation_deg": 0,
      "waypoints": [
       {
-       "x_mm": 120.0,
+       "x_mm": 140.0,
        "y_mm": 580.0,
        "theta_rad": 0.0
       },
       {
-       "x_mm": 100.0,
-       "y_mm": 702.69,
+       "x_mm": 222.69000000000005,
+       "y_mm": 580.0,
        "theta_rad": 0.0
       }
      ]
@@ -150,43 +161,48 @@
     "stop_move_2": {
      "translations": 1,
      "rotations": 0,
-     "length_mm": 160.0,
+     "length_mm": 560.0,
      "rotation_deg": 0,
      "waypoints": [
       {
-       "x_mm": 100.0,
-       "y_mm": 702.69,
+       "x_mm": 222.69000000000005,
+       "y_mm": 580.0,
        "theta_rad": 0.0
       },
       {
-       "x_mm": 100.0,
-       "y_mm": 862.69,
+       "x_mm": 222.69000000000017,
+       "y_mm": 1140.0,
        "theta_rad": 0.0
       }
      ]
     },
     "leg_change_BC": {
-     "translations": 1,
+     "translations": 2,
      "rotations": 0,
-     "length_mm": 74.3642124949898,
+     "length_mm": 422.69000000000017,
      "rotation_deg": 0,
      "waypoints": [
       {
-       "x_mm": 100.0,
-       "y_mm": 862.69,
+       "x_mm": 222.69000000000017,
+       "y_mm": 1140.0,
        "theta_rad": 0.0
       },
       {
-       "x_mm": 37.309999999999945,
-       "y_mm": 822.6900000000002,
+       "x_mm": 222.69000000000017,
+       "y_mm": 1100.0,
+       "theta_rad": 0.0
+      },
+      {
+       "x_mm": -160.0,
+       "y_mm": 1100.0,
        "theta_rad": 0.0
       }
      ]
     }
    },
    "route_problems": [],
-   "leg_change_mm": 198.67364938535633,
-   "station_trip_mm": 1306.2557092507377
+   "leg_change_mm": 505.3800000000002,
+   "station_trip_mm": 1952.8660388492926
   }
  ]
 }
