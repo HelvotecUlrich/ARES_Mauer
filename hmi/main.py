@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QApplication
 
 from mauer import config as mconfig
 
-from .core.ads_link import NullAdsWorker, start_ads_worker
+from .core.ads_link import NullAdsWorker, create_ads_worker
 from .core.config import check_amr_cfg
 from .core.context import HmiContext
 from .main_window import MainWindow
@@ -68,12 +68,14 @@ def build(argv: list[str] | None = None) -> tuple[MainWindow, HmiContext]:
     ctx = HmiContext(station_cfg, config_path=Path(args.config) if args.config else None, ares_enabled=ares)
     ctx.start_twin = bool(args.twin)          # read by the Twin tab (hmi/views/twin_panel.py)
     if ares:
-        worker, thread = start_ads_worker(ctx.amr_cfg)
+        worker, thread = create_ads_worker(ctx.amr_cfg)
     else:
         worker, thread = NullAdsWorker(), None
     win = MainWindow(ctx, worker, thread)
     if thread is None:
         worker.start()                        # "ADS off: start the HMI with --ares"
+    else:
+        thread.start()                        # only now: the window receives 'connected' and the interface
     if problems:
         win.statusBar().showMessage("HMI settings: " + "; ".join(problems), 15000)
     if args.variant:

@@ -7,6 +7,7 @@ from PySide6.QtGui import QDesktopServices, QTextCharFormat, QColor
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..amr.ui.widgets import PulseBtn, set_text
+from ..core.run_controller import RUNNING, WINDOW_LOCK
 from ..core.snapshot import CATEGORIES, category, format_event, severity
 
 COLOURS = {"info": "#CCCCCC", "warning": "#FFAA00", "error": "#FF5555"}
@@ -47,6 +48,7 @@ class LogView(QWidget):
         self._ctl.event.connect(self.add)
         self._ctl.rig_changed.connect(self._on_rig)
         self._ctl.snapshot_changed.connect(self._on_snapshot)
+        self._ctl.state_changed.connect(self._on_state)
 
     def _shown(self, rec: dict) -> bool:
         return self.filters[category(rec)].isChecked()
@@ -85,6 +87,11 @@ class LogView(QWidget):
     def _on_snapshot(self, snap) -> None:
         if snap is not None and snap.log_path:
             set_text(self._path, f"log: {snap.log_path}")
+
+    def _on_state(self, state: str, _detail: str) -> None:
+        run = state in RUNNING                   # Explorer in front would take Space / Esc (HALT)
+        self.open_btn.setEnabled(not run)
+        self.open_btn.setToolTip(WINDOW_LOCK if run else "")
 
     def open_folder(self) -> None:
         folder = self._ctl.log_dir

@@ -22,7 +22,7 @@ from mauer.job import Job, SlotState, reload_plan, reload_short
 
 from ..amr.ui.widgets import GROUP_CSS, PulseBtn, set_style, set_text
 from ..core.run_controller import END_STATES, RUNNING
-from ..core.snapshot import format_event, severity
+from ..core.snapshot import format_event, severity, stop_text
 
 OK, WARN, BAD, GREY, TEXT = "#44CC44", "#FFAA00", "#FF4444", "#999999", "#DDDDDD"
 ISSUE_COLOURS = {"warning": WARN, "error": BAD}
@@ -291,8 +291,10 @@ class RunFeedback(QWidget):
         if state in RUNNING:
             if not self._clock.isActive():
                 self._clock.start()
+            self.summary_btn.setEnabled(False)  # an editor in front would take Space / Esc (HALT)
         else:
             self._clock.stop()
+            self.summary_btn.setEnabled(self._summary_path is not None and self._summary_path.is_file())
         if state in END_STATES:
             if self._ctl.log_dir is not None:
                 p = Path(self._ctl.log_dir) / "hmi_summary.json"
@@ -311,10 +313,10 @@ class RunFeedback(QWidget):
         k = snap.stop_k
         course = f", course {snap.stone.course}" if snap.stone is not None else ""
         if k is None:
-            self._tile("stop", f"- / {snap.n_stops}{course}", GREY)
+            self._tile("stop", f"{stop_text(None, snap.n_stops)}{course}", GREY)
         else:
             leg = f", leg {snap.stop_leg}" if snap.stop_leg else ""
-            self._tile("stop", f"{k + 1} / {snap.n_stops}{leg}{course}, {len(snap.stops_done)} done")
+            self._tile("stop", f"{stop_text(k, snap.n_stops)}{leg}{course}, {len(snap.stops_done)} done")
         trip_now = snap.at_station or (snap.route or {}).get("kind") in ("to_station", "from_station")
         pl = self._planned
         planned = f" / {pl[0]}" if pl else ""

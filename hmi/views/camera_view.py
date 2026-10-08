@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ..amr.ui.widgets import GROUP_CSS, PulseBtn, lbl, set_style, set_text
 from ..core.overlay import CameraShot, OverlayProcessor, board_results, redraw, write_snapshot
+from ..core.run_controller import RUNNING, WINDOW_LOCK
 
 SNAP_DIR = "snapshots"           # <run log folder>/snapshots/
 SOURCES = {"synth": "SIM camera (synthetic render)", "ids": "IDS camera (REAL)"}
@@ -431,6 +432,9 @@ class CameraView(QWidget):
         self.grab_btn.setToolTip("" if ok else why)
         self.live.setEnabled(ok or self.live.isChecked())
         self.live.setToolTip("" if ok else why)
+        run = c.state in RUNNING                   # Explorer in front would take Space / Esc (HALT)
+        self.open_btn.setEnabled(self._snap_dir is not None and not run)
+        self.open_btn.setToolTip(WINDOW_LOCK if run else "")
         can_snap = self._view is not None and self._view_dir is not None
         self.snap_btn.setEnabled(can_snap)
         self.snap_btn.setToolTip("" if can_snap else "no image" if self._view is None else
@@ -506,7 +510,7 @@ class CameraView(QWidget):
             return
         self._snap_dir = Path(path).parent
         set_text(self.snap_status, f"snapshot saved: {path}")
-        self.open_btn.setEnabled(True)
+        self._refresh()
 
     def open_folder(self) -> None:
         if self._snap_dir is not None:

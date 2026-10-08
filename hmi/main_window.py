@@ -9,7 +9,12 @@ Changes against amr_hmi:
   released, REAL: UR program stopped in a helper thread); it never blocks. Space / Esc also act while an HMI child
   window (the non-native file dialog) is active.
 - A Mauer REAL run locks jog / GO while it runs and the odometry reset while it is loaded (_apply_run_lock).
-- Closing is refused while a run is active (the heartbeat stops on close: the PLC aborts a move after 500 ms).
+- With a REAL rig open, a banner says when the keyboard HALT is out of reach (another window is active; review
+  2026-10-08). While a run is active the buttons that open other windows (log / snapshot folder, summary, twin restart
+  / save view) are disabled.
+- Closing is refused while a run is active or a relative move runs. Otherwise the ADS worker stops FIRST, as in
+  amr_hmi (jog bits FALSE, heartbeat ends: the PLC aborts a move after 500 ms, MANUAL drops after 2 s), then the
+  shutdown hooks (twin) and the run controller - nothing can move while the window is busy closing.
 
 Key handling (application event filter):
   Space / Esc      -> HALT (any tab; this window or one of its child windows active)
@@ -51,6 +56,9 @@ TAB_NAMES = ("Mauer", "Camera", "UR", "ARES control", "Wall pose", "Dashboard", 
 RUN_LOCK = "Mauer REAL run active - pause the run first"
 RESET_LOCK = "Mauer REAL run loaded - an odometry reset would break the resume check"
 CLOSE_REFUSED = "Stop the run first (Pause / Abort / HALT), then close"
+CLOSE_REFUSED_MOVE = "ARES relative move running - wait for its end or HALT, then close"
+KEYS_INACTIVE = ("Keyboard HALT (Space / Esc) inactive: another window is active - click into the HMI. The HALT "
+                 "button works.")
 
 
 class MainWindow(QMainWindow):
@@ -78,6 +86,8 @@ class MainWindow(QMainWindow):
         self._ctl.message.connect(self._on_message)
         self._ctl.session_loaded.connect(lambda _s: self.update_title())
 
+        self._ctl.rig_changed.connect(lambda _r: self.update_keys_note())
+
         app = QApplication.instance()
         app.installEventFilter(self)
         app.applicationStateChanged.connect(self._on_app_state)
@@ -101,6 +111,11 @@ class MainWindow(QMainWindow):
         note.setStyleSheet("color:#999999;")
         top.addWidget(note, 1)
         lay.addLayout(top)
+        self.keys_note = QLabel(KEYS_INACTIVE)
+        self.keys_note.setWordWrap(True)
+        self.keys_note.setStyleSheet("background:#7A1010; color:#FFFFFF; font-weight:bold; padding:4px;")
+        self.keys_note.hide()
+        lay.addWidget(self.keys_note)
         self.confirm_bar = ConfirmBar(self._ctx)
         lay.addWidget(self.confirm_bar)
         self.status_strip = StatusStrip(self._ctx)
@@ -189,9 +204,24 @@ class MainWindow(QMainWindow):
             self.control.handle_jog_key(key, et == QEvent.KeyPress)
         return True
 
+    def update_keys_note(self) -> None:
+        """Show KEYS_INACTIVE while a REAL rig is open and Space / Esc would not reach this window."""
+        if not hasattr(self, "keys_note"):             # a change event during construction
+            return
+        show = (not self._closing and self._ctl.mode == "real" and self._ctl.rig is not None
+                and not self._halt_scope())
+        if show == self.keys_note.isHidden():
+            self.keys_note.setVisible(show)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+        if event.type() == QEvent.ActivationChange:
+            self.update_keys_note()
+        super().changeEvent(event)
+
     def _on_app_state(self, state: Qt.ApplicationState) -> None:
         if state != Qt.ApplicationActive:
             self.control.release_jog()
+        self.update_keys_note()
 
     def _on_tab_changed(self, _index: int) -> None:
         self.control.release_jog()
@@ -212,6 +242,7 @@ class MainWindow(QMainWindow):
         set_style(self._lbl_run, f"padding: 0 8px;{f' color:{colour};' if colour else ''}")
         self._apply_run_lock()
         self.update_title()
+        self.update_keys_note()
 
     def _on_message(self, level: str, text: str) -> None:
         log.log({"error": logging.ERROR, "warning": logging.WARNING}.get(level, logging.INFO), "%s", text)
@@ -281,7 +312,13 @@ class MainWindow(QMainWindow):
             event.ignore()
             self.statusBar().showMessage(CLOSE_REFUSED, 8000)
             return
+        if self._connected and self._last_status.get("bMoveActive"):
+            event.ignore()
+            self.statusBar().showMessage(CLOSE_REFUSED_MOVE, 8000)
+            return
         self._closing = True
+        self.keys_note.hide()
+        self.control.release_jog(send=False)           # local state; the worker's stop writes every jog bit FALSE
         app = QApplication.instance()
         if app is not None:
             app.removeEventFilter(self)
@@ -289,16 +326,16 @@ class MainWindow(QMainWindow):
                 app.applicationStateChanged.disconnect(self._on_app_state)
             except (RuntimeError, TypeError):
                 pass
-        self._ctx.run_shutdown_hooks()                 # twin and similar
+        try:
+            self._worker.request_stop()                # FIRST, as amr_hmi: jog bits FALSE, the heartbeat stops
+        except Exception as exc:   # pragma: no cover - shutdown best effort
+            log.warning("worker stop failed: %s", exc)
+        self._ctx.run_shutdown_hooks()                 # twin and similar (RoboDK closed before the HMI exits)
         try:
             if not self._ctl.shutdown(10.0):
                 log.warning("run thread did not end within 10 s")
         except Exception as exc:   # pragma: no cover - shutdown best effort
             log.warning("run controller shutdown failed: %s", exc)
-        try:
-            self._worker.request_stop()                # the heartbeat stops LAST
-        except Exception as exc:   # pragma: no cover - shutdown best effort
-            log.warning("worker stop failed: %s", exc)
         if self._thread is not None:
             self._thread.quit()
             self._thread.wait(3000)

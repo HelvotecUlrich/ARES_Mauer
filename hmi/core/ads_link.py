@@ -33,14 +33,15 @@ def probing_factory(ads_cfg: Mapping) -> Callable[[], Any]:
     return make
 
 
-def start_ads_worker(amr_cfg: dict) -> tuple[AdsWorker, QThread]:
-    """The amr AdsWorker on the probing factory in its started thread "ads-worker" (it connects at once)."""
+def create_ads_worker(amr_cfg: dict) -> tuple[AdsWorker, QThread]:
+    """The amr AdsWorker on the probing factory, moved to its thread "ads-worker" - NOT started: the caller starts
+    the thread after the window has connected the worker's signals (it connects at once, and its 'connected' /
+    interface signals are emitted only once per connect; review 2026-10-08, as amr_hmi main_window.py)."""
     worker = AdsWorker(amr_cfg, connection_factory=probing_factory(amr_cfg["ads"]))
     thread = QThread()
     thread.setObjectName("ads-worker")
     worker.moveToThread(thread)
     thread.started.connect(worker.start)
-    thread.start()
     return worker, thread
 
 

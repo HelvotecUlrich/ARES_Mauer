@@ -227,7 +227,7 @@ def test_status_strip_texts(fake_ctx, qapp):
     fake.set_session(s)
     qapp.processEvents()
     first = s.job.stops[0].stones[0]
-    assert strip.texts()[:5] == ["LOADED", "-", "stop -/2", f"stone 1/3 {first.label}", "not started"]
+    assert strip.texts()[:5] == ["LOADED", "-", "stop - (0-1)", f"stone 1/3 {first.label}", "not started"]
     fake.set_state("running", mode="real")
     link = StubLink()
     fake.rig = real_rig(s, link, stub_robot())
@@ -240,7 +240,7 @@ def test_status_strip_texts(fake_ctx, qapp):
     ctx.set_twin_state("running", "port 20630")
     qapp.processEvents()
     run, mode, stop, stone, action, ur, ares, twin = strip.texts()
-    assert (run, mode, stop) == ("RUNNING", "REAL", "stop 1/2")
+    assert (run, mode, stop) == ("RUNNING", "REAL", "stop 0 (0-1)")
     assert action == "robot: place stone c0i0 [holding full]" and WARN in colour(strip.action_lbl)
     assert ur == "UR: RUNNING / NORMAL" and OK in colour(strip.ur_lbl)
     assert ares == "ARES: MANUAL MODE move" and twin == "Twin: running" and strip.twin_lbl.toolTip() == "port 20630"
@@ -332,7 +332,7 @@ def test_short_sim_run_with_a_station_trip_in_the_window(qapp, tmp_path):
         w.tabs.setCurrentWidget(w.wall_pose)                 # the Wall pose tab follows the run while shown
         w.mauer.start_btn.click()
         assert wait_until(lambda: w.status_strip.texts()[0] == "DONE", 60.0, qapp), w.status_strip.texts()
-        assert w.status_strip.texts()[1:4] == ["SIM", "stop 2/2", "placed 3/3"]
+        assert w.status_strip.texts()[1:4] == ["SIM", "stop 1 (0-1)", "placed 3/3"]
         assert fb.tiles["stones"].text() == "3 / 3 placed" and OK in colour(fb.tiles["stones"])
         assert fb.tiles["station"].text() == "1 / 1 (0 / 0)"
         assert fb.tiles["time"].text().endswith("s / stone")

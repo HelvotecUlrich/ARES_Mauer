@@ -24,6 +24,7 @@ from mauer.simworld import SCENARIOS
 from ..amr.ui.widgets import GROUP_CSS, PulseBtn, lbl, set_style, set_text
 from ..core.run_controller import RunOptions
 from ..core.session import JOBS_DIR, list_jobs, list_variants
+from ..core.snapshot import stop_text
 from ..core.sources import ares_live
 from .feedback import RunFeedback
 from .plan_view import STATUS_COLOURS, PlanView
@@ -412,17 +413,17 @@ class MauerTab(QWidget):
         k = snap.stop_k
         if k is not None and self._ctl.session is not None:
             st = self._ctl.session.job.stops[k]
-            set_text(self.stop_lbl, f"{k + 1}/{snap.n_stops}" + (f"  leg {st.leg}" if st.leg else "")
+            set_text(self.stop_lbl, stop_text(k, snap.n_stops) + (f"  leg {st.leg}" if st.leg else "")
                      + f", a {st.a_mm:.0f} mm, done {len(snap.stops_done)}")
         else:
-            set_text(self.stop_lbl, f"-/{snap.n_stops}")
+            set_text(self.stop_lbl, stop_text(None, snap.n_stops))
         set_text(self.stone_lbl, (snap.stone.describe(snap.n_stones) if snap.stone else "-")
                  + f"  | placed {snap.n_placed}/{snap.n_stones}")
         set_text(self.action_lbl, snap.action)
         trip = "at the station" if snap.at_station else "-"
         if snap.route:
             r = snap.route
-            trip = f"route {r['kind']} (stop {r['stop']}), leg {r['next_leg']}/{r['n_legs']}"
+            trip = f"route {r['kind']} (stop {r['stop']}), leg {min(r['next_leg'] + 1, r['n_legs'])}/{r['n_legs']}"
         set_text(self.trip_lbl, f"{trip}, reloads {snap.reloads}")
         self._show_pose(snap)
         if snap.held:

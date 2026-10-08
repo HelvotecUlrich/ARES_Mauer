@@ -15,7 +15,7 @@ from hmi.amr.ui.control_widget import RUN_LOCK_BANNER
 from hmi.core.ads_link import ADS_OFF, NullAdsWorker
 from hmi.core.run_controller import ConfirmRequest
 from hmi.core.session import JobSession
-from hmi.main_window import CLOSE_REFUSED, RESET_LOCK, RUN_LOCK
+from hmi.main_window import CLOSE_REFUSED, CLOSE_REFUSED_MOVE, KEYS_INACTIVE, RESET_LOCK, RUN_LOCK
 from hmi.views.confirm_bar import HELD_NOTE, PENDING_NOTE
 from hmi.views.plan_view import plan_geometry
 from hmi_fakes import FakeRunController, make_window, short_sim_session, wait_until
@@ -183,6 +183,77 @@ def test_close_refused_while_a_run_is_active(fake_win, qapp):
     assert fw.of("stop") == [] and w.statusBar().currentMessage() == CLOSE_REFUSED
     fake.set_state("done")
     assert w.close() is True and fw.of("stop") == [None] and fake.of("shutdown") == [10.0]
+
+
+def test_close_refused_while_a_relative_move_runs_and_stops_the_worker_first(fake_win, qapp):
+    """Review 2026-10-08: a GO move of the ARES control tab keeps the window open; closing stops the ADS worker
+    (jog bits FALSE, heartbeat) BEFORE the slow shutdown hooks (twin) and the run controller."""
+    w, fw, fake = fake_win
+    fake.set_state("ready", mode="real")
+    fw.status.emit(status(eAmrState=C.ST_MANUAL, bMoveActive=True))
+    qapp.processEvents()
+    assert w.close() is False
+    assert fw.of("stop") == [] and w.statusBar().currentMessage() == CLOSE_REFUSED_MOVE
+    fw.status.emit(status(eAmrState=C.ST_MANUAL))
+    qapp.processEvents()
+    order = []
+    w._ctx.add_shutdown_hook(lambda: order.append(("hook", len(fw.of("stop")), len(fake.of("shutdown")))))
+    assert w.close() is True
+    assert order == [("hook", 1, 0)] and fake.of("shutdown") == [10.0]
+
+
+def test_keyboard_halt_inactive_banner(fake_win, qapp, monkeypatch):
+    """Review 2026-10-08: with a REAL rig open the window says when Space / Esc cannot reach it."""
+    w, fw, fake = fake_win
+    scope = {"in": False}
+    monkeypatch.setattr(w, "_halt_scope", lambda: scope["in"])
+    fake.set_state("loaded")
+    w.update_keys_note()
+    assert not w.keys_note.isVisibleTo(w)                  # no rig: nothing to stop
+    fake.rig = object()
+    fake.set_state("ready", mode="real")
+    assert w.keys_note.isVisibleTo(w) and w.keys_note.text() == KEYS_INACTIVE
+    scope["in"] = True
+    w.update_keys_note()
+    assert not w.keys_note.isVisibleTo(w)
+    scope["in"] = False
+    fake.set_state("running", mode="sim")                  # SIM: no banner
+    assert not w.keys_note.isVisibleTo(w)
+    fake.rig = None
+
+
+def test_windows_that_take_the_keyboard_are_locked_while_running(fake_win, qapp):
+    w, fw, fake = fake_win
+    fake.set_session(short_sim_session())
+    fake.set_state("running", mode="real")
+    qapp.processEvents()
+    assert not w.run_log.open_btn.isEnabled() and not w.twin.restart_btn.isEnabled()
+    assert not w.twin.enable.isEnabled() and not w.mauer.feedback.summary_btn.isEnabled()
+    assert "keyboard HALT" in w.run_log.open_btn.toolTip()
+    fake.set_state("paused")
+    qapp.processEvents()
+    assert w.run_log.open_btn.isEnabled() and w.twin.restart_btn.isEnabled() and w.twin.enable.isEnabled()
+
+
+def test_main_build_with_ares_receives_the_first_connection(qapp, monkeypatch):
+    """Review 2026-10-08: the worker thread starts after the window connected its signals - the one 'connected' /
+    interface signal of the first connect is not lost (fake pyads connection, nothing leaves the process)."""
+    from hmi.core import ads_link
+    from hmi.main import build
+    from hmi_fakes import FakeConnection, plc_symbols
+    calls: list = []
+    syms = plc_symbols(2)
+    monkeypatch.setattr(ads_link, "probing_factory", lambda ads_cfg: (lambda: FakeConnection(syms, calls)))
+    w, ctx = build(["--ares"])
+    try:
+        assert ctx.ares_enabled and w._thread is not None
+        assert wait_until(lambda: w._connected and ctx.ads_connected and w._if_version == 2, 10.0, qapp)
+        assert w._lbl_conn.text() == "Connected" and w.control._conn_lbl.text() == "Connected"
+        assert wait_until(lambda: sum(1 for c in calls if c[0] == "write" and any("nHeartbeat" in k for k in c[1]))
+                          >= 2, 5.0, qapp)
+    finally:
+        w.close()
+    assert not w._thread.isRunning()
 
 
 def test_title_names_the_variant_and_ads_off(qapp, tmp_path):

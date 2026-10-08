@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel
 
 from ..amr.ui import constants as C
 from ..amr.ui.widgets import set_style, set_text
+from ..core.snapshot import stop_text
 from .mauer_tab import STATE_COLOURS
 from .ur_panel import BAD, GREY, INFO, OK, WARN, UrPoller, ur_short
 
@@ -82,7 +83,7 @@ class StatusStrip(QFrame):
             return
         k = snap.stop_k
         leg = f" {snap.stop_leg}" if snap.stop_leg and k is not None else ""
-        self._show(self.stop_lbl, f"stop {'-' if k is None else k + 1}/{snap.n_stops}{leg}", "#CCCCCC")
+        self._show(self.stop_lbl, stop_text(k, snap.n_stops) + leg, "#CCCCCC")
         st = snap.stone
         done = snap.n_placed >= snap.n_stones > 0
         self._show(self.stone_lbl, f"stone {st.i}/{snap.n_stones} {st.label}" if st is not None else

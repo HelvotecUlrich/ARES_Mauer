@@ -15,6 +15,7 @@ from mauer import REPO
 
 from ..amr.ui import constants as C
 from ..amr.ui.widgets import PulseBtn, set_style, set_text
+from ..core.run_controller import RUNNING, WINDOW_LOCK
 from ..core.twin_link import TwinLink
 
 STATE_COLOURS = {"running": C.COL_OK, "starting": C.COL_WARN, "lost": C.COL_BAD}
@@ -73,6 +74,7 @@ class TwinPanel(QWidget):
         self.link.status.connect(self._on_status)
         self._snapshot_done.connect(self._on_snapshot)
         ctx.session_changed.connect(self._on_session)
+        ctx.controller.state_changed.connect(lambda _s, _d: self._enables())
         ctx.add_shutdown_hook(self.link.shutdown)
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
@@ -121,8 +123,12 @@ class TwinPanel(QWidget):
         self._enables(state)
 
     def _enables(self, state: str | None = None) -> None:
-        self.restart_btn.setEnabled(self._ctx.session is not None)
-        self.save_btn.setEnabled(self.link.running and (state or self._ctx.twin_state[0]) == "running")
+        run = self._ctx.controller.state in RUNNING     # a RoboDK window in front would take Space / Esc (HALT)
+        self.enable.setEnabled(not run or self.enable.isChecked())   # switching it off is always allowed
+        self.restart_btn.setEnabled(self._ctx.session is not None and not run)
+        self.save_btn.setEnabled(self.link.running and (state or self._ctx.twin_state[0]) == "running" and not run)
+        for w in (self.enable, self.restart_btn, self.save_btn):
+            w.setToolTip(WINDOW_LOCK if run and not w.isEnabled() else "")
 
     def refresh(self) -> None:
         """1 Hz: the twin's numbers (attributes its thread updates)."""

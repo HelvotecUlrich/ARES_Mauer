@@ -25,7 +25,7 @@ from PySide6.QtCore import QObject, Signal
 
 from mauer import REPO
 
-from .snapshot import RunSnapshot
+from .snapshot import RunSnapshot, stop_text
 from .sources import ares_live
 
 log = logging.getLogger("hmi.twin")
@@ -54,7 +54,7 @@ def caption(snap: RunSnapshot | None, ares_src: str) -> str:
         return ""
     parts = [f"Mauer {snap.seq_state}"]
     if snap.stop_k is not None:
-        parts.append(f"stop {snap.stop_k + 1}/{snap.n_stops}")
+        parts.append(stop_text(snap.stop_k, snap.n_stops))
     parts.append(f"{snap.n_placed}/{snap.n_stones} placed")
     if snap.held:
         parts.append(f"jaws: {snap.held.get('kind', '?')} stone from {snap.held.get('from', '?')}"
