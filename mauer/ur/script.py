@@ -35,7 +35,13 @@ REG_ERROR = 26          # ASSUMPTION: error code register (0 = none), reset at t
 
 # Error codes a block writes into REG_ERROR before it halts.
 ERR_NONE = 0
-ERR_IK_UNREACHABLE = 1  # get_inverse_kin_has_solution() was False for a target pose
+ERR_IK_UNREACHABLE = 1  # get_inverse_kin_has_solution() was False / get_inverse_kin() stopped for a target pose
+
+# How a block checks that its target poses have an IK solution before the first move ([ur] ik_check):
+# "has_solution": get_inverse_kin_has_solution + halt (tested on URSim CB3 3.15.8);
+# "get_inverse_kin": PolyScope 3.3.3 (the lab's UR5) has no get_inverse_kin_has_solution (compile error, probe
+# 2026-10-06), but get_inverse_kin stops the program with a runtime error for an unreachable pose (no motion).
+IK_CHECKS = ("has_solution", "get_inverse_kin")
 
 ABORT_DECEL_MPS2 = 1.2  # ASSUMPTION: stopl deceleration [m/s²] for abort (= the UR movel default a, SM p.27 l.1138)
 
@@ -172,15 +178,33 @@ def movel(T_base_tcp: np.ndarray, a: float, v: float) -> str:
 
 
 def ik_guard(var: str, qnear_rad: Sequence[float], reg_error: int = REG_ERROR,
-             code: int = ERR_IK_UNREACHABLE) -> str:
-    """Halt with an error code if pose variable `var` has no IK solution near qnear.
+             code: int = ERR_IK_UNREACHABLE, ik_check: str = "has_solution") -> str:
+    """Stop the program with an error code if pose variable `var` has no IK solution near qnear.
 
-    get_inverse_kin_has_solution (SM p.43 l.1777-1791) avoids the runtime exception of get_inverse_kin (SM p.42
-    l.1740-1745); textmsg -> PolyScope Log tab (SM p.56 l.2344), popup non-blocking (SM p.48 l.2014), error code into
-    an RTDE output register (SM p.111 l.4613), then the `halt` keyword ends the program (SM p.7 l.279; `halt()` with
-    parentheses is a compile error – URSim). The link sees "stopped without done marker" + the code.
+    ik_check "has_solution": get_inverse_kin_has_solution (SM p.43 l.1777-1791) avoids the runtime exception of
+    get_inverse_kin (SM p.42 l.1740-1745); textmsg -> PolyScope Log tab (SM p.56 l.2344), popup non-blocking (SM p.48
+    l.2014), error code into an RTDE output register (SM p.111 l.4613), then the `halt` keyword ends the program (SM
+    p.7 l.279; `halt()` with parentheses is a compile error – URSim).
+
+    ik_check "get_inverse_kin" (PolyScope 3.3, no get_inverse_kin_has_solution): the error code is written first,
+    `<var>_q = get_inverse_kin(var, qnear=...)` stops the program with a runtime error if there is no solution (probe
+    2026-10-06 on the UR5; the message is in the PolyScope Log tab), the code is cleared after it. The qnear keyword
+    is the one the movej lines use. Check it on the robot with tools/calib_handeye.py plan --check (a block that does
+    not move).
+
+    Either way the link sees "stopped without done marker" + the code, and nothing has moved when the guards stand
+    before the first move of the block.
     """
     _ident(var, "variable")
+    if ik_check not in IK_CHECKS:
+        raise ValueError(f"ik_check must be one of {IK_CHECKS}, got {ik_check!r}")
+    if ik_check == "get_inverse_kin":
+        _ident(f"{var}_q", "variable")
+        return "\n".join([
+            f"write_output_integer_register({int(reg_error)}, {int(code)})",
+            f"{var}_q = get_inverse_kin({var}, qnear={q_list(qnear_rad)})",
+            f"write_output_integer_register({int(reg_error)}, {ERR_NONE})",
+        ])
     return "\n".join([
         f"if not get_inverse_kin_has_solution({var}, qnear={q_list(qnear_rad)}):",
         f'  textmsg("mauer: no IK solution for {var} = ", {var})',
@@ -192,9 +216,9 @@ def ik_guard(var: str, qnear_rad: Sequence[float], reg_error: int = REG_ERROR,
 
 
 def movej_pose(T_base_tcp: np.ndarray, qnear_rad: Sequence[float], a: float, v: float, var: str = "target",
-               reg_error: int = REG_ERROR) -> str:
+               reg_error: int = REG_ERROR, ik_check: str = "has_solution") -> str:
     """Joint move to a Cartesian TCP pose: IK on the controller (calibrated kinematics) with the branch nearest
-    qnear (e.g. the RoboDK plan), guarded by get_inverse_kin_has_solution.
+    qnear (e.g. the RoboDK plan), guarded by ik_guard (ik_check: see there).
 
     get_inverse_kin(x, qnear=...) SM p.42 l.1740 (URSim: keyword qnear works), movej SM p.26 l.1092.
     """
@@ -202,13 +226,14 @@ def movej_pose(T_base_tcp: np.ndarray, qnear_rad: Sequence[float], a: float, v: 
     q = q_list(qnear_rad)
     return "\n".join([
         f"{var} = {pose(T_base_tcp)}",
-        ik_guard(var, qnear_rad, reg_error),
+        ik_guard(var, qnear_rad, reg_error, ik_check=ik_check),
         f"movej(get_inverse_kin({var}, qnear={q}), a={_speed('a', a)}, v={_speed('v', v)})",
     ])
 
 
 def look_pose(T_base_target: np.ndarray, qnear_rad: Sequence[float], a: float, v: float, *, target: str = "flange",
-              T_flange_tcp: np.ndarray | None = None, var: str = "look", reg_error: int = REG_ERROR) -> str:
+              T_flange_tcp: np.ndarray | None = None, var: str = "look", reg_error: int = REG_ERROR,
+              ik_check: str = "has_solution") -> str:
     """Go to an image pose with a joint move (IK near qnear).
 
     target = "flange": T_base_target is T_base_flange (e.g. from vision.handeye.plan_poses); converted to the TCP
@@ -224,7 +249,7 @@ def look_pose(T_base_target: np.ndarray, qnear_rad: Sequence[float], a: float, v
         T_base_tcp = T_base_target
     else:
         raise ValueError(f"target must be 'flange' or 'tcp', got {target!r}")
-    return movej_pose(T_base_tcp, qnear_rad, a, v, var=var, reg_error=reg_error)
+    return movej_pose(T_base_tcp, qnear_rad, a, v, var=var, reg_error=reg_error, ik_check=ik_check)
 
 
 def gripper(action: str, do_open: int | None, do_close: int | None, pulse_s: float, wait_s: float) -> str:
@@ -260,7 +285,7 @@ def gripper(action: str, do_open: int | None, do_close: int | None, pulse_s: flo
 def _contact_move(prefix: str, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, approach_mm: float,
                   qnear_rad: Sequence[float], speeds: Speeds, contact_mm: float | None,
                   grip_lines: str, payload_after: tuple[float, Sequence[float]] | None, reg_error: int,
-                  label: str) -> str:
+                  label: str, ik_check: str = "has_solution") -> str:
     """Shared body of place_stone / pick_stone: above -> (pre) -> at -> grip -> (payload) -> (pre) -> above.
 
     All target poses are formed on the controller with pose_trans(F, local) (SM p.70 l.2899: T_world->to =
@@ -286,8 +311,8 @@ def _contact_move(prefix: str, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray
     if two_stage:
         lines.append(f"{pre} = pose_trans({F}, {pose(transl(0.0, 0.0, contact_mm) @ T_frame_tcp)})")
     lines += [
-        ik_guard(above, qnear_rad, reg_error),
-        ik_guard(at, qnear_rad, reg_error),
+        ik_guard(above, qnear_rad, reg_error, ik_check=ik_check),
+        ik_guard(at, qnear_rad, reg_error, ik_check=ik_check),
         f"movej(get_inverse_kin({above}, qnear={q_list(qnear_rad)}), a={_speed('a_joint', speeds.a_joint)}, "
         f"v={_speed('v_joint', speeds.v_joint)})",
     ]
@@ -306,7 +331,8 @@ def _contact_move(prefix: str, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray
 def place_stone(T_base_frame: np.ndarray, T_frame_tcp_place: np.ndarray, approach_mm: float,
                 qnear_rad: Sequence[float], speeds: Speeds, do_open: int, pulse_s: float, wait_s: float, *,
                 do_close: int | None = None, contact_mm: float | None = None,
-                payload_after: tuple[float, Sequence[float]] | None = None, reg_error: int = REG_ERROR) -> str:
+                payload_after: tuple[float, Sequence[float]] | None = None, reg_error: int = REG_ERROR,
+                ik_check: str = "has_solution") -> str:
     """Place the held stone at T_frame_tcp_place relative to the measured frame T_base_frame (both mm).
 
     Sequence: movej (IK near qnear) to `approach_mm` above along frame z -> movel down (v_lin to `contact_mm` above,
@@ -316,13 +342,14 @@ def place_stone(T_base_frame: np.ndarray, T_frame_tcp_place: np.ndarray, approac
     """
     grip = gripper("open", do_open, do_close, pulse_s, wait_s)
     return _contact_move("pl", T_base_frame, T_frame_tcp_place, approach_mm, qnear_rad, speeds, contact_mm, grip,
-                         payload_after, reg_error, "place_stone")
+                         payload_after, reg_error, "place_stone", ik_check)
 
 
 def pick_stone(T_base_frame: np.ndarray, T_frame_tcp_pick: np.ndarray, approach_mm: float,
                qnear_rad: Sequence[float], speeds: Speeds, do_close: int, pulse_s: float, wait_s: float, *,
                do_open: int | None = None, contact_mm: float | None = None, open_first: bool = False,
-               payload_after: tuple[float, Sequence[float]] | None = None, reg_error: int = REG_ERROR) -> str:
+               payload_after: tuple[float, Sequence[float]] | None = None, reg_error: int = REG_ERROR,
+               ik_check: str = "has_solution") -> str:
     """Pick a stone at T_frame_tcp_pick relative to T_base_frame – mirror of place_stone with a close pulse.
 
     payload_after = (kg, cog_mm) with the stone (set right after closing, before lifting). open_first=True opens
@@ -330,7 +357,7 @@ def pick_stone(T_base_frame: np.ndarray, T_frame_tcp_pick: np.ndarray, approach_
     """
     grip = gripper("close", do_open, do_close, pulse_s, wait_s)
     body = _contact_move("pk", T_base_frame, T_frame_tcp_pick, approach_mm, qnear_rad, speeds, contact_mm, grip,
-                         payload_after, reg_error, "pick_stone")
+                         payload_after, reg_error, "pick_stone", ik_check)
     if open_first:
         if do_open is None:
             raise ValueError("open_first needs do_open")

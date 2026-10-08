@@ -460,7 +460,7 @@ class SimRobot:
         q = ik_near(T, np.asarray(hint if hint is not None else self.q_cmd, float))
         if q is None:
             raise RobotError(f"{what}: no IK solution for the approach pose", action=what)
-        column = (np.asarray(T_base_frame, float) @ np.asarray(T_frame_tcp, float))[:2, 3]
+        column = np.asarray(T_base_frame, float) @ np.asarray(T_frame_tcp, float)      # descent column
         self._guard(q, what, column)
         self.q_cmd = q
 
@@ -581,7 +581,7 @@ class SimWorld:
     def __init__(self, cfg: Mapping, job: Job, errors: WorldErrors | None = None, *, seed: int = 0,
                  start_stop: int = 0, intr=None, T_flange_cam=None, supersample: int = 2, noise_sigma: float = 1.0,
                  blur_sigma_px: float = 0.6, check_ik: bool = True, fail_on: Mapping[str, int] | None = None,
-                 capture_mm: float = 10.0, grasp_check: bool = True, guard: bool = False):
+                 capture_mm: float = 10.0, grasp_check: bool = True, guard: bool = False, standing=()):
         self.cfg, self.job = cfg, job
         self.errors = errors or WorldErrors()
         self.rng = np.random.default_rng(seed)
@@ -633,15 +633,20 @@ class SimWorld:
         self._n_stone = 0
         # stones: magazine (ARES frame) and station (station frame), true poses
         self.mag_stones: dict[str, tuple[str, np.ndarray]] = {}
-        for sid in job.magazine.initial_fill:
-            kind = job.magazine.initial_kinds.get(sid, "full")
+        standing = set(standing) | {t.key for st in job.stops[:start_stop] for t in st.stones}
+        if standing:                                 # a later start: loaded for the next stones (job.restart_fill)
+            from .job import restart_fill
+            fill = restart_fill(job, standing)
+        else:
+            fill = [(sid, job.magazine.initial_kinds.get(sid, "full")) for sid in job.magazine.initial_fill]
+        for sid, kind in fill:
             self.mag_stones[sid] = (self._new_stone("mag", kind), self._jitter(job.magazine.slot(sid).T_ares_tcp))
         self.station_stones: dict[str, tuple[str, np.ndarray]] = {}
         self.refill_station()
         mg = None
         if guard:                                # the real robot's motion guard (mauer.motionguard)
             from .motionguard import MotionGuard
-            mg = MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp)
+            mg = MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
         self.robot = SimRobot(self, seed, check_ik, fail_on, mg)
         self.ares = SimAres(self, seed + 1)
         self.camera = SynthCamera(lambda: self.robot.T_bf, self.T_flange_cam_true, self.boards_for_camera, self.intr,

@@ -40,3 +40,17 @@ def test_only_a_clean_complete_run_stamps_the_job(tmp_path):
     assert stamped.meta["reach_check"] == "robodk" and stamped.meta["robodk_sim"]["stones"] == job.n_stones
     assert job.meta["reach_check"] == "kinematic"                               # the original untouched
     assert not any("reach check" in p for p in preflight_real(cfg, stamped))
+
+
+def test_a_run_during_which_the_code_changed_is_not_stamped(tmp_path):
+    """The stamp carries the git state of the run's start (info["git"]); a commit or edit under the stamp paths
+    during the ~20 min run would make it claim code it did not verify (2026-10-08)."""
+    cfg = config.load()
+    job = make_job.build_nominal(cfg)
+    args = SimpleNamespace(from_stop=0, max_stones=0, trips=True, report=str(REPO / "results" / "l_wall_sim.md"))
+    gone = {"git_commit": "0" * 40, "git_dirty": False}                    # a start commit the code no longer is
+    assert simulate.robodk_stamp(_run(job), job, args, {"robodk": "6.0.0", "git": gone}, cfg, out_dir=tmp_path) is None
+    now = mjob.git_state()
+    path = simulate.robodk_stamp(_run(job), job, args, {"robodk": "6.0.0", "git": now}, cfg, out_dir=tmp_path)
+    assert path is not None
+    assert {k: mjob.load(path).meta["robodk_sim"][k] for k in now} == now

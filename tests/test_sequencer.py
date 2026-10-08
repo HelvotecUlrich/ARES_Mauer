@@ -8,6 +8,7 @@ config without legs (conftest.straight_config), the L tests the L of 2026-10-05 
 routes, half stones).
 """
 import copy
+import dataclasses
 import importlib.util
 import math
 import os
@@ -278,7 +279,7 @@ def test_step_mode_confirms_every_motion(cfg, job10, tmp_path):
 
 
 # ── (v) real-run preflight ────────────────────────────────────────────────────
-def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
+def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch):
     no_host = copy.deepcopy(cfg)
     no_host["ur"]["host"] = ""                              # host, payload and stone mass are set since 2026-10-06
     no_host["ur"]["payload_tool_kg"] = 0.0
@@ -287,13 +288,17 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path):
                               handeye_file=tmp_path / "none_h.json")
     text = "\n".join(problems)
     for frag in ("[ur] host is empty", "[ur] payload_tool_kg <= 0", "[brick] mass_kg <= 0", "camera intrinsics missing",
-                 "hand-eye calibration missing", "nominal look poses"):
+                 "hand-eye calibration missing", "nominal look poses", "[ur5] mount_z PLACEHOLDER - measure it"):
         assert frag in text, frag
+    st = mjob.config_status()                                            # the values measured before the real test
+    monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: {
+        k: ({**v, "status": "CONFIRMED"} if k in OUTSIDE_THE_CAMERA_LOOP else v) for k, v in st.items()})
     good = copy.deepcopy(cfg)
     good["ur"].update(host="192.0.2.10", payload_tool_kg=1.6)
     good["brick"]["mass_kg"] = 3.0
     j = copy.deepcopy(job10)
     j.meta.update(look_source="planner", reach_check="robodk")
+    monkeypatch.setattr(mjob, "stamp_problems", lambda job: [])          # code provenance: test_stamp_problems
     for f in ("i.json", "h.json"):
         (tmp_path / f).write_text("{}")
     assert preflight_real(good, j, intrinsics_file=tmp_path / "i.json", handeye_file=tmp_path / "h.json") == []
@@ -325,9 +330,21 @@ class _FakeLink:
         return BlockResult(ok="FAIL" not in body, block_id=len(self.blocks), name=name, error="boom")
 
 
+def test_stamp_problems():
+    """A RoboDK-verified job must carry the code commit it was verified with and come from a clean tree."""
+    j = SimpleJob = type("J", (), {})()
+    j.meta = {"robodk_sim": {"git_dirty": True, "git_commit": "abc"}}
+    assert "uncommitted" in mjob.stamp_problems(j)[0]
+    j.meta = {"robodk_sim": {}}
+    assert "no code commit" in mjob.stamp_problems(j)[0]
+    j.meta = {"robodk_sim": {"git_commit": "0000000000000000000000000000000000000000", "git_dirty": False}}
+    assert mjob.stamp_problems(j)                                            # unknown commit: not the code now
+    del SimpleJob
+
+
 def _guard(cfg, job):
     from mauer.motionguard import MotionGuard
-    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp)
+    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
 
 
 def test_ur_robot_programs(cfg, job10):
@@ -368,6 +385,26 @@ def test_ur_robot_programs(cfg, job10):
     link.run_block = lambda body, **kw: _FakeLink.run_block(link, "FAIL", **kw)
     with pytest.raises(RobotError, match="boom"):
         r.park()
+
+
+@pytest.mark.parametrize("ik_check", ["get_inverse_kin", "has_solution"])
+def test_ur_robot_ik_check_and_error_register_from_the_config(cfg, job10, ik_check):
+    """The IK checks of look / pick / place write the error code into [ur] reg_error (the register the link reads;
+    before 2026-10-08 they used script.REG_ERROR 26, which PolyScope 3.3 does not have) and use [ur] ik_check."""
+    c = copy.deepcopy(cfg)
+    c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"], c["ur"]["ik_check"] = 1.5, 3.0, ik_check
+    link = _FakeLink(job10.park_q_rad)
+    r = URRobot(link, c, job10, guard=_guard(c, job10))
+    stone = job10.stops[0].stones[0]
+    r.goto_look(dataclasses.replace(job10.stops[0].looks[0], q_rad=None))       # a look by pose: IK on the robot
+    r.pick_magazine(job10.magazine.slot(stone.slot), g.inv(job10.T_ares_base))
+    r.place_wall(g.inv(job10.T_ares_base) @ g.inv(job10.stops[0].ares.T), stone)
+    reg = int(c["ur"]["reg_error"])
+    assert [n for n, _ in link.blocks] == ["mauer_look", "mauer_pick_mag", "mauer_place_wall"]
+    for name, body in link.blocks:
+        assert f"write_output_integer_register({reg}, 1)" in body, name
+        assert "write_output_integer_register(26" not in body, name
+        assert ("get_inverse_kin_has_solution" in body) == (ik_check == "has_solution"), name
 
 
 # ── full wall (slow) ──────────────────────────────────────────────────────────
@@ -679,6 +716,25 @@ def test_resumed_half_turn_is_not_a_full_turn(lcfg, ljob, tmp_path):
         seq._follow_route(r, "test", kind="from_station", stop=0, start_leg=j, resume=True)
         rot = [m for m in w.ares.moves[n0:] if m["kind"] == "rotate"]
         assert all(abs(m["dtheta_deg"]) < 1.0 for m in rot), rot
+
+
+OUTSIDE_THE_CAMERA_LOOP = ("[ur5] mount_z", "[ur5] mount_rz", "[deck] holder_z", "[ur] payload_cog_mm",
+                           "[boards.ref] square_mm", "[camera] settle_s")
+
+
+def test_preflight_blocks_placeholders_outside_the_camera_loop(lcfg, ljob, tmp_path, monkeypatch):
+    """Test plan Anhang C5 (2026-10-08): values that act on the motion without a camera correction block the real
+    run while they are PLACEHOLDER / UNKNOWN; measured (any other status) they do not."""
+    kw = dict(intrinsics_file=tmp_path / "i", handeye_file=tmp_path / "h")
+    text = "\n".join(preflight_real(lcfg, ljob, **kw))
+    st = mjob.config_status()
+    for key in OUTSIDE_THE_CAMERA_LOOP:
+        assert (key in text) == (st[key]["status"] in ("PLACEHOLDER", "UNKNOWN")), key
+    assert "[ur5] mount_z" in text                                       # PLACEHOLDER in station.toml today
+    measured = {k: ({**v, "status": "CONFIRMED"} if k in OUTSIDE_THE_CAMERA_LOOP else v) for k, v in st.items()}
+    monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: measured)
+    text = "\n".join(preflight_real(lcfg, ljob, **kw))
+    assert not any(key in text for key in OUTSIDE_THE_CAMERA_LOOP)
 
 
 def test_l_preflight_asks_for_the_half_stone(lcfg, ljob, tmp_path):

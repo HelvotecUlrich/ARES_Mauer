@@ -80,7 +80,7 @@ from . import floor as _floor
 from .ares.ads import MIN_MOVE_DEG, MIN_MOVE_MM, AresNotReady, MoveRefused
 from .ares.ads import AresError as AdsError
 from .backends import BackendError, RobotError, ShotError
-from .job import Job, Look, SlotState, StoneTask, reload_plan, reload_short
+from .job import Job, Look, SlotState, StoneTask, reload_plan, reload_short, restart_fill
 from .reference import (FrameFit, Pose2D, T_base_parent_from, T_parent_ares, after_rotation, after_translation,
                         fit_frame, placements, planar_T, relative_move, tilt_deg, wrap_angle)
 from .vision.detect import coarse_poses, measure
@@ -264,6 +264,18 @@ class RunResult:
 
 
 # ── real-run preflight ────────────────────────────────────────────────────────
+# Config values that act on the motion without a camera correction (test plan Anhang C5, 2026-10-08): the real run is
+# refused while one of them is PLACEHOLDER / UNKNOWN. Key as mauer.job.config_status -> what a wrong value does.
+MEASURE_BEFORE_REAL = {
+    "[ur5] mount_z": "magazine pick and place height 1:1",
+    "[ur5] mount_rz": "magazine pick position (1 deg moves magazine row 0, 654 mm behind the UR axis, by 11 mm)",
+    "[deck] holder_z": "magazine pick and place height 1:1",
+    "[ur] payload_cog_mm": "the UR payload model (its collision detection)",
+    "[boards.ref] square_mm": "the scale of every wall and station measurement",
+    "[camera] settle_s": "measurements while ARES still sways",
+}
+
+
 def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None = None,
                    handeye_file: str | Path | None = None, config_path: str | Path | None = None) -> list[str]:
     """Every reason not to run this job on the real robot (empty list = ok). Lists all problems at once."""
@@ -284,6 +296,14 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
         p.append("[brick] mass_kg <= 0 (UNKNOWN) - weigh a stone")
     if tool > 0.0 and stone > 0.0 and tool + stone > 5.0:
         p.append(f"payload {tool + stone:.2f} kg (tool + stone) exceeds the UR5 rated payload 5 kg")
+    try:
+        from .job import config_status
+        status = config_status(config_path, variant)
+    except OSError:
+        status = {}
+    for key, what in MEASURE_BEFORE_REAL.items():
+        if status.get(key, {}).get("status") in ("PLACEHOLDER", "UNKNOWN"):
+            p.append(f"{key} {status[key]['status']} - measure it (no camera correction: {what})")
     if any(t.kind == "half" for t in job.stones()):
         hb = cfg.get("half_brick", {}) or {}
         half = float(hb.get("mass_kg", 0.0) or 0.0)
@@ -291,12 +311,8 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
             p.append("[half_brick] mass_kg <= 0 (UNKNOWN) - weigh a half stone")
         if tool > 0.0 and half > 0.0 and tool + half > 5.0:
             p.append(f"payload {tool + half:.2f} kg (tool + half stone) exceeds the UR5 rated payload 5 kg")
-        try:
-            from .job import config_status
-            ph = sorted(k.split(" ", 1)[1] for k, v in config_status(config_path, variant).items()
-                        if k.startswith("[half_brick] ") and v["status"] == "PLACEHOLDER")
-        except OSError:
-            ph = []
+        ph = sorted(k.split(" ", 1)[1] for k, v in status.items()
+                    if k.startswith("[half_brick] ") and v["status"] == "PLACEHOLDER")
         if ph:
             p.append(f"[half_brick] {', '.join(ph)} PLACEHOLDER (current half-stone CAD not available) - measure the "
                      "half stone and its pin pair")
@@ -312,6 +328,9 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
             p.append(f"{what} missing: {path.relative_to(REPO) if path.is_relative_to(REPO) else path} - calibrate "
                      "first (tools/calib_intrinsics.py, tools/handeye_solve.py)")
     m = job.meta
+    if m.get("reach_check") == "robodk":             # stamped by robodk/simulate.py: still the code it verified?
+        from .job import stamp_problems
+        p += stamp_problems(job)
     if m.get("look_source", "nominal") == "nominal" and m.get("reach_check", "none") != "robodk":
         p.append(f"job built from nominal look poses with reach check {m.get('reach_check', 'none')!r} only - no "
                  "collision/occlusion check (export the job from the RoboDK planner)")
@@ -407,6 +426,9 @@ class Sequencer:
         self.stop_k: int | None = None
         self.at_station = False
         self.T_base_station: np.ndarray | None = None      # measured at the dock (motion guard world)
+        self._wall_meas: tuple | None = None   # (measured T_base_wall, ARES pose estimate at that measurement)
+        self._aim_frame: tuple | None = None   # (parent, T_parent_base) the current look is aimed with
+        self._prebuilt: set[tuple] = set()     # stones of earlier stops / runs that stand already (run start)
         self.route_progress: RouteProgress | None = None
         self.pending_why: str | None = None      # limits of the next wall measurement after a finished route / return
         self.pose_status = "ok"                # "ok" | "odometry" (move not ok: odometry estimate) | "unknown"
@@ -430,6 +452,17 @@ class Sequencer:
         self.result = RunResult(log_path=str(self.log.path))
 
     # ── control ──────────────────────────────────────────────────────────────
+    def declare_placed(self, keys, source: str = "operator") -> None:
+        """Stones that already stand (e.g. from the run log of an interrupted run, tools/run_job.py --resume-log):
+        skipped by run() and part of the motion guard's wall. Unknown keys -> ValueError."""
+        known = {t.key for t in self.job.stones()}
+        keys = {tuple(k) for k in keys}
+        bad = keys - known
+        if bad:
+            raise ValueError(f"declare_placed: not stones of this job: {sorted(bad)[:5]}")
+        self.placed |= keys
+        self.log.write("declared_placed", source=source, stones=sorted(keys))
+
     def pause(self) -> None:
         """Request a pause: the next motion raises SequencerPaused (ARES is interlocked while paused)."""
         self.paused = True
@@ -505,20 +538,37 @@ class Sequencer:
                                  f"it, then resume from stop {self.stop_k}", self.stop_k) from e
 
     def _guard_world(self):
-        """The world of mauer.motionguard: magazine slots holding a stone, the stones placed so far in the wall frame
-        of the current ARES pose estimate, docked: the measured station frame and the station slots holding a
-        stone."""
+        """The world of mauer.motionguard (review 2026-10-07): magazine slots holding a stone; the stones standing (placed
+        by this run + those of earlier stops / runs, _prebuilt) in the wall frame - while a look is aimed: the frame it
+        is aimed with, else the last measured 6-DoF frame moved by the planar ARES motion since (keeps tilt and
+        height); docked: the station slots holding a stone in the station frame (measured at this dock, else the aim /
+        predicted frame)."""
         from .motionguard import GuardWorld
-        # the wall frame of the CURRENT pose estimate (measured, or predicted after a move - the looks are aimed with
-        # it); self.T_base_wall is stale after a route until the next wall measurement
-        T_bw = (T_base_parent_from(self.pose_est, self.T_ares_base) if self.pose_est is not None
-                else self.T_base_wall)
-        docked = self.at_station and self.T_base_station is not None
+        aim = self._aim_frame
+        T_bw = None
+        if aim is not None and aim[0] == "wall":
+            T_bw = g.inv(aim[1])
+        elif self._wall_meas is not None and self.pose_est is not None:
+            T_meas, pose_meas = self._wall_meas
+            D = g.inv(pose_meas.T) @ self.pose_est.T                  # planar ARES motion since the measurement
+            T_bw = g.inv(g.inv(T_meas) @ self.T_ares_base @ D @ self.T_base_ares)
+        elif self.pose_est is not None:
+            T_bw = T_base_parent_from(self.pose_est, self.T_ares_base)
+        T_bs = None
+        if self.at_station:
+            if aim is not None and aim[0] == "station":
+                T_bs = g.inv(aim[1])
+            elif self.T_base_station is not None:
+                T_bs = self.T_base_station
+            elif self.pose_est is not None:                           # docked, not measured yet: the prediction
+                T_bs = T_base_parent_from(Pose2D.from_T(g.inv(self.T_wall_station) @ self.pose_est.T),
+                                          self.T_ares_base)
+        standing = self.placed | self._prebuilt
         return GuardWorld(magazine=[self.job.magazine.slot(sid) for sid in self.magazine.filled],
-                          wall_stones=[t for t in self.job.stones() if t.key in self.placed],
+                          wall_stones=[t for t in self.job.stones() if t.key in standing],
                           legs=list(self.job.legs), T_base_wall=T_bw,
-                          station=[self.job.station.slot(sid) for sid in self.station.filled] if docked else [],
-                          T_base_station=self.T_base_station if docked else None)
+                          station=[self.job.station.slot(sid) for sid in self.station.filled] if T_bs is not None
+                          else [], T_base_station=T_bs)
 
     def _park(self) -> None:
         if not self.robot.is_parked():
@@ -764,6 +814,13 @@ class Sequencer:
                  T_parent_ares_est: np.ndarray) -> FrameFit:
         """Shoot every look (re-aimed with the current estimate, refined after every measured board), retry the
         looks of missing boards once with the refined estimate, fit the parent frame."""
+        try:
+            return self._measure_looks(parent, looks, what, T_parent_ares_nom, T_parent_ares_est)
+        finally:
+            self._aim_frame = None                   # the guard falls back to the measured / predicted frames
+
+    def _measure_looks(self, parent: str, looks: Sequence[Look], what: str, T_parent_ares_nom: np.ndarray,
+                       T_parent_ares_est: np.ndarray) -> FrameFit:
         observed: dict[str, list[np.ndarray]] = {}
         missing: dict[str, str] = {}
         coarse: list[np.ndarray] = []            # T_parent_base from partly seen boards (re-aiming only)
@@ -772,7 +829,9 @@ class Sequencer:
 
         def shoot(lk: Look, tag: str, T_aim: np.ndarray | None = None) -> None:
             nonlocal T_est
-            aimed = self._aim(lk, T_nom, T_est if T_aim is None else T_aim)
+            T_pb = T_est if T_aim is None else T_aim
+            aimed = self._aim(lk, T_nom, T_pb)
+            self._aim_frame = (parent, T_pb)         # the guard's frame of `parent` = the one the look is aimed with
             self._robot("goto_look", f"look {lk.name}{tag} ({', '.join(lk.boards)})", aimed)
             try:
                 shot = self.robot.shot(self.camera)
@@ -894,6 +953,7 @@ class Sequencer:
         stop = self.job.stops[k]
         if not self.camera_loop:
             self.T_base_wall = T_base_parent_from(self.pose_est, self.T_ares_base)
+            self._wall_meas = (self.T_base_wall, self.pose_est)
             self.log.write("wall_frame", stop=k, why=why, source="dead_reckoning", ares=self.pose_est)
             self._park()
             return
@@ -912,6 +972,7 @@ class Sequencer:
             self.pose_est, self.pose_src, self.pose_status = meas, "measured", "ok"
             self.pending_why = None
             self.T_base_wall = fit.T_base_parent
+            self._wall_meas = (self.T_base_wall, meas)      # measured 6-DoF frame (tilt, height) + its ARES pose
             e_mm, e_deg = stop.ares.delta(meas)
             rec = {"kind": "wall", "stop": k, "why": why, "attempt": attempt, "boards": fit.boards,
                    "rms_mm": fit.rms_mm, "max_mm": fit.max_mm, "baseline_mm": fit.baseline_mm, "measured": meas,
@@ -965,6 +1026,7 @@ class Sequencer:
                        plan=[list(x) for x in plan], resumed=resume is not None)
         self._park()
         self.at_station = True
+        self.T_base_station = None                   # measured anew at this dock (guard: predicted until then)
         if stop.route_to_station:
             if resume is not None:
                 self._follow_route(resume.route, resume.why, target=self.dock_in_wall(), kind="to_station", stop=k,
@@ -1092,6 +1154,16 @@ class Sequencer:
                        n_stones=self.job.n_stones, magazine=len(self.magazine))
         resumed = self.pose_est is not None and self.stop_k == start_stop
         if not resumed:
+            earlier = {t.key for st in self.job.stops[:start_stop] for t in st.stones}
+            if earlier - self.placed - self._prebuilt:   # a run started later: those stones stand (the guard must see
+                self._prebuilt |= earlier                # them; review 2026-10-07)
+                self.log.write("prebuilt", start_stop=start_stop, stones=sorted(earlier))
+            if (self.placed | self._prebuilt) and not self.result.placed:   # not the job's first stone: the operator
+                fill = restart_fill(self.job, self.placed | self._prebuilt)  # loaded the magazine for the next stones
+                self.magazine = SlotState.magazine(self.job.magazine, filled=[sid for sid, _ in fill],
+                                                   kinds=dict(fill))
+                self.station = SlotState.station(self.job.station)
+                self.log.write("restart_fill", magazine=[list(x) for x in fill])
             self.pose_est, self.pose_src = self.job.stops[start_stop].ares, "assumed (start mark)"
             self.at_station = False
             self.route_progress = None

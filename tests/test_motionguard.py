@@ -29,7 +29,7 @@ def job(cfg):
 
 
 def _guard(cfg, job):
-    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp)
+    return MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
 
 
 def _full_magazine(job):
@@ -38,7 +38,7 @@ def _full_magazine(job):
 
 def test_the_park_pose_is_free_and_the_old_one_was_not(cfg, job):
     """[ur] park_q_deg of 2026-10-07: tool 40 mm from the arm, clear of ARES and a full magazine; the value before
-    (same TCP pose, folded IK branch, never checked) had the jaws inside the forearm."""
+    (TCP 50 mm closer to the base, folded IK branch, never checked) had the jaws inside the forearm."""
     mg = _guard(cfg, job)
     mg.set_world(GuardWorld(magazine=_full_magazine(job)))
     assert mg.state_problems(job.park_q_rad) == [] and mg.state_problems(job.park_q_rad, "full") == []
@@ -64,7 +64,7 @@ def _first_b_stone(cfg, job):
     world = GuardWorld(magazine=[], wall_stones=placed, legs=job.legs, T_base_wall=T_base_wall)
     T_above = (T_base_wall @ g.transl(0.0, 0.0, job.approach_mm) @ t.T_wall_tcp @ g.inv(job.T_flange_tcp))
     q_above = ik_near(T_above, np.asarray(t.qnear_rad))
-    column = (T_base_wall @ t.T_wall_tcp)[:2, 3]
+    column = T_base_wall @ t.T_wall_tcp                         # the target TCP pose
     return world, q_above, column
 
 
@@ -88,7 +88,7 @@ def test_the_held_stone_may_touch_its_butt_joint_only_in_the_descent_column(cfg,
     q_in = ik_near(T_new @ g.inv(T_ft), q_above)
     assert q_in is not None
     assert mg.state_problems(q_in, "full") != []
-    v = mg.plan(job.park_q_rad, q_in, "full", column=p_new[:2])
+    v = mg.plan(job.park_q_rad, q_in, "full", column=T_new)
     assert not v.ok                                              # overlap is refused even in the column
 
 
@@ -158,3 +158,58 @@ def test_simworld_and_urrobot_use_the_same_park_pose(cfg, job):
     assert np.allclose(w.robot.park_q, np.radians(cfg["ur"]["park_q_deg"]))
     c = copy.deepcopy(cfg)
     assert c["ur"]["park_q_deg"][0] == pytest.approx(161.83)
+
+
+def test_held_stone_edges_floor_and_column_window(cfg, job):
+    """Review 2026-10-07: the capsule grid missed the stone corners by 14.6 mm (now the 12 edges are segments), the
+    floor was no obstacle, and the descent-column exemption had no height limit."""
+    from mauer import armcheck
+    from mauer.simworld import ur5_fk
+    mg = _guard(cfg, job)
+    caps = mg._held_capsules("full")
+    T_tf = g.inv(np.asarray(job.T_flange_tcp))
+    pts = np.array([g.apply(T_tf, [c[1], c[2]]) for c in caps]).reshape(-1, 3)        # TCP frame
+    L, W, H = cfg["brick"]["length"], cfg["brick"]["width"] + 2 * cfg["brick"]["rib_mm"], cfg["brick"]["height"]
+    for corner in [(sx * L / 2, sy * W / 2, z) for sx in (-1, 1) for sy in (-1, 1) for z in (0.0, H)]:
+        assert float(np.min(np.linalg.norm(pts - np.array(corner), axis=1))) < 1e-6, corner
+    # the floor: the park joints with the shoulder lowered until the TCP is below the floor
+    mg.set_world(GuardWorld())
+    q = np.asarray(job.park_q_rad, float).copy()
+    T_ares = np.asarray(job.T_ares_base)
+    for d in np.radians(np.arange(0.0, 120.0, 5.0)):
+        qq = q.copy()
+        qq[1] += d
+        if (T_ares @ ur5_fk(qq) @ np.asarray(job.T_flange_tcp))[2, 3] < -20.0:
+            assert any("floor" in p for p in mg.state_problems(qq)), np.degrees(qq)
+            break
+    else:
+        pytest.skip("no pose below the floor found")
+    # the column: 300 mm above a butt-joint place the held stone is no longer exempt
+    world, q_above, column = _first_b_stone(cfg, job)
+    mg.set_world(world)
+    mg._column = column
+    assert mg._in_column(q_above)
+    high = mg.lift(q_above, 300.0)
+    assert high is not None and not mg._in_column(high)
+    mg._column = None
+
+
+def test_a_run_started_later_knows_the_wall_that_stands(cfg, job, tmp_path):
+    """Review 2026-10-07: a fresh Sequencer started at stop k > 0 had an empty guard world. Now the stones of the
+    earlier stops count as built (and stones declared from an earlier run log are skipped and built)."""
+    from mauer.sequencer import Sequencer
+    from mauer.simworld import SimWorld, scenario
+    first_b = job.stops[1].stones[:2]
+    w = SimWorld(cfg, job, scenario("none"), seed=1, start_stop=1, guard=True, standing=[t.key for t in first_b])
+    seq = Sequencer(job, cfg, w.robot, w.ares, w.camera, w.intr, w.T_flange_cam, log_dir=tmp_path / "run",
+                    on_station_empty=w.refill_station)
+    seen = []
+    orig = w.robot.guard.set_world
+    w.robot.guard.set_world = lambda world: (seen.append(len(world.wall_stones)), orig(world))
+    with pytest.raises(ValueError, match="not stones of this job"):
+        seq.declare_placed([("Z", 0, 0)])
+    seq.declare_placed([t.key for t in first_b], source="test")
+    res = seq.run(1, 1)
+    n_a = len(job.stops[0].stones)
+    assert res.state == "done" and min(seen) >= n_a + len(first_b)
+    assert not any(k in res.placed for k in (t.key for t in first_b))              # declared stones are skipped

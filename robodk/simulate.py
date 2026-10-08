@@ -67,6 +67,7 @@ import math
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 for p in (HERE, HERE.parent, HERE.parent / "tools"):
@@ -766,6 +767,7 @@ class LSim(Sim):
         try:
             self.park(full)
         except RuntimeError as e:
+            self.park_failures = getattr(self, "park_failures", 0) + 1
             self.notes.append(f"park: {e} (arm put in the home pose without motion)")
             print(f"   PARK FAILED: {e}", flush=True)
             self.robot.setJoints(self.j_home)
@@ -1615,7 +1617,9 @@ def station_before(job, events: dict, j_stop: int) -> list:
 def run_l(args, cfg: dict, RDK, it: dict) -> int:
     from make_job import build_nominal
     from mauer import config as mconfig
+    from mauer import job as mjob
     t_start = time.time()
+    git_at_start = mjob.git_state()                 # the code this run verifies (robodk_stamp)
     from make_job import leg_dist, leg_side
     for lg in wallplan.legs(cfg):                   # every leg's reach table (side, distance) - computed if missing
         reach_table(RDK, cfg, leg_dist(cfg, lg, args.dist), leg_side(cfg, lg))
@@ -1640,7 +1644,7 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     if sim.j_home is None:
         raise SystemExit("no collision-free start pose found")
     sim.robot.setJoints(sim.j_home)
-    info = {"argv": sys.argv[1:], "self_test": sim.self_test(), "static": static_findings(cfg)}
+    info = {"argv": sys.argv[1:], "self_test": sim.self_test(), "static": static_findings(cfg), "git": git_at_start}
     print(f"self-test: {info['self_test']}", flush=True)
     print(f"static findings: {info['static']}", flush=True)
     stones = job.stones()
@@ -1777,7 +1781,9 @@ def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | No
     with station trips, every stone placed and every station transfer moved with collision-checked motion, no
     colliding route sample, every PLANNED look seen with the job's own pose in every state, the job's park pose free.
     mauer.sequencer.preflight_real accepts such a job for the real robot (with mauer.motionguard on the backend, which
-    plans the actual joint paths). None (reasons printed) otherwise."""
+    plans the actual joint paths). The stamp carries the git state of the run's START (info["git"]); a run during
+    which the planning code / CAD / config changed (a commit or an edit) is not stamped. None (reasons printed)
+    otherwise."""
     from mauer import config as mconfig
     from mauer import job as mjob
     reasons = []
@@ -1796,20 +1802,32 @@ def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | No
                 reasons.append(f"planned look {n} at stop {e['stop']} ({e['state']}) not seen with the job's pose")
     if getattr(sim, "park_q", None) is None:
         reasons.append("the job's park pose is not free in RoboDK")
+    if getattr(sim, "park_failures", 0):
+        reasons.append(f"{sim.park_failures} park move(s) without a collision-free path (teleported)")
+    reasons += [f"run note: {n}" for n in sim.notes if not n.startswith("images failed")]
+    git = info.get("git") if "git" in info else mjob.git_state()
+    if git and not git.get("git_dirty"):
+        drift = mjob.stamp_problems(SimpleNamespace(meta={"robodk_sim": git}))
+        if drift:
+            reasons.append("the code changed during the run (" + "; ".join(drift) + ")")
+    path = (out_dir or REPO / "data" / "jobs") / f"nominal_{cfg['wall'].get('shape') or 'legs'}{mconfig.suffix(cfg)}_robodk.json"
     if reasons:
         print("job NOT stamped as RoboDK-verified: " + "; ".join(list(dict.fromkeys(reasons))[:6]), flush=True)
+        if path.exists():                            # an older stamp must not outlive a failed rerun
+            path.unlink()
+            print(f"removed the older stamped job {path}", flush=True)
         return None
     stamped = copy.deepcopy(job)
     stamped.meta["reach_check"] = "robodk"
-    rep = Path(args.report)
+    rep = Path(args.report).resolve()
     stamped.meta["robodk_sim"] = {
         "date": time.strftime("%Y-%m-%d %H:%M"), "robodk": info.get("robodk"),
         "report": rep.relative_to(REPO).as_posix() if rep.resolve().is_relative_to(REPO) else rep.name,
         "stones": len(sim.stone_log), "transfers": len(sim.transfer_log), "routes": len(sim.route_log),
+        **(git or {}),
         "checked": "every place / pick / station transfer / look / park and every ARES route with RoboDK collision "
                    "checks (robodk/simulate.py, motion.Planner incl. the tool-vs-arm model); the real robot plans "
                    "its own joint paths with mauer.motionguard"}
-    path = (out_dir or REPO / "data" / "jobs") / f"nominal_{cfg['wall'].get('shape') or 'legs'}{mconfig.suffix(cfg)}_robodk.json"
     mjob.save(stamped, path)
     print(f"stamped job (RoboDK-verified): {path}", flush=True)
     return path

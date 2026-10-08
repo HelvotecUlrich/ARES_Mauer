@@ -148,6 +148,13 @@ class URRobot:
         self.do_open, self.do_close = int(u["do_grip_open"]), int(u["do_grip_close"])
         self.pulse_s, self.wait_s = float(u["grip_pulse_s"]), float(u["grip_wait_s"])
         self.timeout_s = float(timeout_s)
+        # the IK checks write their error code into the register the link reads ([ur] reg_error; PolyScope 3.3 has
+        # no script.REG_ERROR 26) and use the check the controller knows ([ur] ik_check, mauer.ur.script.IK_CHECKS)
+        reg = getattr(link, "reg_error", None)
+        self.reg_error = int(u.get("reg_error", script.REG_ERROR) if reg is None else reg)
+        self.ik_check = str(u.get("ik_check", "has_solution"))
+        if self.ik_check not in script.IK_CHECKS:
+            raise ValueError(f"[ur] ik_check must be one of {script.IK_CHECKS}, got {self.ik_check!r}")
         self.park_tol_rad, self.idle_qd = float(park_tol_rad), float(idle_qd_rad_s)
         self.settle_s = float(cfg.get("camera", {}).get("settle_s", 0.0))
         self.max_qd = float(cfg.get("vision", {}).get("max_qd_rad_s", 0.01))
@@ -175,7 +182,8 @@ class URRobot:
         if guard is None and not sim:
             raise ValueError("the real robot needs the motion guard (mauer.motionguard.MotionGuard) - refusing")
         self.guard = guard
-        self.holding: str | None = None          # kind of the stone in the jaws (for the guard), None = empty
+        self.holding: str | None = None          # kind of the stone the jaws may hold (guard), None = empty: set
+        # when a pick starts, cleared only by a successful place - the operator confirms empty jaws at start-up
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _q_now(self) -> np.ndarray:
@@ -207,7 +215,12 @@ class URRobot:
         the guard finds no clear path."""
         if self.guard is None:
             return self._vias(vias)
-        v = self.guard.plan(self._q_now(), q_target, self.holding, vias or (), column)
+        st = self.link.state()                       # plan from a fresh sample of an arm at rest (review: a stale
+        if st is None or self.link.state_age_s() > 0.5 or st.program_running or \
+                float(np.max(np.abs(np.asarray(st.actual_qd, float)))) > self.idle_qd:     # q would not be the start)
+            raise RobotError(f"{name}: no fresh RTDE sample of the arm at rest - not planning from stale joints",
+                             action=name)
+        v = self.guard.plan(np.asarray(st.actual_q, float), q_target, self.holding, vias or (), column)
         if not v.ok:
             raise RobotError(f"{name}: refused by the motion guard (no clear path in the capsule model): "
                              + " | ".join(v.problems[-3:]), action=name)
@@ -252,7 +265,8 @@ class URRobot:
                 lines += self._guarded(q_look, "mauer_look")
                 q = q_look                           # the script's IK near the checked joints
             lines.append(self.script.look_pose(T, q, self.speeds.a_joint, self.speeds.v_joint, target="flange",
-                                               T_flange_tcp=self.T_flange_tcp))
+                                               T_flange_tcp=self.T_flange_tcp, reg_error=self.reg_error,
+                                               ik_check=self.ik_check))
         return self._run("\n".join(lines), "mauer_look")
 
     def shot(self, camera):
@@ -268,25 +282,25 @@ class URRobot:
         self.held_kind = kind
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
-        column = (T_base_frame @ np.asarray(T_frame_tcp, float))[:2, 3]
+        column = T_base_frame @ np.asarray(T_frame_tcp, float)        # target TCP: the descent column
         if self.guard is not None:                   # the script's IK near the checked joints = the checked path
             q = self._q_above(T_base_frame, T_frame_tcp, q, name)
             path = self._guarded(q, name, vias, column)
         else:
             path = self._vias(vias)
-        body = "\n".join([self._preamble(False), *path,
+        self.holding = kind                          # pessimistic from here on: a pick failing after the close may
+        body = "\n".join([self._preamble(False), *path,             # leave the stone in the jaws (review 2026-10-07)
                           self.script.pick_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                  self.do_close, self.pulse_s, self.wait_s, do_open=self.do_open,
                                                  contact_mm=self.contact_mm, open_first=True,
-                                                 payload_after=self.payloads[kind])])
-        res = self._run(body, name)
-        self.holding = kind
-        return res
+                                                 payload_after=self.payloads[kind], reg_error=self.reg_error,
+                                                 ik_check=self.ik_check)])
+        return self._run(body, name)
 
     def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str):
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
-        column = (T_base_frame @ np.asarray(T_frame_tcp, float))[:2, 3]
+        column = T_base_frame @ np.asarray(T_frame_tcp, float)        # target TCP: the descent column
         if self.guard is not None:                   # the script's IK near the checked joints = the checked path
             q = self._q_above(T_base_frame, T_frame_tcp, q, name)
             path = self._guarded(q, name, vias, column)
@@ -296,7 +310,8 @@ class URRobot:
                           self.script.place_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
                                                   self.do_open, self.pulse_s, self.wait_s, do_close=self.do_close,
                                                   contact_mm=self.contact_mm,
-                                                  payload_after=(self.tool_kg, self.tool_cog))])
+                                                  payload_after=(self.tool_kg, self.tool_cog),
+                                                  reg_error=self.reg_error, ik_check=self.ik_check)])
         res = self._run(body, name)
         self.holding = None
         return res

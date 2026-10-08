@@ -481,8 +481,7 @@ host = "192.168.56.101"     # CONFIRMED 2026-10-06 (table test, lab switch): Das
                             # runs PolyScope 3.3.3.292: RTDE protocol v1 only (vendored client patched, see its
                             # README), no tcp_offset field, output_int_register 24..47 do not exist. A set_tcp of a
                             # block stays active after the block (probe 2026-10-06). get_inverse_kin_has_solution does
-                            # NOT exist (compile error) - every IK-guarded block (look_pose, pick/place, plan --check)
-                            # fails on this robot until mauer/ur/script.py ik_guard has a 3.3 variant; get_inverse_kin
+                            # NOT exist (compile error) - hence [ur] ik_check = "get_inverse_kin"; get_inverse_kin
                             # itself works and raises a runtime error (program stops, no motion) for an unreachable
                             # pose. tools/calib_handeye.py orbit needs neither (movel relative to the start)
 dashboard_port = 29999      # CONFIRMED: UR Dashboard Server
@@ -494,6 +493,11 @@ reg_started = 20            # ASSUMPTION: 24..47 (reserved for RTDE since 3.9) a
                             # 2026-10-06 (nothing writes them) - assumed free of fieldbus/PLC use
 reg_done = 21               # ASSUMPTION: see reg_started
 reg_error = 22              # ASSUMPTION: see reg_started; block error codes (0 none, 1 IK unreachable)
+ik_check = "get_inverse_kin" # CONFIRMED 2026-10-06 (probe on the UR5, see host): no get_inverse_kin_has_solution on
+                            # PolyScope 3.3.3; mauer/ur/script.py ik_guard writes the error code, calls get_inverse_kin
+                            # (runtime error = program stop without motion) and clears the code before the first move.
+                            # "has_solution" for URSim 3.15. ASSUMPTION: the qnear keyword works on 3.3 - check with
+                            # tools/calib_handeye.py plan --check (blocks that do not move) before the first look
 contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
 abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
@@ -511,11 +515,13 @@ v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
 a_lin = 0.30                # ASSUMPTION: m/s²
 v_contact = 0.02            # ASSUMPTION: m/s, last approach to / retract from the stone
 park_q_deg = [161.83, -91.86, 41.77, -39.91, -90.0, 161.83]  # ASSUMPTION (2026-10-07): compact pose like robodk/
-                            # simulate.py Planner.compact (TCP 350 mm ahead of the UR base, z 919 mm ARES = the transfer
-                            # height over a full magazine, tool down, elbow up), checked with mauer.motionguard: tool 40 mm
-                            # from the arm, free of ARES and a full magazine. The previous value [21.34, -127.66, 20.7,
-                            # 16.96, -90.0, 21.34] (same pose, folded IK branch, never collision-checked) had the jaws 47 mm
-                            # INSIDE the forearm in the capsule model - verify on the robot: first move slowly in step mode
+                            # simulate.py Planner.compact - TCP 350 mm ahead of the UR base at ARES (703.6, 0, 919) mm,
+                            # i.e. 144 mm ahead of the chassis front at the transfer height over a full magazine, tool
+                            # down, elbow up; checked with mauer.motionguard (tool 40 mm from the arm, free of ARES and a
+                            # full magazine) and in RoboDK (simulate.py parks there; 3D route checks with the arm parked
+                            # there: 0 colliding samples). Replaces [21.34, -127.66, 20.7, 16.96, -90.0, 21.34] (TCP r 300
+                            # mm / z 905 mm, folded IK branch, never collision-checked: the jaws 47 mm INSIDE the forearm
+                            # in the capsule model) - verify on the robot: first move slowly in step mode
 sim_payload_kg = 1.0        # ASSUMPTION: URSim/simulation ONLY while payload_tool_kg is unknown; never on the real robot
 
 [ares_ads]

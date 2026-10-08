@@ -58,3 +58,54 @@ def test_job_records_its_variant_and_the_preflight_checks_it(tmp_path):
     assert any("config variant None loaded, the job was built with 'c_acb'" in p for p in p_bad)
     assert make_job.main(["--variant", "c_acb", "--out", str(tmp_path / "j.json")]) == 0
     assert mjob.load(tmp_path / "j.json").meta["config_variant"] == "c_acb"
+
+
+HMI = b"""
+[hmi]
+camera_display_hz = 5.0    # ASSUMPTION: test
+[hmi.colors]
+ok = "green"               # ASSUMPTION: test
+"""
+
+
+def test_hmi_tables_do_not_change_the_config_hash(tmp_path):
+    """[hmi*] tables are display settings of the Mauer HMI: they do not change the plan, so they do not change the
+    job's config sha256 (test plan Anhang C7, 2026-10-08) - a planning value still does."""
+    src = config.STATION_TOML.read_bytes()
+    p = tmp_path / "station.toml"
+    p.write_bytes(src)
+    sha = mjob.config_sha256(p)
+    assert sha == mjob.config_sha256(config.STATION_TOML)                   # no [hmi] table: the hash as before
+    i = src.index(b"\n[ur]\n")
+    for data in (src + HMI, src[:i] + HMI + src[i:]):                      # at the end, between two tables
+        p.write_bytes(data)
+        assert mjob.config_sha256(p) == sha
+    p.write_bytes(src[:i] + HMI + src[i:].replace(b"v_joint = 0.5 ", b"v_joint = 0.4 ", 1))
+    assert mjob.config_sha256(p) != sha
+    lines = [ln for f in (config.STATION_TOML, *config.VARIANTS.glob("*.toml"))
+             for ln in f.read_bytes().splitlines() if ln.startswith(b"[")]
+    assert all(mjob._TABLE.match(ln) for ln in lines)                      # column-0 "[" = a table header
+
+
+def test_stamp_ignores_hmi_tables_but_not_the_planning_config(tmp_path):
+    import subprocess
+    git = lambda *a: subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)  # noqa: E731
+    (tmp_path / "config").mkdir()
+    (tmp_path / "mauer").mkdir()
+    st = tmp_path / "config" / "station.toml"
+    st.write_bytes(b"[ur]\nv_joint = 0.5   # ASSUMPTION\n")
+    (tmp_path / "mauer" / "x.py").write_text("x = 1\n")
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c")
+    commit = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], capture_output=True, text=True,
+                            check=True).stdout.strip()
+    job = type("J", (), {"meta": {"robodk_sim": {"git_commit": commit, "git_dirty": False}}})()
+    assert mjob.stamp_problems(job, repo=tmp_path) == []
+    st.write_bytes(st.read_bytes() + HMI)
+    assert mjob.stamp_problems(job, repo=tmp_path) == []                    # an HMI setting: still verified
+    st.write_bytes(st.read_bytes().replace(b"0.5", b"0.4"))
+    assert "config" in mjob.stamp_problems(job, repo=tmp_path)[0]
+    st.write_bytes(b"[ur]\nv_joint = 0.5   # ASSUMPTION\n")
+    (tmp_path / "mauer" / "x.py").write_text("x = 2\n")
+    assert "planning code" in mjob.stamp_problems(job, repo=tmp_path)[0]

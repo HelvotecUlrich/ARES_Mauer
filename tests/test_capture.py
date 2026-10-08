@@ -19,7 +19,7 @@ from mauer import REPO, capture, config
 from mauer import geometry as g
 from mauer.camera.base import Camera, Frame
 from mauer.camera.files import FileCamera, save_frame
-from mauer.capture import CaptureError, boards_in_base, capture_shot, goto_look, match_samples
+from mauer.capture import CaptureError, boards_in_base, capture_shot, goto_look, look_block, match_samples
 from mauer.simcam import SynthCamera
 from mauer.ur import script
 from mauer.ur.link import BlockResult, URState
@@ -345,7 +345,11 @@ def test_goto_look_payload_and_body(cfg, T_ft, caplog):
     assert script.set_tcp(T_ft) in body and "set_payload(1.0, [0.0, 0.0, 0.06])" in body
     assert f"look = {script.pose(T_LOOK @ T_ft)}" in body                         # flange target -> TCP pose
     assert f"qnear={script.q_list(ch.Q_REF)}" in body                           # default qnear = current joints
-    assert "get_inverse_kin_has_solution(look" in body and "v=0.5" in body      # [ur] v_joint
+    assert cfg["ur"]["ik_check"] == "get_inverse_kin"                            # PolyScope 3.3 (station.toml)
+    assert "look_q = get_inverse_kin(look" in body and "has_solution" not in body and "v=0.5" in body  # [ur] v_joint
+    body = look_block({**cfg, "ur": {**cfg["ur"], "ik_check": "has_solution"}}, T_base_flange=T_LOOK,
+                      qnear_rad=ch.Q_REF, sim=True)
+    assert "get_inverse_kin_has_solution(look" in body                          # URSim 3.15
     cfg2 = {**cfg, "ur": {**cfg["ur"], "payload_tool_kg": 2.5}}
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="mauer.capture"):

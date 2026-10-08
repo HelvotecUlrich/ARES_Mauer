@@ -168,8 +168,9 @@ Plan and state of the work: **`docs/PLAN_2026-10-07_realtest.md`**.
   capsule model (tool and held stone vs the arm, ARES + magazine, the built wall, the docked station) and gets a
   detour or is refused before anything moves. Found on the way: direct joint moves out of the magazine would swing a
   held stone up to 26 mm into the neighbour stack, and the old `[ur] park_q_deg` had the jaws inside the forearm
-  (replaced by the elbow-up IK of the same pose - **verify slowly on the robot**). Guarded world simulation: main C
-  76/76, c_acb 74/74.
+  (replaced by an elbow-up compact pose, TCP 144 mm ahead of the ARES front at 919 mm - **verify slowly on the
+  robot**). Guarded world simulation: main C 76/76, c_acb 74/74. A real start at stop k > 0 needs `--resume-log` (or
+  `--stop-untouched`) so that the guard knows the wall that stands.
 - **RoboDK-verified jobs**: a complete clean `robodk/simulate.py` run writes `data/jobs/nominal_C[_variant]_robodk.json`
   (meta `reach_check` "robodk"), which `preflight_real` requires for the real robot.
 - **Time-lapse**: `py.exe robodk/simulate.py --animate --video results/l_wall_sim.mp4` (`robodk/timelapse.py`).

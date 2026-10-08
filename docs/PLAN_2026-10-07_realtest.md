@@ -58,6 +58,13 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - [x] D4 RoboDK-verified job stamp (simulate.py robodk_stamp) for preflight_real
 - [x] D5 review of the planning core (workflow review-planning-core: 10 findings fixed, 48e79b9)
 - [ ] D6 merge the HMI branch (hmi-integration) into main: URRobot needs guard=MotionGuard(...) there
+- [x] D7 PolyScope 3.3 IK check ([ur] ik_check = "get_inverse_kin", 8894751; found by the test plan agent) + the IK
+      error code into [ur] reg_error (was register 26); stamp carries the git state of the run start (87757fa)
+- [ ] D8 after D6: RoboDK reruns main + c_acb (both stamps are stale after D7 / D6), commit reports
+- [x] D9 test plan Anhang C (software gaps found while writing it): C5 preflight blocks PLACEHOLDERs outside the camera
+      loop (7d9459f), C7 [hmi*] tables out of the config hash / stamp (fce214f), C9 stale texts (c10d72a). C1-C4 go
+      with D6 (HMI REAL start: magazine fill, jaws empty, start at stop k > 0, approach_mm, IK_GUARD_33). C6 (HMI test
+      drive button) and C8 (warn when the PLC odometry says ARES is not at stop k's mark) open
 
 ## Status log
 - 2026-10-07: plan written; decisions D1-D5.
@@ -70,3 +77,29 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - 2026-10-07 night: A5 done; motion guard (74e8328), stamp (f954da9), review fixes (48e79b9). RoboDK reruns for the
   new park / looks running (they also write the stamped jobs). HMI workflow wf_7a4d2776-741 resumed: maps cached,
   design done (88 kB), core implementing in /mnt/c/Users/samue/ARES_Mauer_wt/hmi-core.
+- 2026-10-08 02:20: second review of the guard world fixed (22340be: wall that stands at a later start, pins, stone
+  edges, floor, frames, restart fill, stamp from a clean tree). Guarded full sims (main, c_acb) running against
+  22340be; then the RoboDK reruns (stamps must match 22340be or later). HMI workflow: core, camera, status, twin done
+  (branches hmi-*), integrate running in /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration; then review, test plan, fix.
+  hmi-integration is based on ed5ea2a: merging main brings 21b7731 + 22340be (rigs.py URRobot guard needs
+  approach_mm=job.approach_mm; REAL start at stop k > 0 needs restart_fill / declare_placed like tools/run_job.py).
+- 2026-10-08 02:47: guarded full sims against 22340be: main 76/76 (243 detours, 661 s), c_acb 74/74 (230, 605 s),
+  nothing refused. RoboDK reruns started (main, then c_acb, both with video). HMI integrate done (639 passed; smoke run
+  SIM + twin on port 20640; screenshot /mnt/c/Users/samue/ARES_Mauer_wt/hmi_screenshot.png); review + test plan running.
+- 2026-10-08 03:20: RoboDK main rerun 76/76 + 62/62 (fb8ed83, stamp at 7a98fab, now stale by D7). c_acb rerun did
+  not start (the wait loop's grep is ugrep -I: it skipped the log with Windows bytes - use /usr/bin/grep -a); both
+  reruns after D6 (D8). D7 done. HMI workflow: reviews (3 lenses) + German test plan done, fix agent running in
+  /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration. After it: merge main into hmi-integration (D6 notes above, also
+  SimRig with guard=True, REAL start at stop k > 0: magazine fill + jaws-empty confirmation; hmi preflight IK_GUARD_33
+  block -> [ur] ik_check), then into main.
+- 2026-10-08 03:40: HMI workflow wf_7a4d2776-741 COMPLETE (14 agents). Fix commits on hmi-integration (worktree
+  /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration, clean): 7ca642c URLink/AresAds HALT latch, d99f854 RunController
+  (HALT latch + HaltGate, state lock, Start/Resume checks), e0360de window close order / keyboard-HALT banner,
+  a443ba5 docs, 3c3fe08 docs/TESTPLAN_REALTEST_ARES_DE.md. Full workflow result:
+  /tmp/claude-1000/-mnt-c-Users-samue-ARES-Mauer/fc936a49-c30e-44a7-9ec4-c90055219217/tasks/wweshl7rm.output.
+  NEXT (D6): in the worktree `git merge main` (main has 8894751 ik_check, fce214f [hmi] out of the hash,
+  7d9459f preflight blockers, c10d72a texts); then: rigs.py MotionGuard(..., approach_mm=job.approach_mm); SimRig
+  guard=True (option, tests may switch it off); hmi/core/preflight.py IK_GUARD_33 -> only when [ur] ik_check is
+  "has_solution" on PolyScope 3.3; REAL start: show magazine fill (job.restart_fill / initial fill), confirm jaws empty
+  / magazine as listed / station full, start at stop k > 0 needs a run log (declare_placed) or "stop untouched";
+  update the test plan (S1, S2, S6, Anhang C done items); full suite; merge into main; then D8 (RoboDK reruns).

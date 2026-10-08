@@ -229,7 +229,8 @@ def look_block(cfg: Mapping, *, T_base_flange: np.ndarray | None = None, q_rad: 
         if qnear_rad is None:
             raise ValueError("look_block with T_base_flange needs qnear_rad")
         lines.append(script.look_pose(T_base_flange, qnear_rad, sp.a_joint, sp.v_joint, target="flange",
-                                      T_flange_tcp=T_ft, reg_error=reg_error))
+                                      T_flange_tcp=T_ft, reg_error=reg_error,
+                                      ik_check=str(cfg["ur"].get("ik_check", "has_solution"))))
     else:
         lines.append(script.movej_q(q_rad, sp.a_joint, sp.v_joint))
     return "\n".join(lines)
