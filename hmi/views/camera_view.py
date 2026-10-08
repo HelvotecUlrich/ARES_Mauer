@@ -29,9 +29,6 @@ from PySide6.QtWidgets import (
 from ..amr.ui.widgets import GROUP_CSS, PulseBtn, lbl, set_style, set_text
 from ..core.overlay import CameraShot, OverlayProcessor, board_results, redraw, write_snapshot
 
-# ASSUMPTION fallback: [hmi] camera_display_hz is not in station.toml yet (a feature step may not edit it; INTEGRATE
-# adds it) - at most 5 images per second are painted (~2 ms each), faster shots replace the pending one
-DISPLAY_HZ = 5.0
 SNAP_DIR = "snapshots"           # <run log folder>/snapshots/
 SOURCES = {"synth": "SIM camera (synthetic render)", "ids": "IDS camera (REAL)"}
 STATUS_COLOURS = {"accepted": "#44CC44", "seen": "#33CCEE", "partial": "#FFAA00", "rejected": "#FF8800",
@@ -147,8 +144,8 @@ class CameraView(QWidget):
         self._ctx = ctx
         self._ctl = ctx.controller
         hmi = ctx.hmi
-        self._display_hz = float(hmi.get("camera_display_hz", DISPLAY_HZ))
-        self._live_hz = float(hmi.get("camera_live_hz", 1.0))
+        self._display_hz = float(hmi["camera_display_hz"])
+        self._live_hz = float(hmi["camera_live_hz"])
         # a grab that neither delivered an image nor failed within twice the camera's own grab timeout is lost
         self._grab_lost_s = 2.0 * float(ctx.station_cfg.get("camera", {}).get("timeout_ms", 3000)) / 1000.0
         self._min_corners = int(ctx.station_cfg.get("vision", {}).get("min_corners", 8))
@@ -177,7 +174,7 @@ class CameraView(QWidget):
         c.event.connect(self._on_event)
         c.state_changed.connect(self._on_state)
         c.rig_changed.connect(self._on_rig)
-        c.message.connect(self._on_message)
+        c.grab_failed.connect(self._on_grab_failed)
         ctx.session_changed.connect(self._on_session)
         self.snapshot_saved.connect(self._on_saved)
         self._refresh()
@@ -415,12 +412,12 @@ class CameraView(QWidget):
             set_text(lab, "-")
         self._refresh()
 
-    def _on_message(self, _level: str, text: str) -> None:
-        if text.startswith("grab failed"):         # RunController._submit(..., "grab") reports "grab failed: ..."
-            self._grab_t = None
-            set_text(self.snap_status, text)
-            if self.live.isChecked():
-                self._stop_live(f"Live stopped: {text}")
+    def _on_grab_failed(self, error: str) -> None:
+        self._grab_t = None
+        text = f"grab failed: {error}"
+        set_text(self.snap_status, text)
+        if self.live.isChecked():
+            self._stop_live(f"Live stopped: {text}")
 
     def _refresh(self) -> None:
         c = self._ctl

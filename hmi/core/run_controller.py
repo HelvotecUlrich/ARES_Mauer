@@ -171,6 +171,7 @@ class RunController(QObject):
     rig_changed = Signal(object)              # RigInfo | None
     session_loaded = Signal(object)           # JobSession
     message = Signal(str, str)                # (level "info" | "warning" | "error", text) -> status bar
+    grab_failed = Signal(str)                 # a manual grab() raised: "<ExceptionType>: <message>" (also in message)
 
     def __init__(self, hmi: Mapping, *, config_path: Path | None = None, runs_dir: Path,
                  ads_status_fn: Callable[[], dict | None] = lambda: None,
@@ -620,7 +621,11 @@ class RunController(QObject):
             return
 
         def job() -> None:
-            frame = self._rig.camera.grab()
+            try:
+                frame = self._rig.camera.grab()
+            except Exception as e:      # noqa: BLE001 - the camera view stops Live; _submit reports it as well
+                self.grab_failed.emit(f"{type(e).__name__}: {e}")
+                raise
             self.shot.emit(self._shot_view(frame.image, None))
         self._submit(job, "grab")
 

@@ -306,6 +306,7 @@ class FakeRunController(QObject):
     rig_changed = Signal(object)
     session_loaded = Signal(object)
     message = Signal(str, str)
+    grab_failed = Signal(str)
 
     def __init__(self, hmi: Optional[dict] = None, ares_enabled: bool = False) -> None:
         super().__init__()

@@ -587,6 +587,8 @@ watchdog_timeout_s = 2.0        # CONFIRMED: informative, FB_HMI_Interface T#2S 
 ur_poll_hz = 10.0               # ASSUMPTION: UR panel refresh (URLink.state() is lock-protected, 125 Hz receiver)
 camera_preview_scale = 0.25     # ASSUMPTION: 618 x 516 px preview of the 2472 x 2064 frame (draw 1 ms, 2026-10-07)
 camera_live_hz = 1.0            # ASSUMPTION: REAL live view while no run is active (grab 123 ms, 2026-10-06)
+camera_display_hz = 5.0         # ASSUMPTION: camera view paints at most this many images per second (~2 ms each);
+                                # a faster shot replaces the waiting one
 sim_step_s = 0.3                # ASSUMPTION: SIM pacing, wait before every motion (unpaced a full sim takes 8 s)
 confirm_arm_s = 0.5             # ASSUMPTION: Go of a step confirmation is enabled this long after it appears
 resume_odom_tol_mm = 2.0        # ASSUMPTION: PLC odometry change since the run stopped that blocks a resume

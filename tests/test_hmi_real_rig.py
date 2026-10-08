@@ -17,6 +17,7 @@ from hmi.core.sources import UrSource
 from hmi_fakes import StubCamera, StubLink, short_sim_session, wait_until
 from mauer import config
 from mauer.ares.ads import AresAds
+from mauer.camera.base import CameraError
 from mauer.vision import intrinsics as _intrinsics
 
 pytestmark = pytest.mark.usefixtures("no_lab_network")
@@ -168,6 +169,15 @@ def test_controller_real_prepare_refuses_start_and_releases_in_order(qapp, tmp_p
         c.shot.connect(shots.append)
         c.grab()
         assert wait_until(lambda: shots, 10.0, qapp) and shots[0].look == "live" and shots[0].rec is None
+        failed = []
+        c.grab_failed.connect(failed.append)
+
+        def no_frame():
+            raise CameraError("no frame within 3000 ms")
+        c._rig.camera.grab = no_frame                                       # the RealRig behind c.rig
+        c.grab()                                                            # reported, the rig stays ready
+        assert wait_until(lambda: failed, 10.0, qapp) and failed[0].startswith("CameraError: no frame")
+        assert c.state == "ready" and len(shots) == 1
         c.halt()
         assert wait_until(lambda: "abort" in c.rig.link.calls, 5.0, qapp)
         assert "ads.abort" not in order                                     # the HMI's worker is connected

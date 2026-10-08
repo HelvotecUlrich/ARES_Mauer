@@ -253,7 +253,7 @@ def test_grab_and_live_only_in_real_with_a_rig(cam, qapp, shot_view):
     fake.set_state("paused")
     v.live.setChecked(True)
     assert v.live_active
-    fake.message.emit("error", "grab failed: CameraError: no frame within 3000 ms")
+    fake.grab_failed.emit("CameraError: no frame within 3000 ms")
     assert not v.live_active and "grab failed" in v.snap_status.text()
 
 
