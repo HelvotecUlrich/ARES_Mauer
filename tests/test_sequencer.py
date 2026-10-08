@@ -8,6 +8,7 @@ config without legs (conftest.straight_config), the L tests the L of 2026-10-05 
 routes, half stones).
 """
 import copy
+import dataclasses
 import importlib.util
 import math
 import os
@@ -380,6 +381,26 @@ def test_ur_robot_programs(cfg, job10):
     link.run_block = lambda body, **kw: _FakeLink.run_block(link, "FAIL", **kw)
     with pytest.raises(RobotError, match="boom"):
         r.park()
+
+
+@pytest.mark.parametrize("ik_check", ["get_inverse_kin", "has_solution"])
+def test_ur_robot_ik_check_and_error_register_from_the_config(cfg, job10, ik_check):
+    """The IK checks of look / pick / place write the error code into [ur] reg_error (the register the link reads;
+    before 2026-10-08 they used script.REG_ERROR 26, which PolyScope 3.3 does not have) and use [ur] ik_check."""
+    c = copy.deepcopy(cfg)
+    c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"], c["ur"]["ik_check"] = 1.5, 3.0, ik_check
+    link = _FakeLink(job10.park_q_rad)
+    r = URRobot(link, c, job10, guard=_guard(c, job10))
+    stone = job10.stops[0].stones[0]
+    r.goto_look(dataclasses.replace(job10.stops[0].looks[0], q_rad=None))       # a look by pose: IK on the robot
+    r.pick_magazine(job10.magazine.slot(stone.slot), g.inv(job10.T_ares_base))
+    r.place_wall(g.inv(job10.T_ares_base) @ g.inv(job10.stops[0].ares.T), stone)
+    reg = int(c["ur"]["reg_error"])
+    assert [n for n, _ in link.blocks] == ["mauer_look", "mauer_pick_mag", "mauer_place_wall"]
+    for name, body in link.blocks:
+        assert f"write_output_integer_register({reg}, 1)" in body, name
+        assert "write_output_integer_register(26" not in body, name
+        assert ("get_inverse_kin_has_solution" in body) == (ik_check == "has_solution"), name
 
 
 # ── full wall (slow) ──────────────────────────────────────────────────────────

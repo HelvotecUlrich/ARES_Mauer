@@ -94,6 +94,32 @@ def test_movej_pose_has_ik_guard_and_qnear():
         s.movej_pose(T, Q, 0.5, 0.4, var="end")                  # keyword as variable
 
 
+def test_ik_guard_for_polyscope_33_without_has_solution():
+    """[ur] ik_check = "get_inverse_kin": PolyScope 3.3.3 (the lab's UR5) has no get_inverse_kin_has_solution (compile
+    error, probe 2026-10-06). The error code goes into the register first, get_inverse_kin stops the program with a
+    runtime error for an unreachable pose (no motion), the code is cleared after it - all before the first move."""
+    T = g.pose_xyz_rpy([400, 100, 300], [180, 0, 0])
+    txt = s.movej_pose(T, Q, 0.5, 0.4, var="tgt", reg_error=22, ik_check="get_inverse_kin")
+    assert "has_solution" not in txt and "halt" not in txt
+    lines = txt.splitlines()
+    assert lines[1] == f"write_output_integer_register(22, {s.ERR_IK_UNREACHABLE})"
+    assert lines[2].startswith("tgt_q = get_inverse_kin(tgt, qnear=[0.000000000, -1.570796327")
+    assert lines[3] == "write_output_integer_register(22, 0)"
+    assert lines[4].startswith("movej(get_inverse_kin(tgt, qnear=") and len(lines) == 5
+    F, local = g.pose_xyz_rpy([500, 0, 0], [0, 0, 30]), g.pose_xyz_rpy([100, 0, 120], [180, 0, 0])
+    for txt in (s.place_stone(F, local, 150.0, Q, SP, 0, 0.5, 1.0, reg_error=22, ik_check="get_inverse_kin"),
+                s.pick_stone(F, local, 150.0, Q, SP, 1, 0.5, 1.0, do_open=0, open_first=True, reg_error=22,
+                             ik_check="get_inverse_kin")):
+        lines = txt.splitlines()
+        assert "has_solution" not in txt
+        ik = [i for i, ln in enumerate(lines) if " = get_inverse_kin(" in ln]
+        moves = [i for i, ln in enumerate(lines) if ln.startswith(("movej(", "movel(", "set_standard_digital_out"))]
+        assert len(ik) == 2 and max(ik) < min(moves)                 # both poses checked before anything moves
+        assert lines[max(ik) + 1] == "write_output_integer_register(22, 0)"
+    with pytest.raises(ValueError, match="ik_check"):
+        s.ik_guard("x", Q, ik_check="nope")
+
+
 def test_look_pose_flange_to_tcp():
     cfg = config.load()
     T_ft = config.T_flange_tcp(cfg)

@@ -41,7 +41,7 @@ plan: handeye.plan_poses around the board centre ([vision.handeye_plan]: n_poses
   the nominal T_flange_cam; prints every flange pose, the camera distance/tilt, the nominal UR5 IK branch used as
   qnear (elbow up, wrist down; UR5 DH nominal - the controller does the real IK) and the clearance above the deck
   plane. --write saves the poses as JSON (format below, read by tools/measure_target.py poses). --check asks the
-  controller per pose (get_inverse_kin_has_solution in a block that does not move; a block stops any program).
+  controller per pose (the [ur] ik_check IK guard in a block that does not move; a block stops any program).
 capture: for each planned pose: goto_look (set_tcp/set_payload/IK-guarded movej), capture_shot ([camera] settle_s,
   [vision] max_qd_rad_s), image + T_base_flange + q + tcp_pose_ur + max_qd into a "handeye" dataset
   (mauer.vision.dataset); unreachable poses (IK guard, error code 1) are skipped and listed; --resume continues an
@@ -572,7 +572,8 @@ def ik_check_block(cfg: dict, T_base_flange: np.ndarray, qnear_rad: Sequence[flo
     """Block body that does not move: set_tcp, the TCP target and the IK guard (halts with error code 1)."""
     T_ft = config.T_flange_tcp(cfg)
     return "\n".join([script.set_tcp(T_ft), f"look = {script.pose(np.asarray(T_base_flange) @ T_ft)}",
-                      script.ik_guard("look", qnear_rad, reg_error)])
+                      script.ik_guard("look", qnear_rad, reg_error,
+                                      ik_check=str(cfg["ur"].get("ik_check", "has_solution")))])
 
 
 def cmd_plan(args) -> int:
@@ -1132,7 +1133,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n", type=int, default=None, help="number of poses (default [vision.handeye_plan] n_poses)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--write", default=None, help="write the poses as JSON (for measure_target.py poses)")
-    p.add_argument("--check", action="store_true", help="ask the controller (get_inverse_kin_has_solution, no "
+    p.add_argument("--check", action="store_true", help="ask the controller ([ur] ik_check IK guard, no "
                                                         "motion) - needs --host or --ursim")
     p.add_argument("--board-pose", default=None, help=BOARD_POSE_HELP)
     p.add_argument("--q-ref-deg", default=None, help=Q_REF_HELP)
