@@ -236,6 +236,18 @@ class RunResult:
 
 
 # ── real-run preflight ────────────────────────────────────────────────────────
+# Config values that act on the motion without a camera correction (test plan Anhang C5, 2026-10-08): the real run is
+# refused while one of them is PLACEHOLDER / UNKNOWN. Key as mauer.job.config_status -> what a wrong value does.
+MEASURE_BEFORE_REAL = {
+    "[ur5] mount_z": "magazine pick and place height 1:1",
+    "[ur5] mount_rz": "magazine pick position (1 deg moves magazine row 0, 654 mm behind the UR axis, by 11 mm)",
+    "[deck] holder_z": "magazine pick and place height 1:1",
+    "[ur] payload_cog_mm": "the UR payload model (its collision detection)",
+    "[boards.ref] square_mm": "the scale of every wall and station measurement",
+    "[camera] settle_s": "measurements while ARES still sways",
+}
+
+
 def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None = None,
                    handeye_file: str | Path | None = None, config_path: str | Path | None = None) -> list[str]:
     """Every reason not to run this job on the real robot (empty list = ok). Lists all problems at once."""
@@ -256,6 +268,14 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
         p.append("[brick] mass_kg <= 0 (UNKNOWN) - weigh a stone")
     if tool > 0.0 and stone > 0.0 and tool + stone > 5.0:
         p.append(f"payload {tool + stone:.2f} kg (tool + stone) exceeds the UR5 rated payload 5 kg")
+    try:
+        from .job import config_status
+        status = config_status(config_path, variant)
+    except OSError:
+        status = {}
+    for key, what in MEASURE_BEFORE_REAL.items():
+        if status.get(key, {}).get("status") in ("PLACEHOLDER", "UNKNOWN"):
+            p.append(f"{key} {status[key]['status']} - measure it (no camera correction: {what})")
     if any(t.kind == "half" for t in job.stones()):
         hb = cfg.get("half_brick", {}) or {}
         half = float(hb.get("mass_kg", 0.0) or 0.0)
@@ -263,12 +283,8 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
             p.append("[half_brick] mass_kg <= 0 (UNKNOWN) - weigh a half stone")
         if tool > 0.0 and half > 0.0 and tool + half > 5.0:
             p.append(f"payload {tool + half:.2f} kg (tool + half stone) exceeds the UR5 rated payload 5 kg")
-        try:
-            from .job import config_status
-            ph = sorted(k.split(" ", 1)[1] for k, v in config_status(config_path, variant).items()
-                        if k.startswith("[half_brick] ") and v["status"] == "PLACEHOLDER")
-        except OSError:
-            ph = []
+        ph = sorted(k.split(" ", 1)[1] for k, v in status.items()
+                    if k.startswith("[half_brick] ") and v["status"] == "PLACEHOLDER")
         if ph:
             p.append(f"[half_brick] {', '.join(ph)} PLACEHOLDER (current half-stone CAD not available) - measure the "
                      "half stone and its pin pair")

@@ -287,8 +287,11 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch
                               handeye_file=tmp_path / "none_h.json")
     text = "\n".join(problems)
     for frag in ("[ur] host is empty", "[ur] payload_tool_kg <= 0", "[brick] mass_kg <= 0", "camera intrinsics missing",
-                 "hand-eye calibration missing", "nominal look poses"):
+                 "hand-eye calibration missing", "nominal look poses", "[ur5] mount_z PLACEHOLDER - measure it"):
         assert frag in text, frag
+    st = mjob.config_status()                                            # the values measured before the real test
+    monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: {
+        k: ({**v, "status": "CONFIRMED"} if k in OUTSIDE_THE_CAMERA_LOOP else v) for k, v in st.items()})
     good = copy.deepcopy(cfg)
     good["ur"].update(host="192.0.2.10", payload_tool_kg=1.6)
     good["brick"]["mass_kg"] = 3.0
@@ -712,6 +715,25 @@ def test_resumed_half_turn_is_not_a_full_turn(lcfg, ljob, tmp_path):
         seq._follow_route(r, "test", kind="from_station", stop=0, start_leg=j, resume=True)
         rot = [m for m in w.ares.moves[n0:] if m["kind"] == "rotate"]
         assert all(abs(m["dtheta_deg"]) < 1.0 for m in rot), rot
+
+
+OUTSIDE_THE_CAMERA_LOOP = ("[ur5] mount_z", "[ur5] mount_rz", "[deck] holder_z", "[ur] payload_cog_mm",
+                           "[boards.ref] square_mm", "[camera] settle_s")
+
+
+def test_preflight_blocks_placeholders_outside_the_camera_loop(lcfg, ljob, tmp_path, monkeypatch):
+    """Test plan Anhang C5 (2026-10-08): values that act on the motion without a camera correction block the real
+    run while they are PLACEHOLDER / UNKNOWN; measured (any other status) they do not."""
+    kw = dict(intrinsics_file=tmp_path / "i", handeye_file=tmp_path / "h")
+    text = "\n".join(preflight_real(lcfg, ljob, **kw))
+    st = mjob.config_status()
+    for key in OUTSIDE_THE_CAMERA_LOOP:
+        assert (key in text) == (st[key]["status"] in ("PLACEHOLDER", "UNKNOWN")), key
+    assert "[ur5] mount_z" in text                                       # PLACEHOLDER in station.toml today
+    measured = {k: ({**v, "status": "CONFIRMED"} if k in OUTSIDE_THE_CAMERA_LOOP else v) for k, v in st.items()}
+    monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: measured)
+    text = "\n".join(preflight_real(lcfg, ljob, **kw))
+    assert not any(key in text for key in OUTSIDE_THE_CAMERA_LOOP)
 
 
 def test_l_preflight_asks_for_the_half_stone(lcfg, ljob, tmp_path):
