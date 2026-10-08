@@ -126,3 +126,11 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   docs/MAGTEST_DE.md) - 2 stones through the magazine (layers 1 + 2), a dry place 50 mm above the front leg between pick and put-down. HMI
   SIM 40/40. The wall jobs, reach tables and the RoboDK stamp stay invalid (mount x / z / rz): rerun robodk/simulate.py
   when the big simulation is due (Samuel: later).
+- 2026-10-08 afternoon: network T0 on the switch (UR, ARES CX9240, camera PoE): ping all three, UR PolyScope 3.3.3
+  RUNNING, camera 5/5 frames 107 ms; ARES ADS TCP 48898 times out (ping ok, Beckhoff MAC) - open. UR tool voltage set
+  24 -> 0 V (camera on PoE, Hirose unplugged). Samuel: the UR sits at the vehicle REAR; pendant check X+ -> right,
+  Y+ -> forward: mount_rz 90 confirmed in this repo's frame, which is base_link turned by 180 deg ([ares]
+  frame_x_points_to = "rear"); preflight_real refuses wall runs until the ARES moves are mirrored. NEXT (Samuel,
+  autonomous): controller monitor at the far end (25 cm out, 20 cm over the deck) into the collision models; hand-eye
+  calibration on ARES + stone test tomorrow; new C with a door and a window from the photos in input/; new sim, validate.
+

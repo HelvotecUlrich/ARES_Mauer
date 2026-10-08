@@ -266,9 +266,29 @@ def test_magtest_settings_do_not_change_the_wall_plan_hash():
     assert b"[ur]" in base and b"hover_mm" not in base
 
 
-def test_the_pendant_check_names_where_base_x_points_on_ares():
-    from mauer.magtest import base_x_direction
-    assert base_x_direction(90.0) == "LEFT" and base_x_direction(0.0) == "FORWARD"
-    assert base_x_direction(180.0) == "BACK" and base_x_direction(-90.0) == "RIGHT"
-    assert base_x_direction(272.0) == "RIGHT"
-    assert base_x_direction(45.0).startswith("between")
+def test_the_pendant_check_names_the_directions_in_the_driving_direction(cfg):
+    """Samuel 2026-10-08 on the pendant (Move tab, feature Base): X growing moves the TCP to the RIGHT, Y growing
+    FORWARD towards the ARES centre (seen in the driving direction) - the UR sits at the vehicle rear, this repo's ARES
+    frame (+x towards the UR end) is base_link turned by 180 deg ([ares] frame_x_points_to = "rear")."""
+    from mauer.magtest import pendant_check
+    assert cfg["ares"]["frame_x_points_to"] == "rear" and cfg["ur5"]["mount_rz"] == 90.0
+    assert pendant_check(cfg) == ("RIGHT", "FORWARD")
+    front = copy.deepcopy(cfg)
+    front["ares"]["frame_x_points_to"] = "front"
+    assert pendant_check(front) == ("LEFT", "BACKWARD")
+    front["ur5"]["mount_rz"] = 0.0
+    assert pendant_check(front) == ("FORWARD", "LEFT")
+    front["ur5"]["mount_rz"] = 45.0
+    assert pendant_check(front)[0].startswith("between")
+
+
+def test_wall_runs_are_refused_while_the_frame_points_to_the_vehicle_rear(cfg, job):
+    """The sequencer's ARES moves are in this repo's frame; with +x = vehicle rear the PLC would drive the other way.
+    The dry run moves no ARES (its preflight does not care)."""
+    from mauer.sequencer import preflight_real
+    assert any("vehicle REAR" in p for p in preflight_real(cfg, job))
+    front = copy.deepcopy(cfg)
+    front["ares"]["frame_x_points_to"] = "front"
+    assert not any("vehicle REAR" in p for p in preflight_real(front, job))
+    from mauer import magtest
+    assert magtest.preflight(cfg, job) == []

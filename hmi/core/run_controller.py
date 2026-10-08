@@ -42,7 +42,7 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from mauer.ares.ads import OdomPose
-from mauer.magtest import MagazineTest, base_x_direction, is_magtest
+from mauer.magtest import MagazineTest, is_magtest, pendant_check
 from mauer.reference import Pose2D
 from mauer.sequencer import Sequencer, SequencerAborted, SequencerError, SequencerPaused, standing_in_log
 
@@ -595,12 +595,14 @@ class RunController(QObject):
         o = self._opts
         if self.magtest:
             m = self._session.job.meta["magtest"]
-            u, rz = max(abs(t[0]) for t in m["targets"]), float(self._session.cfg["ur5"]["mount_rz"])
+            u, (px, py) = max(abs(t[0]) for t in m["targets"]), pendant_check(self._session.cfg)
+            rear = self._session.cfg.get("ares", {}).get("frame_x_points_to", "front") == "rear"
             return (f"MAGAZINE DRY RUN, {len(m['moves'])} moves: gripper jaws EMPTY; magazine: 2 full stones "
                     f"stacked on {m['start_fill'][0]} + {m['start_fill'][1]}, every other slot empty; nothing and "
-                    f"nobody in front of ARES (front leg {m['front']['leg']}, {m['front']['dist_mm']:g} mm from the "
-                    f"ARES centre, up to {u:g} mm to the sides); ARES stands still; pendant Move tab, feature Base: +X "
-                    f"moves the TCP to ARES {base_x_direction(rz)} ([ur5] mount_rz {rz:g}); E-stop in hand")
+                    f"nobody beyond the UR end of ARES{' (the vehicle REAR)' if rear else ''} (front leg "
+                    f"{m['front']['leg']}, {m['front']['dist_mm']:g} mm from the ARES centre, up to {u:g} mm to the "
+                    "sides); ARES stands still; pendant Move tab, feature Base (seen in the ARES driving direction): "
+                    f"X growing moves the TCP {px}, Y growing {py}; E-stop in hand")
         fill = ", ".join(f"{sid}: {kind}" for sid, kind in self.start_fill())
         late = f"{len(self._log_standing)} stones of {Path(o.resume_log).name} stand; " if self._log_standing else ""
         return (f"REAL start at stop {o.start_stop}: {late}gripper jaws EMPTY, pick-up station FULL, magazine loaded "

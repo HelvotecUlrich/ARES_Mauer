@@ -297,7 +297,8 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch
     good = copy.deepcopy(cfg)
     good["ur"].update(host="192.0.2.10", payload_tool_kg=1.6)
     good["brick"]["mass_kg"] = 3.0
-    j = copy.deepcopy(job10)
+    good["ares"]["frame_x_points_to"] = "front"     # the layout mirrored into base_link (station.toml: "rear" since
+    j = copy.deepcopy(job10)                          # 2026-10-08, refused - tests/test_magtest.py)
     j.meta.update(look_source="planner", reach_check="robodk")
     monkeypatch.setattr(mjob, "stamp_problems", lambda job: [])          # code provenance: test_stamp_problems
     for f in ("i.json", "h.json"):

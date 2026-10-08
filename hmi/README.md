@@ -66,7 +66,8 @@ A job built by `tools/make_magtest.py` (meta `kind` "magtest", `docs/MAGTEST_DE.
 front pose, put-down slot). REAL opens only the UR (`RealRig.ur_only`: no AresAds, camera or calibration) and is
 selectable without `--ares`; the preflight is `preflight.magtest_preflight` (job / config + the UR block; `[ur]
 payload_cog_mm` PLACEHOLDER shown, not blocking); the start checklist asks for the two stones on the start slots,
-empty jaws, a free front area and the pendant check of `[ur5] mount_rz` (Base +X = ARES left); Resume does not check
+empty jaws, a free area beyond the UR end and the pendant check of `[ur5] mount_rz` (`mauer.magtest.pendant_check`:
+X growing -> TCP right, Y growing -> forward, in the driving direction); Resume does not check
 the ARES odometry. A robot error in a move: take the stone out, put it back on the move's pick slot, "Jaws empty",
 Resume (the move runs again). The plan view shows ARES and the front poses (moves done = placed), no station table.
 

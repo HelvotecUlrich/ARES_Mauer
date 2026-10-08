@@ -39,14 +39,20 @@ BLOCK_IF_PLACEHOLDER = ("[ur5] mount_x", "[ur5] mount_y", "[ur5] mount_z", "[ur5
 WARN_IF_PLACEHOLDER = {"[ur] payload_cog_mm": "the UR payload model (its collision detection) - keep the speed low"}
 
 
-def base_x_direction(mount_rz_deg: float) -> str:
-    """Where the UR base +X points on ARES for [ur5] mount_rz (T_ares_base = ... @ rotz(mount_rz)): the pendant check
-    of the start checklist (Move tab, feature Base, +X)."""
-    a = float(mount_rz_deg) % 360.0
-    for name, ref in (("FORWARD", 0.0), ("LEFT", 90.0), ("BACK", 180.0), ("RIGHT", 270.0), ("FORWARD", 360.0)):
-        if abs(a - ref) <= 10.0:
-            return name
-    return f"between the ARES axes ({a:.0f} deg from forward towards left)"
+def pendant_check(cfg: Mapping) -> tuple[str, str]:
+    """(X, Y): where the TCP moves on the pendant (Move tab, feature Base) when the shown X / Y grows, seen in the ARES
+    driving direction - FORWARD / BACKWARD / LEFT / RIGHT - from [ur5] mount_rz and [ares] frame_x_points_to (this
+    repo's +x is the vehicle rear when "rear"). The start checklist asks the operator to confirm it."""
+    rz = np.radians(float(cfg["ur5"]["mount_rz"]))
+    flip = -1.0 if str((cfg.get("ares") or {}).get("frame_x_points_to", "front")) == "rear" else 1.0
+    out = []
+    for v in ((np.cos(rz), np.sin(rz)), (-np.sin(rz), np.cos(rz))):         # base +X, +Y in this repo's ARES frame
+        x, y = flip * v[0], flip * v[1]                                       # in the vehicle frame (base_link)
+        names = [n for n, ok in (("FORWARD", x > 0.98), ("BACKWARD", x < -0.98), ("LEFT", y > 0.98),
+                                 ("RIGHT", y < -0.98)) if ok]
+        out.append(names[0] if names else f"between the vehicle axes ({np.degrees(np.arctan2(y, x)):.0f} deg from "
+                                         "forward towards left)")
+    return out[0], out[1]
 
 
 def is_magtest(job: Job | None) -> bool:

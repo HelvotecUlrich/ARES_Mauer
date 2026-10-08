@@ -198,8 +198,10 @@ no camera, no ADS move; REAL opens the UR only and needs no `--ares`. The two st
 over the 6 positions in layers 1 + 2 and back (20 moves per round, 2 rounds); every move lowers the stone to 50 mm
 above a place pose of the front leg B (840 mm, u 0 .. +-600 inside out, courses 0-3; course 3 at u +-600 is out of
 reach) and holds 2 s with the jaws closed (`URRobot.dry_place`). HMI SIM run with the motion guard: 40/40 moves, the
-magazine ends as it started. Same day: UR on a 10 mm plate (`[ur5] mount_z` 343.6), cable to the back (`mount_rz` 90:
-the UR5 manual's base frame has the cable along +Y, so base +X points to ARES left; `park_q_deg` base joint -90 deg).
+magazine ends as it started. Same day: UR on a 10 mm plate (`[ur5] mount_z` 343.6), `mount_rz` 90 (`park_q_deg` base
+joint -90 deg), checked on the pendant. **The UR sits at the vehicle REAR**: this repo's ARES frame (+x towards the
+UR end, the wall side) is base_link turned by 180 deg (`[ares] frame_x_points_to = "rear"`); arm-only runs are right
+(symmetric chassis box), real wall runs are refused until the ARES moves are mirrored into base_link.
 Operator sheet (German): **`docs/MAGTEST_DE.md`**.
 
 ## C wall with ARES inside (2026-10-06, simulation only)

@@ -298,6 +298,10 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
         p.append(f"config variant {cfg.get('_variant')!r} loaded, the job was built with {variant!r} - load the "
                  "same variant (--variant)")
     u, b, v = cfg.get("ur", {}), cfg.get("brick", {}), cfg.get("vision", {})
+    if str((cfg.get("ares") or {}).get("frame_x_points_to", "front")) != "front":
+        p.append("[ares] frame_x_points_to: this repo's +x is the vehicle REAR (UR at the rear, 2026-10-08) - the PLC "
+                 "would drive every ARES move the other way: mirror the layout into base_link first (arm-only runs: "
+                 "the magazine dry run, mauer/magtest.py)")
     if not str(u.get("host", "")).strip():
         p.append("[ur] host is empty (PLACEHOLDER) - set the UR5 IP")
     tool = float(u.get("payload_tool_kg", 0.0) or 0.0)

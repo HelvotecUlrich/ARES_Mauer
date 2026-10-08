@@ -90,7 +90,8 @@ def test_real_magazine_dry_run_opens_the_ur_only(qapp, tmp_path, mt_session):
         text = c.start_checklist()
         start = mt_session.job.meta["magtest"]["start_fill"]
         assert "MAGAZINE DRY RUN" in text and all(s in text for s in start) and "jaws EMPTY" in text
-        assert "+X" in text and "ARES LEFT" in text                        # the mount_rz check on the pendant
+        assert "X growing moves the TCP RIGHT, Y growing FORWARD" in text   # the pendant check (driving direction)
+        assert "beyond the UR end of ARES (the vehicle REAR)" in text
         c.start()
         assert wait_until(lambda: asks, 10.0, qapp) and asks[-1].kind == "start"
         c.answer_confirm(asks[-1].id, False)                               # declined: nothing moves

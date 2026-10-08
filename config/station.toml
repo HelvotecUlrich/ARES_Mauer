@@ -14,21 +14,35 @@ length = 1120.0             # CONFIRMED: chassis mesh x ±560 (MCD export 2026-0
 width = 600.0               # CONFIRMED: chassis mesh y ±300
 deck_corner_r = 80.0        # CONFIRMED: deck top (z 333.6) of cad/2026-09-23_030718_A_1-AMR_SIM.stl is the full
                             # 1120 x 600 rectangle with R 80 corners, no openings (fitted 2026-10-08)
+frame_x_points_to = "rear"  # CONFIRMED: Samuel 2026-10-08 - the UR is mounted at the vehicle REAR (in the ARES driving
+                            # direction), the magazine between it and the ARES centre, the wall side beyond the UR end.
+                            # This repo's "ARES frame" (+x towards the UR end, [ur5] mount_x > 0) is therefore base_link
+                            # turned by 180 deg about z: +x = vehicle rear, +y = vehicle right. Checked on the pendant
+                            # (Move tab, feature Base): X growing -> TCP right, Y growing -> TCP forward (driving
+                            # direction), the arm at base (-147, 544) mm over the magazine, left. The chassis box, the
+                            # deck and the magazine are symmetric under that turn, so arm-only runs (mauer/magtest.py)
+                            # are right; ARES moves are NOT: the PLC (MA frame, base_link) would drive the other way and
+                            # the STEP model's scanners / steering sit mirrored - mauer.sequencer.preflight_real refuses
+                            # wall runs until the layout is mirrored into base_link ("front"). Until 2026-10-08 the
+                            # plan assumed "front" (UR at the vehicle front)
 
 [ur5]
 robot_file = "robodk/library/UR5.robot"   # RoboDK library, UR5 (CB3), downloaded 2026-10-02
 # Mount: "in axis with the front steering module, on top of the robot" (Samuel 2026-10-02); 2026-10-08: base centre
-# 200 mm behind the ARES front edge, centred in y (Samuel). Was 353.625 (steering axis) until 2026-10-08.
-mount_x = 360.0             # CONFIRMED: Samuel 2026-10-08 "200 mm von der Vorderkante" = 560 ([ares] length / 2,
-                            # chassis mesh front) - 200; measure after mounting (test plan T3)
+# 200 mm from the ARES edge at the UR end, centred in y (Samuel). That end is the vehicle REAR ([ares]
+# frame_x_points_to). Was 353.625 (steering axis) until 2026-10-08.
+mount_x = 360.0             # CONFIRMED: Samuel 2026-10-08 "200 mm von der Vorderkante" (the edge at the UR end - the
+                            # vehicle rear: "der UR ist gemaess Fahrtrichtung hinten montiert") = 560 ([ares] length
+                            # / 2, chassis mesh) - 200; measure after mounting (test plan T3)
 mount_y = 0.0               # CONFIRMED: Samuel 2026-10-08 "y in der Mitte"; measure after mounting (T3)
 mount_z = 343.6             # CONFIRMED: Samuel 2026-10-08 "der UR steht auf einer 10 mm Platte auf ARES" = [ares]
                             # deck_top_z 333.6 + 10 mm plate (was 333.6 PLACEHOLDER: deck top without a plate)
-mount_rz = 90.0             # CONFIRMED: Samuel 2026-10-08 "Kabel nach hinten"; pendant Move tab, feature Base: +X
-                            # moves the TCP to ARES LEFT. UR5 manual (reference/2026-10-02_Gino/UR5, fig. 15.1 "Base
-                            # feature"): the base cable leaves along base +Y -> +Y = ARES -x (back), +X = ARES +y
-                            # (was 0.0 PLACEHOLDER = base +X forward, cable to the left). Joint values in this file
-                            # ([ur] park_q_deg) follow it: base joint -90 deg for the same pose on ARES
+mount_rz = 90.0             # CONFIRMED: Samuel 2026-10-08 on the pendant (Move tab, feature Base): X growing moves the
+                            # TCP to the vehicle RIGHT, Y growing FORWARD towards the ARES centre -> in this file's
+                            # frame (+x = UR end = vehicle rear) base +X = +y, base +Y = -x. Samuel: "Kabel nach
+                            # hinten"; the UR5 manual (reference/2026-10-02_Gino/UR5, fig. 15.1 "Base feature") has the
+                            # base cable along +Y, i.e. towards the ARES centre (was 0.0 PLACEHOLDER). Joint values in
+                            # this file ([ur] park_q_deg) follow it: base joint -90 deg for the same pose on ARES
 
 [tool]
 # Gripper "Backengreifer" (Festo EHPS-20-A + ribbed jaws) taken from Gino's RoboDK station UR5_sim_v3.rdk (2026-10-02).
