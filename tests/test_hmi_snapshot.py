@@ -44,7 +44,7 @@ def test_current_stone_follows_the_sequencer_loop():
     ({"event": "ares_move", "kind": "rotate", "ok": False, "summary": "aborted"}, "ares", "NOT ok: aborted"),
     ({"event": "route", "why": "stop 1 -> station"}, "route", "route: stop 1 -> station"),
     ({"event": "drive", "why": "stop 1 correction 1"}, "route", "drive: stop 1 correction 1"),
-    ({"event": "resume_route", "route": {"why": "x", "next_leg": 2, "n_legs": 5}}, "route", "at leg 2/5"),
+    ({"event": "resume_route", "route": {"why": "x", "next_leg": 2, "n_legs": 5}}, "route", "at leg 3/5"),
     ({"event": "shot", "look": "stop0-W0", "boards": {"W0": {"ok": True, "n_corners": 12, "rms_px": 0.01}}}, "shot",
      "image at look stop0-W0: W0 ok 12 corners 0.01 px"),
     ({"event": "shot", "look": "s", "boards": {"W1": {"ok": False, "reason": "not detected"}}}, "shot",

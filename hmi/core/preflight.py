@@ -3,6 +3,9 @@
 SIM: the real-run problems of mauer.sequencer.preflight_real, informative only. REAL: every item blocks, there is no
 override (as tools/run_job.py --real): the job / config checks, the HMI's own ADS worker (pattern A: heartbeat,
 MANUAL), the sequencer's AresAds preflight, the UR state over RTDE, the camera and the calibration files.
+
+preflight_real reads config/station.toml from disk, the run uses the config loaded with the job (JobSession.cfg):
+config_drift() adds the item that the two differ (review 2026-10-08).
 """
 from __future__ import annotations
 
@@ -12,7 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from mauer.ares.ads import AMR_STATE_NAMES, ST_MANUAL
-from mauer.job import Job
+from mauer.job import Job, config_sha256
 from mauer.sequencer import preflight_real
 
 SOURCES = ("job/config", "HMI", "ARES", "UR", "camera")
@@ -48,21 +51,44 @@ class PreflightReport:
         return "REAL preflight ok" if self.ok else f"REAL refused: {self.n_blocking} problems"
 
 
-def sim_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None) -> PreflightReport:
+def config_drift(cfg: Mapping, config_path: str | Path | None, session_sha256: str | None) -> list[str]:
+    """[problem] if the config on disk is no longer the one parsed into the session (JobSession.config_sha256); []
+    for a session without a hash (tests)."""
+    if not session_sha256:
+        return []
+    variant = cfg.get("_variant") or None
+    try:
+        disk = config_sha256(config_path, variant)
+    except OSError as e:
+        return [f"config not readable: {e}"]
+    if disk == session_sha256:
+        return []
+    return ["config/station.toml" + (f" + variants/{variant}.toml" if variant else "") + " changed on disk since the "
+            "job was loaded - the run would use the values loaded then: Release, load the job again"]
+
+
+def sim_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None,
+                  session_sha256: str | None = None) -> PreflightReport:
     """The real-run problems of the job and config, non-blocking (the simulation runs anyway)."""
-    items = tuple(PreflightItem("job/config", p, False) for p in preflight_real(cfg, job, config_path=config_path))
+    items = tuple(PreflightItem("job/config", p, False)
+                  for p in [*config_drift(cfg, config_path, session_sha256),
+                            *preflight_real(cfg, job, config_path=config_path)])
     return PreflightReport("sim", items, time.time())
 
 
 def real_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None, *, ares_enabled: bool,
-                   ads_connected: bool, ads_status: Mapping[str, Any] | None, rig) -> PreflightReport:
+                   ads_connected: bool, ads_status: Mapping[str, Any] | None, rig,
+                   session_sha256: str | None = None) -> PreflightReport:
     """Every reason not to start the REAL run, in the order of the design (8.1); `rig` is the opened RealRig (or None
-    before Connect). Reads the rig's last AresAds check (RealRig.check_ads) - no ADS call here."""
+    before Connect). Reads the rig's last AresAds check (RealRig.check_ads) - no ADS call here. session_sha256: the
+    hash of the config the run uses (JobSession.config_sha256)."""
     items: list[PreflightItem] = []
 
     def add(source: str, text: str) -> None:
         items.append(PreflightItem(source, text, True))
 
+    for p in config_drift(cfg, config_path, session_sha256):
+        add("job/config", p)
     for p in preflight_real(cfg, job, config_path=config_path):
         add("job/config", p)
     # the HMI's own ADS worker (pattern A: it owns heartbeat, MANUAL and HALT)

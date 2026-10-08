@@ -5,19 +5,24 @@ from __future__ import annotations
 
 import copy
 import math
+import threading
+import time
 
 import numpy as np
 import pytest
 
 from fake_plc import FakePlc, HmiHeartbeat
-from hmi.core.preflight import IK_GUARD_33, real_preflight
-from hmi.core.rigs import RealFactories, RealRig
-from hmi.core.run_controller import RunController, RunOptions
+from hmi.core import run_controller as rc
+from hmi.core.preflight import IK_GUARD_33, PreflightItem, PreflightReport, real_preflight
+from hmi.core.rigs import HaltGate, RealFactories, RealRig
+from hmi.core.run_controller import MOVING, RunController, RunOptions
 from hmi.core.sources import UrSource
 from hmi_fakes import StubCamera, StubLink, short_sim_session, wait_until
 from mauer import config
 from mauer.ares.ads import AresAds
 from mauer.camera.base import CameraError
+from mauer.sequencer import SequencerAborted, read_log
+from mauer.ur import script as urscript
 from mauer.vision import intrinsics as _intrinsics
 
 pytestmark = pytest.mark.usefixtures("no_lab_network")
@@ -179,8 +184,11 @@ def test_controller_real_prepare_refuses_start_and_releases_in_order(qapp, tmp_p
         assert wait_until(lambda: failed, 10.0, qapp) and failed[0].startswith("CameraError: no frame")
         assert c.state == "ready" and len(shots) == 1
         c.halt()
+        assert c.rig.link.inhibited == "HALT" and c.rig.ads.inhibited == "HALT"     # latched at once (GUI thread)
         assert wait_until(lambda: "abort" in c.rig.link.calls, 5.0, qapp)
         assert "ads.abort" not in order                                     # the HMI's worker is connected
+        assert wait_until(lambda: any(r["event"] == "halt_result" and "UR: stub" in r["text"]
+                                      for r in read_log(c.log_dir)), 5.0, qapp)   # what the helper did, logged
         seq = c.sequencer
         orig = seq.close
         seq.close = lambda: (order.append("seq.close"), orig())
@@ -189,6 +197,126 @@ def test_controller_real_prepare_refuses_start_and_releases_in_order(qapp, tmp_p
         assert order[-4:] == ["seq.close", "camera.close", "ads.close", "link.stop"]
     finally:
         assert c.shutdown(10.0)
+
+
+def _ok_report(*a, **k) -> PreflightReport:
+    return PreflightReport("real", (), time.time())
+
+
+def test_real_start_rechecks_right_before_the_first_motion(qapp, tmp_path, plc, monkeypatch):
+    """Review 2026-10-08: Start (REAL) runs the preflight again in the run thread - the one of Prepare may be old - and
+    refuses while ARES moves; a HALT during these checks keeps the run from starting; Start lifts the HALT latch."""
+    s = short_sim_session()
+    status = {"st": dict(MANUAL_STATUS)}
+    reports = {"next": _ok_report}
+    monkeypatch.setattr(rc, "real_preflight", lambda *a, **k: reports["next"](*a, **k))
+    c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs", ares_enabled=True,
+                      ads_status_fn=lambda: status["st"], ads_connected_fn=lambda: True,
+                      real_factories=factories(plc, []))
+    msgs = []
+    c.message.connect(lambda lvl, t: msgs.append(t))
+    try:
+        c.set_session(s)
+        c.prepare(RunOptions("real", step=True))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp) and c.can("start") == (True, "")
+        status["st"] = {**MANUAL_STATUS, "bMoveActive": True}             # a GO move of the ARES control tab
+        assert c.can("start") == (False, MOVING)
+        status["st"] = dict(MANUAL_STATUS)
+        reports["next"] = lambda *a, **k: PreflightReport(
+            "real", (PreflightItem("UR", "robot mode IDLE, needs RUNNING", True),), time.time())
+        c.start()                                                           # Prepare's preflight was ok ...
+        assert wait_until(lambda: any("start refused: preflight: 1 blocking" in t for t in msgs), 10.0, qapp)
+        assert wait_until(lambda: c.state == "ready", 5.0, qapp)           # ... the one before the motion is not
+        entered, go = threading.Event(), threading.Event()
+
+        def slow_ok(*a, **k):
+            entered.set()
+            go.wait(10.0)
+            return _ok_report()
+        reports["next"] = slow_ok
+        c._preflight = _ok_report()                                         # as shown after the Re-check
+        c.halt()                                                            # latched ...
+        assert c.rig.link.inhibited == "HALT"
+        c.start()
+        assert c.rig.link.inhibited is None and c.rig.ads.inhibited is None    # ... lifted by Start (GUI thread)
+        assert wait_until(entered.is_set, 10.0, qapp)
+        c.halt()                                                            # HALT while the checks run
+        go.set()
+        assert wait_until(lambda: any("HALT pressed during the start checks" in t for t in msgs), 10.0, qapp)
+        assert wait_until(lambda: c.state == "ready", 5.0, qapp) and c.rig.link.inhibited == "HALT"
+        assert "run_start" not in [r["event"] for r in read_log(c.log_dir)]   # nothing ran (StubLink: no program)
+    finally:
+        assert c.shutdown(10.0)
+
+
+def test_real_jaws_empty_clears_the_robots_stone(qapp, tmp_path, plc):
+    """Review 2026-10-08: 'Jaws empty' after a failed place also clears URRobot.holding - else the next park runs
+    with the stone's payload and the motion guard plans around a stone that is not there."""
+    s = short_sim_session()
+    c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs", ares_enabled=True,
+                      ads_status_fn=lambda: dict(MANUAL_STATUS), ads_connected_fn=lambda: True,
+                      real_factories=factories(plc, []))
+    try:
+        c.set_session(s)
+        c.prepare(RunOptions("real"))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp)
+        robot = c.rig.robot                                                 # the real URRobot on the StubLink
+        assert type(robot).__name__ == "URRobot" and isinstance(c.sequencer.robot, HaltGate)
+        robot.holding = "full"                                              # as after a place that failed
+        c.sequencer.held = {"from": "magazine", "slot": "m0", "kind": "full", "stone": None, "unknown": True}
+        c._state = "aborted"
+        assert c.can("clear_held") == (True, "")
+        c.clear_held()
+        assert wait_until(lambda: c.sequencer.held is None and robot.holding is None, 5.0, qapp)
+        c._state = "ready"
+    finally:
+        assert c.shutdown(10.0)
+
+
+def test_halt_while_the_robot_plans_sends_no_block(qapp):
+    """Review 2026-10-08: HALT after the confirmation, while URRobot plans (IK, motion guard: tens of ms), must not
+    let the block go out afterwards. The URLink latch refuses it; the gate turns that into an abort. A real URLink on
+    the loopback fake controller of tests/test_ur_link.py."""
+    from mauer.backends import URRobot
+    from test_ur_link import FakeUR, make_link
+    s = short_sim_session()
+    fake = FakeUR(regs={24: 41, 25: 40})
+    link = make_link(fake)
+    try:
+        robot = URRobot(link, s.cfg, s.job, guard=object())
+        planning = threading.Event()
+
+        def slow_guarded(q, name, vias=None, column=None):                 # MotionGuard.plan with detours
+            planning.set()
+            time.sleep(0.4)
+            return []
+        robot._qnear = lambda hint, T: np.zeros(6)
+        robot._q_above = lambda *a: np.zeros(6)
+        robot._guarded = slow_guarded
+        halt = threading.Event()
+        gate = HaltGate(robot, halt)
+        slot = s.job.magazine.slot(s.job.magazine.initial_fill[0])
+        out = {}
+
+        def pick():
+            try:
+                gate.pick_magazine(slot, np.linalg.inv(s.job.T_ares_base), "full")
+                out["ok"] = True
+            except Exception as e:      # noqa: BLE001 - the result of the test
+                out["exc"] = e
+        th = threading.Thread(target=pick)
+        th.start()
+        assert planning.wait(5.0)
+        halt.set()                                                          # RunController.halt(): flag, latch,
+        link.inhibit("HALT")
+        link.abort()                                                        # then the helper's abort
+        th.join(10.0)
+        assert isinstance(out.get("exc"), SequencerAborted) and "refused before anything was sent" in str(out["exc"])
+        assert fake.programs == [urscript.abort_program()]                 # the pick block never left the laptop
+        assert robot.holding is None
+    finally:
+        link.stop()
+        fake.close()
 
 
 def test_a_failed_prepare_closes_the_rig(qapp, tmp_path, plc):
@@ -232,7 +360,8 @@ def test_real_resume_checks_follow_the_odometry(qapp, tmp_path, plc):
         c.set_pose(s.job.stops[0].ares)          # the operator vouches for the pose: odometry reference = now
         assert wait_until(lambda: c._odom_at_stop is not None, 5.0, qapp)
         assert c.odom_moved() is None and not c.can("apply_odometry")[0]
-        st["st"] = {**MANUAL_STATUS, "fPosX_m": 0.05}                    # ARES jogged 50 mm forward (odometry x)
+        st["st"] = {**MANUAL_STATUS, "fPosX_m": 0.05}                    # ARES jogged 50 mm forward (odometry x):
+        plc.x_mm = 50.0                          # the HMI worker's status and the PLC the run's AresAds reads
         assert c.odom_moved() == pytest.approx((50.0, 0.0, 0.0)) and c.can("apply_odometry") == (True, "")
         c.resume()
         assert wait_until(lambda: any("ARES moved by (+50.0 mm" in t for t in msgs), 10.0, qapp)

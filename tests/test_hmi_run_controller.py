@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from hmi.core.run_controller import ConfirmRequest, RunController, RunOptions
 from hmi_fakes import short_sim_session, wait_until
 from mauer import config
 from mauer.sequencer import RunLog, SequencerAborted, read_log
+from hmi.core.rigs import HaltGate
 
 pytestmark = pytest.mark.usefixtures("no_lab_network")
 
@@ -155,7 +157,6 @@ def test_halt_releases_a_pending_request(ctl, qapp):
     c.start()
     assert wait_until(lambda: rec.requests, RUN_S, qapp)
     req = rec.requests[0]
-    import time
     t0 = time.monotonic()
     c.halt()
     assert wait_until(lambda: req.id in rec.cleared, 1.0, qapp)
@@ -163,6 +164,8 @@ def test_halt_releases_a_pending_request(ctl, qapp):
     assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp), (c.state, rec.messages)
     assert c.halted and c.step and c.opts.step                            # step forced on for the resume
     assert any(s == "aborted" and d.startswith("HALT") for s, d in rec.states)
+    halt = [r for r in read_log(c.log_dir) if r["event"] == "halt"]       # HALT itself is in the run log
+    assert len(halt) == 1 and halt[0]["pending"] == req.text and halt[0]["mode"] == "sim"
     answer_all(c, rec)
     c.resume()
     assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
@@ -224,7 +227,10 @@ def test_resume_refused_while_the_pose_is_unknown_until_set_pose(ctl, qapp):
     assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp)
     seq = c.sequencer
     seq.pose_status, seq.pose_src = "unknown", "unknown (ARES error)"      # as after an ARES error without odometry
-    assert c.can("confirm_pose")[0] and c.can("set_pose")[0]
+    assert c.can("confirm_pose") == (False, "pose unknown - use Set pose") and c.can("set_pose")[0]
+    seq.pose_status = "odometry"                                         # Sequencer.confirm_pose accepts only this
+    assert c.can("confirm_pose") == (True, "")
+    seq.pose_status = "unknown"
     c.resume()
     assert wait_until(lambda: any("pose is unknown" in t for _, t in rec.messages), 10.0, qapp)
     assert wait_until(lambda: rec.settled("aborted"), 5.0, qapp)
@@ -234,6 +240,112 @@ def test_resume_refused_while_the_pose_is_unknown_until_set_pose(ctl, qapp):
     c.resume()
     assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
     assert "pose_set" in rec.names()
+
+
+def test_halt_pause_abort_during_the_resume_checks_stop_the_run(ctl, qapp):
+    """Review 2026-10-08: Resume clears HALT / Abort / the pause BEFORE its checks (REAL: ADS check, preflight -
+    0.3-1 s). HALT, Pause or Abort pressed while they run stop the run before its first motion."""
+    c = ctl
+    rec = prepared(c, qapp, step=True)
+    declined = []
+
+    def decide(req):
+        if req.text.startswith("ARES") and not declined:
+            declined.append(req.text)
+            return False
+        return True
+
+    answer_all(c, rec, decide)
+    c.start()
+    assert wait_until(lambda: rec.settled("aborted"), RUN_S, qapp), (c.state, rec.messages)
+    world = c.rig.world
+    blocks = world.n_blocks
+    checks = c._resume_refusal
+    entered, go = threading.Event(), threading.Event()
+
+    def slow_checks():                           # stands for the REAL check (AresAds 250 ms window, preflight)
+        entered.set()
+        go.wait(10.0)
+        return checks()
+
+    c._resume_refusal = slow_checks
+    for press, end in ((c.halt, "aborted"), (c.pause, "paused"), (c.abort, "paused")):
+        entered.clear()
+        go.clear()
+        n_states = len(rec.states)
+        c.resume()
+        assert c.state == "running" and wait_until(entered.is_set, 10.0, qapp)
+        press()
+        go.set()
+        assert wait_until(lambda: len(rec.states) > n_states + 1 and rec.settled(end), RUN_S, qapp), \
+            (press.__name__, c.state, rec.states[-3:])
+        assert world.n_blocks == blocks, press.__name__          # not one robot motion after the press
+    msgs = [t for _, t in rec.messages]
+    assert any("HALT pressed during the resume checks" in t for t in msgs)
+    assert any("Abort pressed during the resume checks" in t for t in msgs)
+    assert c.halted is False
+    c._resume_refusal = checks
+    c.resume()
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
+    assert len(world.records) == 3
+
+
+def test_pause_as_the_run_ends_keeps_the_end_state(ctl, qapp):
+    """Review 2026-10-08: a Pause whose check passed while the run was ending must not leave the controller in
+    'pausing' (BUSY: no close, release or resume). The pause request is held up in Sequencer.pause (1 s) while the
+    run thread finishes."""
+    c = ctl
+    rec = prepared(c, qapp, step=True)
+    pressed = []
+
+    def on_req(req):
+        c.answer_confirm(req.id, True)
+        if req.text == "robot: park" and len(c.sequencer.placed) == 3 and not pressed:
+            pressed.append(req.id)                # the last motion of the run is on its way
+            seq = c.sequencer
+            plain = seq.pause
+
+            def slow_pause():
+                time.sleep(1.0)
+                plain()
+            seq.pause = slow_pause
+            c.pause()
+
+    c.confirm_requested.connect(on_req)
+    c.start()
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.states[-3:])
+    assert pressed and c.state == "done" and not c.sequencer.paused
+    assert c.can("release") == (True, "")
+
+
+def test_pause_before_the_run_got_going_is_a_pause(ctl, qapp):
+    """Review 2026-10-08: Pause between Start and Sequencer.run (the run thread still busy) ends 'paused', not
+    'error' with step mode forced."""
+    c = ctl
+    rec = prepared(c, qapp)
+    busy = threading.Event()
+    c._submit(lambda: busy.wait(10.0), "busy")     # e.g. a Live grab still in the run thread
+    c.start()
+    c.pause()
+    busy.set()
+    assert wait_until(lambda: rec.settled("paused"), RUN_S, qapp), (c.state, rec.states[-3:])
+    assert "error" not in [s for s, _ in rec.states] and not c.step
+    c.resume()
+    assert wait_until(lambda: rec.settled("done"), RUN_S, qapp), (c.state, rec.messages)
+
+
+def test_halt_gate_refuses_motions_after_halt(ctl, qapp):
+    c = ctl
+    prepared(c, qapp)
+    gate = c.sequencer.robot
+    assert isinstance(gate, HaltGate) and gate.backend is c.rig.world.robot
+    c._halt.set()
+    with pytest.raises(SequencerAborted, match="HALT: park not started"):
+        gate.park()
+    assert gate.is_parked() is True                             # reads pass through
+    gate.holding = None                                          # writes reach the backend
+    assert c.rig.world.robot.holding is None
+    c._halt.clear()
 
 
 class _SeqStub:

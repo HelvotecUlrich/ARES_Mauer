@@ -222,8 +222,8 @@ def short_sim_session(n0: int = 2, n1: int = 1):
 
 # ── REAL rig stand-ins (no network: RealFactories fakes) ──────────────────────
 class StubLink:
-    """URLink stand-in: start / stop / abort are recorded, state() returns a URState from the given values, every
-    robot program is refused (no motion in the HMI tests)."""
+    """URLink stand-in: start / stop / abort and the HALT latch (inhibit / release_inhibit) are recorded, state()
+    returns a URState from the given values, every robot program is refused (no motion in the HMI tests)."""
 
     def __init__(self, *, q_deg=(0.0, -90.0, 90.0, -90.0, -90.0, 0.0), robot_mode: int = 7, safety_mode: int = 1,
                  runtime_state: int = 1, status_bits: int = 0x1, controller_version=(3, 15, 8, 0), age_s: float = 0.0,
@@ -238,6 +238,15 @@ class StubLink:
         self.missing_fields: list = []
         self.calls: List[str] = []
         self.order = order if order is not None else self.calls
+        self.inhibited: Optional[str] = None
+
+    def inhibit(self, reason: str = "HALT") -> None:
+        self.calls.append("inhibit")
+        self.inhibited = reason
+
+    def release_inhibit(self) -> None:
+        self.calls.append("release_inhibit")
+        self.inhibited = None
 
     def start(self):
         self.calls.append("start")

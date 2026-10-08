@@ -4,17 +4,26 @@ SimRig = mauer.simworld (as tools/run_job.py sim_once). RealRig = URLink + AresA
 tools/run_job.py run_real, same order: link first, camera last - RTDE went stale right after the camera opened once,
 mauer/ur/link.py). Nothing here connects on import or construction: RealRig.open() is called by the RunController
 in the run thread after Prepare / Connect in REAL mode, never by tests (they inject RealFactories fakes).
+
+HaltGate (review 2026-10-08): the robot and the ARES backend as the Sequencer sees them. HALT is checked once more
+right before every motion call; REAL, the HALT latch of URLink / AresAds (RealRig.latch) refuses a program / start
+edge that comes after the HALT. A motion refused this way - nothing sent - ends the run as "aborted" (the held stone
+as before), like a declined confirmation.
 """
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 import numpy as np
 
 from mauer import config as mconfig
+from mauer.ares.ads import AresNotReady
+from mauer.backends import RobotError
 from mauer.job import Job
+from mauer.sequencer import SequencerAborted
 
 log = logging.getLogger("hmi.rigs")
 
@@ -79,6 +88,52 @@ class RealFactories:
 
 def _err(e: BaseException) -> str:
     return f"{type(e).__name__}: {e}"
+
+
+MOTIONS = frozenset({"park", "goto_look", "pick_magazine", "place_wall", "pick_station", "place_magazine",
+                     "translate", "rotate"})
+
+
+def _nothing_sent(e: BaseException) -> bool:
+    """The backend refused before anything reached the robot / PLC: AresNotReady (no move written), a RobotError
+    without a block (planning, guard) or with a block never sent (URLink HALT latch: BlockResult.t_sent None)."""
+    if isinstance(e, AresNotReady):
+        return True
+    res = getattr(e, "result", None)
+    return res is None or getattr(res, "t_sent", 0) is None
+
+
+class HaltGate:
+    """A robot / ARES backend behind the run's HALT event (see the module docstring). Motion calls (MOTIONS) raise
+    SequencerAborted while HALT is set, or when the backend refused one with nothing sent after HALT; every other
+    attribute - reads and writes (URRobot.holding, guard) - is the backend's own."""
+
+    def __init__(self, backend: Any, halt: threading.Event) -> None:
+        object.__setattr__(self, "_backend", backend)
+        object.__setattr__(self, "_halt", halt)
+
+    @property
+    def backend(self) -> Any:
+        return self._backend
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._backend, name)
+        if name not in MOTIONS or not callable(attr):
+            return attr
+
+        def gated(*args: Any, **kw: Any) -> Any:
+            if self._halt.is_set():
+                raise SequencerAborted(f"HALT: {name} not started")
+            try:
+                return attr(*args, **kw)
+            except (RobotError, AresNotReady) as e:
+                if self._halt.is_set() and _nothing_sent(e):
+                    raise SequencerAborted(f"HALT: {name} refused before anything was sent ({e})") from e
+                raise
+        return gated
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._backend, name, value)
 
 
 class SimRig:
@@ -190,6 +245,20 @@ class RealRig:
                 self.ads_check = self.ads.check()
             except Exception as e:      # noqa: BLE001
                 self.errors["ads"] = _err(e)
+
+    def latch(self, on: bool, reason: str = "HALT") -> list[str]:
+        """The HALT latch of URLink and AresAds (inhibit / release_inhibit): flags only, never blocks (GUI thread).
+        Returns the parts latched / released."""
+        done = []
+        for name, part in (("UR", self.link), ("ARES", self.ads)):
+            if part is None or not hasattr(part, "inhibit"):
+                continue
+            if on:
+                part.inhibit(reason)
+            else:
+                part.release_inhibit()
+            done.append(name)
+        return done
 
     def halt(self, ads_worker_connected: bool) -> str:
         """HALT helper (thread mauer-halt, D-H8 step 3): stop the robot program (URLink.abort: stopl program +

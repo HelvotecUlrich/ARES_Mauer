@@ -8,9 +8,18 @@ act at once from the GUI thread. Results come back as Qt signals (queued into th
 Step confirmations (D-H6): the sequencer's confirm callback blocks the RUN thread until the operator answers in the
 ConfirmBar; HALT releases a pending confirmation with False. Pause and soft Abort act at the next motion boundary
 with empty jaws (D-H7, Sequencer.held). HALT (D-H8): the MainWindow writes the ADS HALT first; halt() sets the abort
-flag, releases the pending confirmation and, REAL, stops the UR program in the helper thread "mauer-halt" (the
-AresAds abort pulse only when the HMI's ADS worker is not connected). HALT never blocks the GUI.
+flag, latches URLink / AresAds (REAL: no robot program, no ARES start edge after it - RealRig.latch, review
+2026-10-08), releases the pending confirmation, writes "halt" into the run log and, REAL, stops the UR program in the
+helper thread "mauer-halt" (the AresAds abort pulse only when the HMI's ADS worker is not connected). HALT never
+blocks the GUI. The Sequencer gets the robot and ARES behind a HaltGate (hmi.core.rigs): a motion that HALT stopped
+before anything was sent ends the run "aborted".
 
+State transitions run under one lock (review 2026-10-08): pause() / abort() act only while the state is still
+"running" (compare-and-set), so the run thread's end state is never overwritten. Start and Resume clear HALT, the
+abort request and the latch in the GUI thread BEFORE their checks run in the run thread; a HALT, Pause or Abort
+pressed during the checks therefore stops the run before its first motion.
+
+Start (REAL) re-runs the preflight in the run thread right before the first motion (the one of Prepare may be old).
 Resume (8.3) refuses while a stone may be held, while the ARES pose is not ok and, REAL, while the PLC odometry
 moved since the run stopped or the preflight has a blocking item. The Sequencer object is kept: its state (placed
 stones, route progress, pose estimate) lives in memory only.
@@ -34,10 +43,10 @@ from PySide6.QtCore import QObject, Signal
 
 from mauer.ares.ads import OdomPose
 from mauer.reference import Pose2D
-from mauer.sequencer import Sequencer, SequencerAborted, SequencerError
+from mauer.sequencer import Sequencer, SequencerAborted, SequencerError, SequencerPaused
 
 from .preflight import PreflightReport, real_preflight, sim_preflight
-from .rigs import RealFactories, RealRig, RigInfo, SimRig
+from .rigs import HaltGate, RealFactories, RealRig, RigInfo, SimRig
 from .session import JobSession, SessionError, build_from_config, load_job_file
 from .snapshot import RunSnapshot, ShotProcessor, SnapshotTracker, default_shot_view
 from .sources import UrSource, compose_odometry, odom_from_status
@@ -51,6 +60,7 @@ RUNNING = frozenset({"running", "pausing", "aborting"})
 STOPPED = frozenset({"paused", "aborted", "error"})
 WITH_RIG = frozenset({"ready", "paused", "aborted", "error", "done"})
 END_STATES = frozenset({"done", "paused", "aborted", "error"})
+WINDOW_LOCK = "not while a run is active: the window it opens would take the keyboard HALT (Space / Esc)"
 ACTIONS = ("load", "build", "browse", "options", "step", "sim_speed", "prepare", "start", "pause", "abort", "resume",
            "confirm_pose", "set_pose", "apply_odometry", "clear_held", "recheck", "grab", "release", "halt")
 
@@ -81,16 +91,26 @@ class ConfirmRequest:
     t: float
 
 
+def ares_moving(ads_status: Mapping | None) -> bool:
+    """The HMI's ADS status shows ARES moving: a relative move (bMoveActive) or the platform itself (bAmrMoving)."""
+    return bool(ads_status) and bool(ads_status.get("bMoveActive") or ads_status.get("bAmrMoving"))
+
+
+MOVING = "ARES is moving (relative move or jog) - wait until it stands"
+
+
 def enables(state: str, mode: str | None, *, ares_enabled: bool = False, preflight_ok: bool = False,
             has_seq: bool = False, pose_status: str = "ok", held: bool = False,
-            odom_moved: bool = False) -> dict[str, tuple[bool, str]]:
-    """Enable matrix of the design (8.4): action -> (allowed, reason if not). Pure."""
+            odom_moved: bool = False, moving: bool = False) -> dict[str, tuple[bool, str]]:
+    """Enable matrix of the design (8.4): action -> (allowed, reason if not). Pure. moving: REAL, the HMI's ADS
+    status shows ARES moving (ares_moving) - Start and Resume wait for standstill."""
     def rule(ok: bool, why: str) -> tuple[bool, str]:
         return (True, "") if ok else (False, why)
 
     idle = state in ("empty", "loaded")
     stopped = state in STOPPED
     real = mode == "real"
+    moving = real and moving
     out = {
         "load": rule(idle, f"not while {state}"),
         "build": rule(idle, f"not while {state}"),
@@ -101,14 +121,17 @@ def enables(state: str, mode: str | None, *, ares_enabled: bool = False, preflig
         "prepare": rule(state == "loaded" and (not real or ares_enabled),
                         "load a job first" if state in ("empty", "loading") else
                         "REAL needs the HMI started with --ares" if state == "loaded" else f"not while {state}"),
-        "start": rule(state == "ready" and has_seq and (not real or preflight_ok),
+        "start": rule(state == "ready" and has_seq and (not real or preflight_ok) and not moving,
                       f"not while {state}" if state != "ready" else
                       "the rig is incomplete (see the preflight list)" if not has_seq else
-                      "REAL preflight has blocking problems (no override)"),
+                      "REAL preflight has blocking problems (no override)" if real and not preflight_ok else MOVING),
         "pause": rule(state == "running", f"not while {state}"),
         "abort": rule(state in ("running", "pausing"), f"not while {state}"),
-        "resume": rule(stopped, f"not while {state}"),
-        "confirm_pose": rule(stopped and pose_status != "ok", "pose is ok" if stopped else f"not while {state}"),
+        "resume": rule(stopped and not moving, f"not while {state}" if not stopped else MOVING),
+        # Sequencer.confirm_pose accepts an odometry estimate only; an unknown pose needs Set pose
+        "confirm_pose": rule(stopped and pose_status == "odometry",
+                             f"not while {state}" if not stopped else "pose is ok" if pose_status == "ok" else
+                             f"pose {pose_status} - use Set pose"),
         "set_pose": rule(stopped, f"not while {state}"),
         "apply_odometry": rule(real and stopped and odom_moved,
                                "REAL only" if not real else "ARES did not move" if stopped else f"not while {state}"),
@@ -197,6 +220,7 @@ class RunController(QObject):
         self._halt = threading.Event()
         self._abort_soft = threading.Event()
         self._closing = False
+        self._state_lock = threading.RLock()     # every state transition; pause / abort compare-and-set under it
         self._confirm_lock = threading.Lock()
         self._pending: ConfirmRequest | None = None
         self._answer: bool | None = None
@@ -289,13 +313,46 @@ class RunController(QObject):
                        preflight_ok=self._preflight is not None and self._preflight.ok, has_seq=seq is not None,
                        pose_status=seq.pose_status if seq is not None else "ok",
                        held=seq is not None and seq.held is not None,
-                       odom_moved=m == "real" and self.odom_moved() is not None)[action]
+                       odom_moved=m == "real" and self.odom_moved() is not None,
+                       moving=m == "real" and ares_moving(self._ads_status_fn()))[action]
 
     # ── internals ────────────────────────────────────────────────────────────
     def _set_state(self, state: str, detail: str = "") -> None:
         assert state in STATES, state
-        self._state = state
-        self.state_changed.emit(state, detail)
+        with self._state_lock:
+            self._state = state
+            self.state_changed.emit(state, detail)
+
+    def _latch(self, on: bool) -> None:
+        """REAL: the HALT latch of URLink / AresAds on (HALT) or off (Start / Resume). Flags only (GUI thread)."""
+        rig = self._rig
+        if isinstance(rig, RealRig):
+            try:
+                rig.latch(on)
+            except Exception as e:      # noqa: BLE001 - HALT must go on (the abort and the E-stop remain)
+                log.warning("HALT latch %s failed: %s", "on" if on else "off", e)
+
+    def _clear_halt(self) -> None:
+        """Start / Resume (GUI thread, under the state lock): HALT, the abort request and the latch cleared, a
+        leftover pause request dropped - BEFORE the run thread's checks, so a HALT / Abort / Pause pressed during
+        them is not wiped."""
+        self._halt.clear()
+        self._abort_soft.clear()
+        self._halted = False
+        self._latch(False)
+        if self._seq is not None and self._seq.paused:
+            self._seq.resume()
+
+    def _odom_now(self) -> OdomPose | None:
+        """Run thread, REAL: the PLC odometry read over the run's own AresAds (current); the HMI worker's last status
+        (up to one poll plus the GUI latency old) only as the fallback."""
+        ads = self._rig.ads if isinstance(self._rig, RealRig) else None
+        if ads is not None:
+            try:
+                return ads.status().odom
+            except Exception as e:      # noqa: BLE001 - the worker's status is the fallback
+                log.warning("odometry over AresAds not readable: %s", e)
+        return odom_from_status(self._ads_status_fn())
 
     def _refuse(self, action: str, mode: str | None = None) -> bool:
         ok, why = self.can(action, mode)
@@ -421,7 +478,8 @@ class RunController(QObject):
             else:
                 from mauer.backends import AdsAres
                 ares = AdsAres(rig.ads)
-            seq = Sequencer(s.job, s.cfg, rig.robot, ares, rig.camera, rig.intr, rig.T_flange_cam, log_dir=log_dir,
+            robot, ares = HaltGate(rig.robot, self._halt), HaltGate(ares, self._halt)
+            seq = Sequencer(s.job, s.cfg, robot, ares, rig.camera, rig.intr, rig.T_flange_cam, log_dir=log_dir,
                             confirm=self._confirm_cb, camera_loop=o.camera_loop, save_images=o.save_images,
                             on_station_empty=self._station_empty_cb, on_shot=self._on_shot)
             self._tracker = SnapshotTracker(s, lambda: odom_from_status(self._ads_status_fn()))
@@ -436,10 +494,10 @@ class RunController(QObject):
     def _report(self) -> PreflightReport:
         s = self._session
         if self.mode == "sim":
-            return sim_preflight(s.cfg, s.job, self._config_path)
+            return sim_preflight(s.cfg, s.job, self._config_path, s.config_sha256)
         return real_preflight(s.cfg, s.job, self._config_path, ares_enabled=self._ares_enabled,
                               ads_connected=bool(self._ads_connected_fn()), ads_status=self._ads_status_fn(),
-                              rig=self._rig)
+                              rig=self._rig, session_sha256=s.config_sha256)
 
     def recheck(self) -> None:
         """REAL: the preflight again (AresAds check, UR state) without reconnecting."""
@@ -476,29 +534,58 @@ class RunController(QObject):
 
     # ── run ──────────────────────────────────────────────────────────────────
     def start(self) -> None:
-        if self._refuse("start"):
-            return
-        self._halt.clear()
-        self._abort_soft.clear()
-        self._halted = False
-        self._set_state("running", "start")
+        with self._state_lock:
+            if self._refuse("start"):
+                return
+            self._clear_halt()
+            self._set_state("running", "start")
         o = self._opts
-        self._submit(lambda: self._do_run(o.start_stop, o.stop_after), "run", "error")
+        self._submit(lambda: self._do_start(o.start_stop, o.stop_after), "run", "error")
+
+    def _start_refusal(self) -> str | None:
+        """REAL, run thread, right before the first motion: the preflight of Prepare may be minutes old - the HMI's
+        ADS state, the AresAds check (move / jog running, MANUAL, heartbeat) and the UR state again."""
+        if isinstance(self._rig, RealRig):
+            self._rig.check_ads()
+        self._preflight = self._report()
+        self.preflight_done.emit(self._preflight)
+        if not self._preflight.ok:
+            return f"preflight: {self._preflight.n_blocking} blocking problems (see the list)"
+        if ares_moving(self._ads_status_fn()):
+            return MOVING
+        return None
+
+    def _do_start(self, start_stop: int, stop_after: int | None) -> None:
+        reason = self._start_refusal() if self.mode == "real" else None
+        if reason is None and self._halt.is_set():
+            reason = "HALT pressed during the start checks"
+        elif reason is None and self._abort_soft.is_set():
+            reason = "Abort pressed during the start checks"
+        if reason is not None:
+            self.message.emit("warning", f"start refused: {reason}")
+            self._set_state("ready", f"start refused: {reason}")
+            return
+        self._do_run(start_stop, stop_after)
 
     def resume(self) -> None:
-        if self._refuse("resume"):
-            return
-        prev = self._state
-        self._set_state("running", "resume")
-        self._submit(lambda: self._do_resume(prev), "resume", prev)
+        with self._state_lock:
+            if self._refuse("resume"):
+                return
+            prev, was_halted = self._state, self._halted
+            self._clear_halt()
+            self._set_state("running", "resume")
+        self._submit(lambda: self._do_resume(prev, was_halted), "resume", prev)
 
     def _resume_refusal(self) -> str | None:
         seq = self._seq
         if seq.held is not None:
             return (f"a stone may be in the jaws ({seq.held.get('from')} slot {seq.held.get('slot')}) - take it out, "
                     "park the arm, then 'Jaws empty'")
+        if seq.pose_status == "odometry":
+            return (f"the ARES pose is unverified ({seq.pose_src}) - check ARES on the floor, then 'Confirm pose' or "
+                    "'Set pose'")
         if seq.pose_status != "ok":
-            return f"the ARES pose is {seq.pose_status} ({seq.pose_src}) - 'Confirm pose' or 'Set pose'"
+            return f"the ARES pose is {seq.pose_status} ({seq.pose_src}) - 'Set pose'"
         if self.mode == "real":
             if self._ads_status_fn() is None or not self._ads_connected_fn():
                 return "cannot verify that ARES did not move: the HMI's ADS worker is not connected"
@@ -516,18 +603,19 @@ class RunController(QObject):
                 return f"preflight: {self._preflight.n_blocking} blocking problems (see the list)"
         return None
 
-    def _do_resume(self, prev: str) -> None:
+    def _do_resume(self, prev: str, was_halted: bool) -> None:
         reason = self._resume_refusal()
+        if reason is None and self._halt.is_set():
+            reason = "HALT pressed during the resume checks"
+        elif reason is None and self._abort_soft.is_set():
+            reason = "Abort pressed during the resume checks"
         if reason is not None:
+            if was_halted:
+                self._halted = True                 # still the halted run (badge, summary)
             self.message.emit("warning", f"resume refused: {reason}")
             self._set_state(prev, f"resume refused: {reason}")
             return
-        seq = self._seq
-        self._halt.clear()
-        self._abort_soft.clear()
-        self._halted = False
-        if seq.paused:
-            seq.resume()
+        seq = self._seq                             # a Pause pressed during the checks: seq.run raises SequencerPaused
         self._do_run(seq.stop_k if seq.stop_k is not None else self._opts.start_stop, self._opts.stop_after)
 
     def _do_run(self, start_stop: int, stop_after: int | None) -> None:
@@ -544,12 +632,14 @@ class RunController(QObject):
             log.exception("run failed")
             exc = e
         state = seq.result.state
-        if exc is not None and (not isinstance(exc, SequencerError) or state not in END_STATES):
+        if isinstance(exc, SequencerPaused):
+            state = "paused"                        # also a pause before seq.run got going (result.state not set)
+        elif exc is not None and (not isinstance(exc, SequencerError) or state not in END_STATES):
             state = "error"
         if self._tracker is not None:
             self._emit_snapshot(self._tracker.snapshot(seq))
         if o.mode == "real":
-            self._odom_at_stop = odom_from_status(self._ads_status_fn())
+            self._odom_at_stop = self._odom_now()
         if state == "error" or self._halted:
             self._step = True                       # the resume goes step by step (the operator may switch it off)
             o.step = True
@@ -557,7 +647,10 @@ class RunController(QObject):
         detail = seq.result.error or (f"{type(exc).__name__}: {exc}" if exc else "")
         if self._halted and state != "done":
             detail = "HALT - " + detail
-        self._set_state(state, detail)
+        with self._state_lock:                      # the end state wins over a Pause / Abort pressed just now
+            if state != "paused" and seq.paused:
+                seq.paused = False                  # nothing left to pause (Resume would clear it anyway)
+            self._set_state(state, detail)
 
     def _write_summary(self, t0: float, state: str, exc: BaseException | None) -> None:
         seq, o, s = self._seq, self._opts, self._session
@@ -587,7 +680,7 @@ class RunController(QObject):
         def job() -> None:
             self._seq.set_pose(pose, "operator")
             if self.mode == "real":
-                self._odom_at_stop = odom_from_status(self._ads_status_fn())
+                self._odom_at_stop = self._odom_now()
         self._submit(job, "set pose")
 
     def apply_odometry(self) -> None:
@@ -596,7 +689,7 @@ class RunController(QObject):
             return
 
         def job() -> None:
-            now = odom_from_status(self._ads_status_fn())
+            now = self._odom_now()
             seq = self._seq
             if now is None or self._odom_at_stop is None or seq.pose_est is None:
                 raise RuntimeError("no odometry or pose estimate")
@@ -605,14 +698,17 @@ class RunController(QObject):
         self._submit(job, "apply odometry")
 
     def clear_held(self) -> None:
-        """The operator confirms empty jaws (stone taken out, arm parked); SIM: the simulated jaws are emptied."""
+        """The operator confirms empty jaws (stone taken out, arm parked). The robot backend's own record is cleared
+        too: REAL URRobot.holding (payload of the next park, the motion guard's held stone - review 2026-10-08), SIM
+        the simulated jaws."""
         if self._refuse("clear_held"):
             return
 
         def job() -> None:
             self._seq.clear_held()
-            if isinstance(self._rig, SimRig):
-                self._rig.world.robot.holding = None
+            robot = getattr(self._rig, "robot", None)
+            if robot is not None and hasattr(robot, "holding"):
+                robot.holding = None
         self._submit(job, "jaws empty")
 
     def grab(self) -> None:
@@ -648,39 +744,61 @@ class RunController(QObject):
             self._answer_evt.set()
 
     def pause(self) -> None:
-        """Acts at the next motion boundary with empty jaws (the place of a held stone still runs)."""
-        if self._refuse("pause"):
-            return
-        self._seq.pause()
-        self._set_state("pausing", "after this place" if self._seq.held else "")
+        """Acts at the next motion boundary with empty jaws (the place of a held stone still runs). Compare-and-set:
+        only while the run is still 'running' (a run that has just ended keeps its end state)."""
+        with self._state_lock:
+            if self._refuse("pause"):
+                return
+            self._seq.pause()
+            self._set_state("pausing", "after this place" if self._seq.held else "")
         self._release_pending(False, only_if_empty_jaws=True)
 
     def abort(self) -> None:
-        """Soft abort: the next confirmation with empty jaws returns False (run ends 'aborted', resumable)."""
-        if self._refuse("abort"):
-            return
-        self._abort_soft.set()
-        self._set_state("aborting", "after this place" if self._seq is not None and self._seq.held else "")
+        """Soft abort: the next confirmation with empty jaws returns False (run ends 'aborted', resumable). Compare-
+        and-set like pause()."""
+        with self._state_lock:
+            if self._refuse("abort"):
+                return
+            self._abort_soft.set()
+            self._set_state("aborting", "after this place" if self._seq is not None and self._seq.held else "")
         self._release_pending(False, only_if_empty_jaws=True)
 
     def halt(self) -> None:
-        """HALT (after the MainWindow's AdsWorker.halt()): abort flag, pending confirmation released with False, REAL:
-        the UR program stopped in the helper thread "mauer-halt". Returns at once."""
+        """HALT (after the MainWindow's AdsWorker.halt()): abort flag, REAL: URLink / AresAds latched (flags), pending
+        confirmation released with False, 'halt' into the run log, REAL: the UR program stopped in the helper thread
+        "mauer-halt". Returns at once."""
         self._halt.set()
+        self._latch(True)
+        req = self._pending
         self._release_pending(False)
-        if self._rig is None:
+        rig, seq = self._rig, self._seq
+        if rig is None:
             return
         self._halted = True
-        self.state_changed.emit(self._state, "HALT")      # widgets show the HALTED badge at once
-        if isinstance(self._rig, RealRig):
-            rig = self._rig
-            threading.Thread(target=self._halt_helper, args=(rig,), name="mauer-halt", daemon=True).start()
-        self.message.emit("warning", "HALT: run stopped" + (" - jaws may hold a stone" if self._seq is not None
-                                                             and self._seq.held else ""))
+        with self._state_lock:
+            self.state_changed.emit(self._state, "HALT")  # widgets show the HALTED badge at once
+            state = self._state
+        self._log("halt", state=state, held=seq.held if seq is not None else None,
+                  pending=req.text if req is not None else None, mode=self.mode)
+        if isinstance(rig, RealRig):
+            threading.Thread(target=self._halt_helper, args=(rig, seq), name="mauer-halt", daemon=True).start()
+        self.message.emit("warning", "HALT: run stopped" + (" - jaws may hold a stone" if seq is not None
+                                                             and seq.held else ""))
 
-    def _halt_helper(self, rig: RealRig) -> None:
+    def _halt_helper(self, rig: RealRig, seq: Sequencer | None) -> None:
         text = rig.halt(bool(self._ads_connected_fn()))
+        self._log("halt_result", seq=seq, text=text)
         self.message.emit("warning", f"HALT (REAL): {text}")
+
+    def _log(self, event: str, seq: Sequencer | None = None, **data: Any) -> None:
+        """A record of the HMI itself in the run log (any thread; a log closed meanwhile is skipped)."""
+        seq = seq or self._seq
+        if seq is None:
+            return
+        try:
+            seq.log.write(event, **data)
+        except (ValueError, OSError) as e:          # closed by a Release meanwhile
+            log.warning("run log: %s not written: %s", event, e)
 
     def set_step(self, on: bool) -> None:
         self._step = bool(on)

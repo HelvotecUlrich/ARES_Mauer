@@ -18,8 +18,8 @@ from mauer.job import Job, SlotState, StoneTask
 from mauer.reference import Pose2D
 
 ERROR_EVENTS = frozenset({"robot_error", "ares_error", "frame_jump", "run_error"})
-WARNING_EVENTS = frozenset({"warning", "interlock", "measurement_failed", "declined", "odometry_pose", "run_paused",
-                            "run_aborted"})
+WARNING_EVENTS = frozenset({"halt", "halt_result", "warning", "interlock", "measurement_failed", "declined",
+                            "odometry_pose", "run_paused", "run_aborted"})
 MOTION_EVENTS = frozenset({"robot", "ares_cmd", "ares_move", "route", "drive", "resume_route", "resume_check",
                            "pose_set", "pose_confirmed"})
 VISION_EVENTS = frozenset({"shot", "wall_frame", "station_frame", "station_estimate", "coarse_aim", "board_search"})
@@ -68,6 +68,12 @@ def current_stone(job: Job, stop_k: int | None, placed: Collection,
         if t.key not in placed:
             return stone_info(t, idx[t.key])
     return None
+
+
+def stop_text(k: int | None, n: int) -> str:
+    """'stop 2 (0-3)': stops are numbered from 0 everywhere (run log, Stops spin boxes, plan view, sequencer texts;
+    review 2026-10-08), legs of a route from 1 ('leg 1/2')."""
+    return f"stop {'-' if k is None else k} (0-{max(n - 1, 0)})"
 
 
 def _slots(s: SlotState) -> dict[str, str]:
@@ -263,7 +269,9 @@ def describe_action(rec: Mapping) -> tuple[str, str] | None:
         return "route", f"drive: {rec.get('why')}"
     if ev == "resume_route":
         rt = rec.get("route") or {}
-        return "route", f"resume route {rt.get('why', '')} at leg {rt.get('next_leg', '?')}/{rt.get('n_legs', '?')}"
+        nl = rt.get("next_leg")
+        return "route", (f"resume route {rt.get('why', '')} at leg "
+                         f"{nl + 1 if isinstance(nl, int) else '?'}/{rt.get('n_legs', '?')}")
     if ev == "shot":
         return "shot", f"image at look {rec.get('look')}: {boards_text(rec.get('boards'))}"
     if ev in ("wall_frame", "station_frame"):

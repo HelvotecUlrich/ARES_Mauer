@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from hmi.core.preflight import config_drift, sim_preflight
 from hmi.core.run_controller import RunController
 from hmi.core.session import SessionError, build_from_config, list_jobs, list_variants, load_job_file
 from hmi_fakes import wait_until
@@ -36,6 +37,30 @@ def test_load_job_file_loads_the_jobs_own_variant(built, tmp_path):
         assert loaded.variant == v and config.variant_of(loaded.cfg) == v and loaded.source == "file"
         assert loaded.name == s.name and loaded.job.n_stones == s.job.n_stones
     assert [p.name for p in list_jobs(tmp_path)] == ["nominal_C_c_acb.json", "nominal_C.json"]   # newest first
+
+
+def test_the_session_keeps_the_hash_of_the_config_it_parsed(built, tmp_path):
+    """Review 2026-10-08: the run uses session.cfg, the preflight reads the file - an edit after the load (even one
+    reverted to the job's config) is reported until the job is loaded again."""
+    toml = tmp_path / "station.toml"
+    toml.write_bytes(config.STATION_TOML.read_bytes())
+    path = mjob.save(built[None].job, tmp_path / "nominal_C.json")
+    s = load_job_file(path, toml)
+    assert s.config_sha256 == mjob.config_sha256(toml) == mjob.config_sha256()
+    assert built[None].config_sha256 == mjob.config_sha256() and built["c_acb"].config_sha256 == \
+        mjob.config_sha256(None, "c_acb")
+    assert config_drift(s.cfg, toml, s.config_sha256) == []
+    original = toml.read_bytes()
+    toml.write_bytes(original + b"\n# edited after the load\n")
+    drift = config_drift(s.cfg, toml, s.config_sha256)
+    assert len(drift) == 1 and "changed on disk since the job was loaded" in drift[0]
+    rep = sim_preflight(s.cfg, s.job, toml, s.config_sha256)
+    assert rep.items[0].text == drift[0] and not rep.items[0].blocking    # SIM: informative
+    reloaded = load_job_file(path, toml)                                    # loading again takes the new file
+    assert config_drift(reloaded.cfg, toml, reloaded.config_sha256) == []
+    toml.write_bytes(original)
+    assert config_drift(reloaded.cfg, toml, reloaded.config_sha256) != []
+    assert config_drift(s.cfg, toml, None) == []                            # test sessions carry no hash
 
 
 def test_load_job_file_refusals(built, tmp_path):

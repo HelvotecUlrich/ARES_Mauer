@@ -3,6 +3,10 @@
 A job file records its config variant (meta "config_variant", tools/make_job.py); the HMI always loads that
 variant, as tools/run_job.py does, and refuses a mismatch. Building from the config runs tools/make_job.py
 build_nominal (seconds - the RunController calls it in the run thread).
+
+The session keeps the sha256 of exactly the config bytes it parsed (config_sha256, mauer.job.config_sha256 layout):
+the run uses session.cfg, so the preflight compares the file on disk with it (review 2026-10-08) - an edit after the
+load blocks REAL until the job is loaded again.
 """
 from __future__ import annotations
 
@@ -30,6 +34,7 @@ class JobSession:
     path: Path | None         # job file; None = built from the config
     source: str               # "file" | "built" | "test"
     name: str                 # file stem, or "nominal_<shape><config.suffix(cfg)>"
+    config_sha256: str | None = None   # sha256 of the config bytes parsed into cfg (None: test session)
 
     @property
     def variant_label(self) -> str:
@@ -48,6 +53,16 @@ def list_variants() -> list[str]:
     return sorted(p.stem for p in mconfig.VARIANTS.glob("*.toml")) if mconfig.VARIANTS.is_dir() else []
 
 
+def load_config(config_path: str | Path | None = None, variant: str | None = None) -> tuple[dict, str]:
+    """mauer.config.load(config_path, variant) and the sha256 of the bytes it parsed: hashed before and after the
+    parse, a file changed in between -> SessionError. OSError / ValueError of the load propagate."""
+    before = mjob.config_sha256(config_path, variant)
+    cfg = mconfig.load(config_path, variant)
+    if mjob.config_sha256(config_path, variant) != before:
+        raise SessionError("config/station.toml changed while it was loaded - load again")
+    return cfg, before
+
+
 def load_job_file(path: str | Path, config_path: str | Path | None = None) -> JobSession:
     """The job file with the config variant it was built with (meta config_variant, as tools/run_job.py)."""
     path = Path(path)
@@ -56,7 +71,9 @@ def load_job_file(path: str | Path, config_path: str | Path | None = None) -> Jo
     except (OSError, ValueError, KeyError, TypeError) as e:
         raise SessionError(f"job file {path} not readable: {e}") from e
     try:
-        cfg = mconfig.load(config_path, variant)
+        cfg, sha = load_config(config_path, variant)
+    except SessionError:
+        raise
     except (OSError, ValueError) as e:
         raise SessionError(f"job {path.name} needs config variant {variant!r}: {e}") from e
     if variant != mconfig.variant_of(cfg):
@@ -66,7 +83,7 @@ def load_job_file(path: str | Path, config_path: str | Path | None = None) -> Jo
         job = mjob.load(path)
     except mjob.JobError as e:
         raise SessionError(f"job {path.name}: {e}") from e
-    return JobSession(cfg, variant, job, path, "file", path.stem)
+    return JobSession(cfg, variant, job, path, "file", path.stem, sha)
 
 
 def make_job_tool():
@@ -81,9 +98,12 @@ def build_from_config(variant: str | None = None, config_path: str | Path | None
     """The nominal job of the config (variant) - tools/make_job.py build_nominal: the wall of [[wall.legs]], else a
     straight wall of 24 stones. Not saved."""
     try:
-        cfg = mconfig.load(config_path, variant or None)
+        cfg, sha = load_config(config_path, variant or None)
         job = make_job_tool().build_nominal(cfg, config_path=Path(config_path) if config_path else None)
+    except SessionError:
+        raise
     except (OSError, ValueError, KeyError, mjob.JobError) as e:
         raise SessionError(f"building the nominal job of config {variant or 'main'!r} failed: {e}") from e
     shape = f"{job.meta.get('shape', 'legs')}" if job.legs else f"L{job.meta.get('length_stones', '')}"
-    return JobSession(cfg, mconfig.variant_of(cfg), job, None, "built", f"nominal_{shape}{mconfig.suffix(cfg)}")
+    return JobSession(cfg, mconfig.variant_of(cfg), job, None, "built", f"nominal_{shape}{mconfig.suffix(cfg)}",
+                      sha)
