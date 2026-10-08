@@ -33,6 +33,7 @@ Pt = tuple[float, float]
 ARC_SEG_DEG = 3.0           # polyline segment of the rounded corners
 CAP_W = 0.96                # Arial Bold advance / cap height of ARES, HSLU (PIL arialbd.ttf: 0.96-0.97)
 LOGO_H, LOGO2_H = 50.0, 14.0  # cap height of "ARES" between the stone rows and of "HSLU" left / right of it [mm]
+COVER_H = 40.0              # cap height of "ARES" / "HSLU" on the front covers [mm]
 WEB_MM = 3.0                # minimum MDF between a hole and an edge (check)
 
 
@@ -130,8 +131,11 @@ def plates(cfg: dict) -> list[Plate]:
     for name, poly, s_ in (("cover_left", left, 1.0), ("cover_right", right, -1.0)):
         bolts = [(xfr - e, s_ * abs(float(y))) for y in dp["cover_bolt_front_y"][:1]] \
             + [(float(x), s_ * (yh - e)) for x in dp["cover_bolt_side_x"]]
+        word = "ARES" if s_ > 0 else "HSLU"               # Samuel 2026-10-08: ARES left, HSLU right, read from the
+        y_word = s_ * (hp + 5.0 + (yh - 35.0)) / 2        # front; centred beside the cut-out, clear of the side holes
         covers.append(Plate(name, poly, [], bolts, [],
-                            [((xb + 30.0, s_ * 150.0 - 40.0), 6.0, f"{'LEFT' if s_ > 0 else 'RIGHT'} - FRONT ->")],
+                            [((xb + 30.0, s_ * 150.0 - 40.0), 6.0, f"{'LEFT' if s_ > 0 else 'RIGHT'} - FRONT ->"),
+                             centred(word, COVER_H, ux, y_word)],
                             []))
     return [p_mag, p_rear, p_one] + covers
 
