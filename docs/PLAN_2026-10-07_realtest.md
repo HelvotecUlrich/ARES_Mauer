@@ -134,3 +134,22 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
   autonomous): controller monitor at the far end (25 cm out, 20 cm over the deck) into the collision models; hand-eye
   calibration on ARES + stone test tomorrow; new C with a door and a window from the photos in input/; new sim, validate.
 
+## Track E (Samuel 2026-10-08 evening, autonomous): controller, calibration on ARES, C with a door and a window
+
+Samuel: "Auf der gegenueberliegenden Seite vom UR ist neu hinten am ARES der Controller (der ganze UR-Controller),
+ragt rund 25 cm nach hinten raus und etwa 20 cm ueber die Flaeche von ARES. Morgen als erstes die Kalibration auf dem
+ARES, dann der Test mit den Steinen. 4 Fotos in input/ beschreiben das C neu mit einer Andeutung fuer eine Tuere und ein
+Fenster - neue Sim, alles validieren, so lange wie moeglich selbstaendig."
+Photos input/Medien (16..19).jpg = courses 4..1 seen from above (dark full, light half): back leg 9 full (1.8 m) runs
+through BOTH corners; one arm 5 stones (1.0 m) with a window in courses 3+4 (400 mm wide, 300 mm from both ends); the
+other arm only a 400 mm piece at its free end + a 600 mm door (all courses) next to the back leg. CB3 control box
+462 x 418 x 268 mm (UR5 manual).
+- [ ] E1 controller box in the config + armcheck.ares_boxes (motion guard, look checks) + RoboDK station; tests
+- [ ] E2 calib_handeye orbit: views and moves checked against ARES (chassis, controller, floor); T4 text
+- [ ] E3 magtest rebuilt with the box, SIM run; docs
+- [ ] E4 RoboDK station: ARES STEP turned by 180 deg for frame_x_points_to "rear" (scanners / steering at the right end)
+- [ ] E5 wallplan: openings (door, window), back leg through both corners, free first stone of a detached piece,
+      per-leg bond parity; config legs; make_job / guides / stone list / plan_layout (existing boards W0-W7 re-placed)
+- [ ] E6 reach tables (new mount) + RoboDK full sim + video; guarded world sims; full test suite green
+- [ ] E7 report for Samuel (what changed, assumptions, open points: ADS port 48898, mirroring the ARES moves)
+
