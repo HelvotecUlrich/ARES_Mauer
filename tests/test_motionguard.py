@@ -157,7 +157,7 @@ def test_simworld_and_urrobot_use_the_same_park_pose(cfg, job):
     w = SimWorld(cfg, job, guard=True)
     assert np.allclose(w.robot.park_q, np.radians(cfg["ur"]["park_q_deg"]))
     c = copy.deepcopy(cfg)
-    assert c["ur"]["park_q_deg"][0] == pytest.approx(161.83)
+    assert c["ur"]["park_q_deg"][0] == pytest.approx(71.83)     # 161.83 until [ur5] mount_rz 0 -> 90 (2026-10-08)
 
 
 def test_held_stone_edges_floor_and_column_window(cfg, job):

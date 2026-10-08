@@ -22,8 +22,13 @@ robot_file = "robodk/library/UR5.robot"   # RoboDK library, UR5 (CB3), downloade
 mount_x = 360.0             # CONFIRMED: Samuel 2026-10-08 "200 mm von der Vorderkante" = 560 ([ares] length / 2,
                             # chassis mesh front) - 200; measure after mounting (test plan T3)
 mount_y = 0.0               # CONFIRMED: Samuel 2026-10-08 "y in der Mitte"; measure after mounting (T3)
-mount_z = 333.6             # PLACEHOLDER: deck top, no adapter plate; exact height follows (Samuel)
-mount_rz = 0.0              # PLACEHOLDER: rotation of the UR base about z [deg]
+mount_z = 343.6             # CONFIRMED: Samuel 2026-10-08 "der UR steht auf einer 10 mm Platte auf ARES" = [ares]
+                            # deck_top_z 333.6 + 10 mm plate (was 333.6 PLACEHOLDER: deck top without a plate)
+mount_rz = 90.0             # CONFIRMED: Samuel 2026-10-08 "Kabel nach hinten"; pendant Move tab, feature Base: +X
+                            # moves the TCP to ARES LEFT. UR5 manual (reference/2026-10-02_Gino/UR5, fig. 15.1 "Base
+                            # feature"): the base cable leaves along base +Y -> +Y = ARES -x (back), +X = ARES +y
+                            # (was 0.0 PLACEHOLDER = base +X forward, cable to the left). Joint values in this file
+                            # ([ur] park_q_deg) follow it: base joint -90 deg for the same pose on ARES
 
 [tool]
 # Gripper "Backengreifer" (Festo EHPS-20-A + ribbed jaws) taken from Gino's RoboDK station UR5_sim_v3.rdk (2026-10-02).
@@ -544,7 +549,9 @@ a_joint = 0.5               # ASSUMPTION: rad/s²
 v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
 a_lin = 0.30                # ASSUMPTION: m/s²
 v_contact = 0.02            # ASSUMPTION: m/s, last approach to / retract from the stone
-park_q_deg = [161.83, -91.86, 41.77, -39.91, -90.0, 161.83]  # ASSUMPTION (2026-10-07): compact pose like robodk/
+park_q_deg = [71.83, -91.86, 41.77, -39.91, -90.0, 161.83]  # 2026-10-08: base joint 161.83 -> 71.83 for [ur5]
+                            # mount_rz 0 -> 90 (the same pose on ARES, 10 mm higher with the plate; checked with the
+                            # nominal UR5 FK). ASSUMPTION (2026-10-07): compact pose like robodk/
                             # simulate.py Planner.compact - TCP 350 mm ahead of the UR base at ARES (703.6, 0, 919) mm,
                             # i.e. 144 mm ahead of the chassis front at the transfer height over a full magazine, tool
                             # down, elbow up; checked with mauer.motionguard (tool 40 mm from the arm, free of ARES and a
