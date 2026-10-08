@@ -65,7 +65,8 @@ def plan_geometry(job: Job, cfg: Mapping) -> PlanGeometry:
     obstacles: list = []
     table = None
     try:
-        table = tuple(floor.station_table_poly(cfg, job.station.T_wall_station))
+        if job.station.slots or job.station.boards:      # a job without a station (magazine dry run): no table
+            table = tuple(floor.station_table_poly(cfg, job.station.T_wall_station))
     except (KeyError, TypeError, ValueError) as e:
         notes.append(f"station table not drawn: {e}")
     if job.legs:

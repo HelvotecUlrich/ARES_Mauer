@@ -42,10 +42,11 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from mauer.ares.ads import OdomPose
+from mauer.magtest import MagazineTest, base_x_direction, is_magtest
 from mauer.reference import Pose2D
 from mauer.sequencer import Sequencer, SequencerAborted, SequencerError, SequencerPaused, standing_in_log
 
-from .preflight import PreflightReport, real_preflight, sim_preflight
+from .preflight import PreflightReport, magtest_preflight, real_preflight, sim_preflight
 from .rigs import HaltGate, RealFactories, RealRig, RigInfo, SimRig
 from .session import JobSession, SessionError, build_from_config, load_job_file
 from .snapshot import RunSnapshot, ShotProcessor, SnapshotTracker, default_shot_view
@@ -104,9 +105,10 @@ MOVING = "ARES is moving (relative move or jog) - wait until it stands"
 
 def enables(state: str, mode: str | None, *, ares_enabled: bool = False, preflight_ok: bool = False,
             has_seq: bool = False, pose_status: str = "ok", held: bool = False,
-            odom_moved: bool = False, moving: bool = False) -> dict[str, tuple[bool, str]]:
+            odom_moved: bool = False, moving: bool = False, magtest: bool = False) -> dict[str, tuple[bool, str]]:
     """Enable matrix of the design (8.4): action -> (allowed, reason if not). Pure. moving: REAL, the HMI's ADS
-    status shows ARES moving (ares_moving) - Start and Resume wait for standstill."""
+    status shows ARES moving (ares_moving) - Start and Resume wait for standstill. magtest: the job is a magazine dry
+    run (mauer.magtest) - REAL without --ares (ARES is not moved)."""
     def rule(ok: bool, why: str) -> tuple[bool, str]:
         return (True, "") if ok else (False, why)
 
@@ -121,7 +123,7 @@ def enables(state: str, mode: str | None, *, ares_enabled: bool = False, preflig
         "options": rule(idle, f"options are fixed while {state} - Release first"),
         "step": (True, ""),
         "sim_speed": (True, ""),
-        "prepare": rule(state == "loaded" and (not real or ares_enabled),
+        "prepare": rule(state == "loaded" and (not real or ares_enabled or magtest),
                         "load a job first" if state in ("empty", "loading") else
                         "REAL needs the HMI started with --ares" if state == "loaded" else f"not while {state}"),
         "start": rule(state == "ready" and has_seq and (not real or preflight_ok) and not moving,
@@ -322,7 +324,13 @@ class RunController(QObject):
                        pose_status=seq.pose_status if seq is not None else "ok",
                        held=seq is not None and seq.held is not None,
                        odom_moved=m == "real" and self.odom_moved() is not None,
-                       moving=m == "real" and ares_moving(self._ads_status_fn()))[action]
+                       moving=m == "real" and ares_moving(self._ads_status_fn()), magtest=self.magtest)[action]
+
+    @property
+    def magtest(self) -> bool:
+        """The loaded job is a magazine dry run (mauer.magtest): MagazineTest, the UR-only rig, its own preflight,
+        REAL without --ares."""
+        return self._session is not None and is_magtest(self._session.job)
 
     # ── internals ────────────────────────────────────────────────────────────
     def _set_state(self, state: str, detail: str = "") -> None:
@@ -488,9 +496,10 @@ class RunController(QObject):
                 from mauer.backends import AdsAres
                 ares = AdsAres(rig.ads)
             robot, ares = HaltGate(rig.robot, self._halt), HaltGate(ares, self._halt)
-            seq = Sequencer(s.job, s.cfg, robot, ares, rig.camera, rig.intr, rig.T_flange_cam, log_dir=log_dir,
-                            confirm=self._confirm_cb, camera_loop=o.camera_loop, save_images=o.save_images,
-                            on_station_empty=self._station_empty_cb, on_shot=self._on_shot)
+            runner = MagazineTest if self.magtest else Sequencer
+            seq = runner(s.job, s.cfg, robot, ares, rig.camera, rig.intr, rig.T_flange_cam, log_dir=log_dir,
+                         confirm=self._confirm_cb, camera_loop=o.camera_loop, save_images=o.save_images,
+                         on_station_empty=self._station_empty_cb, on_shot=self._on_shot)
             self._tracker = SnapshotTracker(s, lambda: odom_from_status(self._ads_status_fn()))
             seq.log.add_listener(self._on_record)
             if self._log_standing:                  # stones of the interrupted run: skipped, part of the guard's wall
@@ -506,6 +515,8 @@ class RunController(QObject):
         s = self._session
         if self.mode == "sim":
             return sim_preflight(s.cfg, s.job, self._config_path, s.config_sha256)
+        if self.magtest:
+            return magtest_preflight(s.cfg, s.job, self._config_path, rig=self._rig, session_sha256=s.config_sha256)
         return real_preflight(s.cfg, s.job, self._config_path, ares_enabled=self._ares_enabled,
                               ads_connected=bool(self._ads_connected_fn()), ads_status=self._ads_status_fn(),
                               rig=self._rig, session_sha256=s.config_sha256)
@@ -582,6 +593,14 @@ class RunController(QObject):
 
     def start_checklist(self) -> str:
         o = self._opts
+        if self.magtest:
+            m = self._session.job.meta["magtest"]
+            u, rz = max(abs(t[0]) for t in m["targets"]), float(self._session.cfg["ur5"]["mount_rz"])
+            return (f"MAGAZINE DRY RUN, {len(m['moves'])} moves: gripper jaws EMPTY; magazine: 2 full stones "
+                    f"stacked on {m['start_fill'][0]} + {m['start_fill'][1]}, every other slot empty; nothing and "
+                    f"nobody in front of ARES (front leg {m['front']['leg']}, {m['front']['dist_mm']:g} mm from the "
+                    f"ARES centre, up to {u:g} mm to the sides); ARES stands still; pendant Move tab, feature Base: +X "
+                    f"moves the TCP to ARES {base_x_direction(rz)} ([ur5] mount_rz {rz:g}); E-stop in hand")
         fill = ", ".join(f"{sid}: {kind}" for sid, kind in self.start_fill())
         late = f"{len(self._log_standing)} stones of {Path(o.resume_log).name} stand; " if self._log_standing else ""
         return (f"REAL start at stop {o.start_stop}: {late}gripper jaws EMPTY, pick-up station FULL, magazine loaded "
@@ -613,6 +632,9 @@ class RunController(QObject):
     def _resume_refusal(self) -> str | None:
         seq = self._seq
         if seq.held is not None:
+            if self.magtest:                          # the move runs again from its pick slot
+                return (f"a stone may be in the jaws (magazine slot {seq.held.get('slot')}) - take it out, put it "
+                        f"back on magazine slot {seq.held.get('slot')}, park the arm, then 'Jaws empty'")
             return (f"a stone may be in the jaws ({seq.held.get('from')} slot {seq.held.get('slot')}) - take it out, "
                     "park the arm, then 'Jaws empty'")
         if seq.pose_status == "odometry":
@@ -620,7 +642,12 @@ class RunController(QObject):
                     "'Set pose'")
         if seq.pose_status != "ok":
             return f"the ARES pose is {seq.pose_status} ({seq.pose_src}) - 'Set pose'"
-        if self.mode == "real":
+        if self.mode == "real" and self.magtest:          # ARES is not moved: no odometry check, the UR again
+            self._preflight = self._report()
+            self.preflight_done.emit(self._preflight)
+            if not self._preflight.ok:
+                return f"preflight: {self._preflight.n_blocking} blocking problems (see the list)"
+        elif self.mode == "real":
             if self._ads_status_fn() is None or not self._ads_connected_fn():
                 return "cannot verify that ARES did not move: the HMI's ADS worker is not connected"
             if self._odom_at_stop is None:
@@ -739,8 +766,13 @@ class RunController(QObject):
             return
 
         def job() -> None:
-            self._seq.clear_held()
             robot = getattr(self._rig, "robot", None)
+            src = getattr(self._seq, "move_from", None)
+            if isinstance(self._rig, SimRig) and src is not None and getattr(robot, "holding", None) is not None:
+                # magazine dry run, SIM: the simulated operator puts the stone back on the move's pick slot
+                self._rig.world.mag_stones[src] = (robot.holding[0],
+                                                   np.asarray(self._session.job.magazine.slot(src).T_ares_tcp, float))
+            self._seq.clear_held()
             if robot is not None and hasattr(robot, "holding"):
                 robot.holding = None
         self._submit(job, "jaws empty")

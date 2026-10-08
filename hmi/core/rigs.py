@@ -92,7 +92,7 @@ def _err(e: BaseException) -> str:
 
 
 MOTIONS = frozenset({"park", "goto_look", "pick_magazine", "place_wall", "pick_station", "place_magazine",
-                     "translate", "rotate"})
+                     "dry_place", "translate", "rotate"})
 
 
 def _nothing_sent(e: BaseException) -> bool:
@@ -170,12 +170,15 @@ class SimRig:
 
 class RealRig:
     """URLink + AresAds + camera + calibration. open() never raises: each failure is kept in `errors` (part ->
-    text) and that part stays None; real_preflight() turns them into blocking items."""
+    text) and that part stays None; real_preflight() turns them into blocking items. A magazine dry run
+    (mauer.magtest) opens the UR only (`ur_only`): ARES is not moved and nothing is measured."""
     mode = "real"
 
     def __init__(self, cfg: dict, job: Job, factories: RealFactories | None = None) -> None:
+        from mauer.magtest import is_magtest
         self.cfg, self.job = cfg, job
         self.f = factories or RealFactories()
+        self.ur_only = is_magtest(job)
         self.link: Any = None
         self.ads: Any = None
         self.camera: Any = None
@@ -188,6 +191,8 @@ class RealRig:
 
     @property
     def complete(self) -> bool:
+        if self.ur_only:
+            return self.link is not None and self.robot is not None
         return all(x is not None for x in (self.link, self.ads, self.camera, self.robot, self.intr,
                                            self.T_flange_cam))
 
@@ -197,7 +202,8 @@ class RealRig:
 
     def open(self) -> None:
         """link.start() -> ads.connect() -> ads.check() -> camera -> robot -> calibration (tools/run_job.py run_real
-        order). Blocks for seconds (RTDE start, TCP probe, 250 ms heartbeat window): run thread only."""
+        order); ur_only: link.start() -> robot. Blocks for seconds (RTDE start, TCP probe, 250 ms heartbeat window): run
+        thread only."""
         link = None
         try:
             link = self.f.link(self.cfg)
@@ -210,6 +216,9 @@ class RealRig:
                     link.stop()
                 except Exception:       # noqa: BLE001
                     pass
+        if self.ur_only:
+            self._open_robot()
+            return
         a = None
         try:
             a = self.f.ads(self.cfg)
@@ -227,11 +236,7 @@ class RealRig:
             self.camera = self.f.camera(self.cfg)
         except Exception as e:          # noqa: BLE001
             self.errors["camera"] = _err(e)
-        if self.link is not None:
-            try:
-                self.robot = self.f.robot(self.link, self.cfg, self.job)
-            except Exception as e:      # noqa: BLE001 - unknown payload / stone mass (URRobot refuses)
-                self.errors["robot"] = _err(e)
+        self._open_robot()
         try:
             self.intr = self.f.intrinsics(self.cfg)
         except Exception as e:          # noqa: BLE001
@@ -240,6 +245,13 @@ class RealRig:
             self.T_flange_cam = np.asarray(self.f.handeye(self.cfg), float)
         except Exception as e:          # noqa: BLE001
             self.errors["handeye"] = _err(e)
+
+    def _open_robot(self) -> None:
+        if self.link is not None:
+            try:
+                self.robot = self.f.robot(self.link, self.cfg, self.job)
+            except Exception as e:      # noqa: BLE001 - unknown payload / stone mass (URRobot refuses)
+                self.errors["robot"] = _err(e)
 
     def check_ads(self) -> None:
         """The AresAds preflight (two status reads 250 ms apart, no write)."""

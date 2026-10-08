@@ -14,8 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from mauer import magtest
 from mauer.ares.ads import AMR_STATE_NAMES, ST_MANUAL
 from mauer.job import Job, config_sha256
+from mauer.magtest import is_magtest
 from mauer.sequencer import preflight_real
 
 SOURCES = ("job/config", "HMI", "ARES", "UR", "camera")
@@ -67,13 +69,61 @@ def config_drift(cfg: Mapping, config_path: str | Path | None, session_sha256: s
             "job was loaded - the run would use the values loaded then: Release, load the job again"]
 
 
+def ur_problems(cfg: Mapping, rig) -> list[str]:
+    """The UR part of the REAL preflight: link started, a fresh RTDE sample of a running robot without a stop or a
+    program, the IK check the controller knows, the URRobot created (payload / stone mass known)."""
+    out: list[str] = []
+    errors = getattr(rig, "errors", {}) if rig is not None else {}
+    if rig is None:
+        return ["not connected (Prepare / Connect in REAL mode)"]
+    if rig.link is None:
+        out.append(f"URLink not started: {errors.get('link', 'not opened')}")
+    else:
+        from mauer.ur.link import ROBOT_MODE, ROBOT_RUNNING, SAFETY_MODE, SAFETY_OK
+        st, age = rig.link.state(), rig.link.state_age_s()
+        if st is None or not age <= RTDE_MAX_AGE_S:
+            out.append(f"no current RTDE sample (age {age:.1f} s) - RTDE stream stale or stopped")
+        else:
+            if st.robot_mode != ROBOT_RUNNING:
+                out.append(f"robot mode {ROBOT_MODE.get(st.robot_mode, st.robot_mode)}, needs RUNNING: power on + "
+                           "brake release on the pendant")
+            if st.safety_mode not in SAFETY_OK:
+                out.append(f"safety mode {SAFETY_MODE.get(st.safety_mode, st.safety_mode)}: clear the stop on the "
+                           "pendant")
+            if st.program_running:
+                out.append("a program is running on the controller - stop it on the pendant")
+        v = getattr(rig.link, "controller_version", None)
+        if v and tuple(v[:2]) == (3, 3) and str(cfg.get("ur", {}).get("ik_check", "has_solution")) == "has_solution":
+            out.append(IK_GUARD_33)
+        if rig.robot is None:
+            out.append(f"URRobot not created: {errors.get('robot', 'no URLink')}")
+    return out
+
+
 def sim_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None,
                   session_sha256: str | None = None) -> PreflightReport:
     """The real-run problems of the job and config, non-blocking (the simulation runs anyway)."""
+    if is_magtest(job):
+        real = [*magtest.preflight(cfg, job, config_path=config_path),
+                *magtest.warnings(cfg, job, config_path=config_path)]
+    else:
+        real = preflight_real(cfg, job, config_path=config_path)
     items = tuple(PreflightItem("job/config", p, False)
-                  for p in [*config_drift(cfg, config_path, session_sha256),
-                            *preflight_real(cfg, job, config_path=config_path)])
+                  for p in [*config_drift(cfg, config_path, session_sha256), *real])
     return PreflightReport("sim", items, time.time())
+
+
+def magtest_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None, *, rig,
+                      session_sha256: str | None = None) -> PreflightReport:
+    """REAL preflight of a magazine dry run (mauer.magtest): the job / config checks and the UR block; nothing about
+    ARES (not moved), the camera or the calibration (nothing measured). The magtest warnings (PLACEHOLDERs that do
+    not move the arm) are listed without blocking."""
+    items = [PreflightItem("job/config", p, True)
+             for p in [*config_drift(cfg, config_path, session_sha256),
+                       *magtest.preflight(cfg, job, config_path=config_path)]]
+    items += [PreflightItem("UR", p, True) for p in ur_problems(cfg, rig)]
+    items += [PreflightItem("job/config", p, False) for p in magtest.warnings(cfg, job, config_path=config_path)]
+    return PreflightReport("real", tuple(items), time.time())
 
 
 def real_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None, *, ares_enabled: bool,
@@ -116,29 +166,8 @@ def real_preflight(cfg: Mapping, job: Job, config_path: str | Path | None = None
         for p in (chk.problems if chk is not None else ["AresAds preflight not run"]):
             add("ARES", p)
     # UR over RTDE
-    if rig is None:
-        add("UR", "not connected (Prepare / Connect in REAL mode)")
-    elif rig.link is None:
-        add("UR", f"URLink not started: {errors.get('link', 'not opened')}")
-    else:
-        from mauer.ur.link import ROBOT_MODE, ROBOT_RUNNING, SAFETY_MODE, SAFETY_OK
-        st, age = rig.link.state(), rig.link.state_age_s()
-        if st is None or not age <= RTDE_MAX_AGE_S:
-            add("UR", f"no current RTDE sample (age {age:.1f} s) - RTDE stream stale or stopped")
-        else:
-            if st.robot_mode != ROBOT_RUNNING:
-                add("UR", f"robot mode {ROBOT_MODE.get(st.robot_mode, st.robot_mode)}, needs RUNNING: power on + "
-                          "brake release on the pendant")
-            if st.safety_mode not in SAFETY_OK:
-                add("UR", f"safety mode {SAFETY_MODE.get(st.safety_mode, st.safety_mode)}: clear the stop on the "
-                          "pendant")
-            if st.program_running:
-                add("UR", "a program is running on the controller - stop it on the pendant")
-        v = getattr(rig.link, "controller_version", None)
-        if v and tuple(v[:2]) == (3, 3) and str(cfg.get("ur", {}).get("ik_check", "has_solution")) == "has_solution":
-            add("UR", IK_GUARD_33)
-        if rig.robot is None:
-            add("UR", f"URRobot not created: {errors.get('robot', 'no URLink')}")
+    for p in ur_problems(cfg, rig):
+        add("UR", p)
     # camera and calibration
     if rig is not None:
         if rig.camera is None:

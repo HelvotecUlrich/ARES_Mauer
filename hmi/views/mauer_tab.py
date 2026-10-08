@@ -334,6 +334,13 @@ class MauerTab(QWidget):
                  f"({job.n_stones - n_half} full / {n_half} half), magazine {job.magazine.capacity}, station "
                  f"{len(job.station.take_order)} slots\ncreated {job.created}, reach check "
                  f"{m.get('reach_check', '?')}, {len(m.get('warnings', []) or [])} warnings")
+        if m.get("kind") == "magtest":                  # mauer.magtest: the moves instead of stops and stones
+            mt = m["magtest"]
+            set_text(self.summary,
+                     f"{s.name}  (config {s.variant_label}, {s.source})\nmagazine dry run: {len(mt['moves'])} moves, "
+                     f"start {mt['start_fill'][0]} + {mt['start_fill'][1]}, front leg {mt['front']['leg']} at "
+                     f"{mt['front']['dist_mm']:g} mm, hover {mt['hover_mm']:g} mm, hold {mt['dwell_s']:g} s\n"
+                     f"created {job.created}, ARES stands, no camera")
         for sp in (self.stop_from, self.stop_to):
             sp.setRange(0, max(len(job.stops) - 1, 0))
         self.stop_from.setValue(0)
@@ -406,7 +413,7 @@ class MauerTab(QWidget):
         opts_ok = c.can("options")[0]
         for w in self._option_widgets:
             w.setEnabled(opts_ok)
-        self.real_rb.setEnabled(opts_ok and c.ares_enabled)
+        self.real_rb.setEnabled(opts_ok and (c.ares_enabled or c.magtest))     # a dry run does not move ARES
         self.recovery.setVisible(c.state in ("paused", "aborted", "error"))
         self.step.blockSignals(True)
         self.step.setChecked(c.step)

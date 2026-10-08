@@ -332,6 +332,7 @@ class FakeRunController(QObject):
         self.step = False
         self.sim_step_s = 0.3
         self.ares_enabled = ares_enabled
+        self.magtest = False                     # RunController.magtest: the loaded job is a magazine dry run
         self.sequencer = None
         self.log_dir = None
         self.odom = None
