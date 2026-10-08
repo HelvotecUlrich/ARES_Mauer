@@ -22,7 +22,11 @@ Architecture (research 2026-10-05, tested against URSim CB3 3.15.8, research_out
   30002 program runs) – the link reads RTDE runtime_state and robot_status_bits.
 - No RTDE watchdog: `rtde_set_watchdog(..., "stop")` raised protective stop C207A0 when the laptop went quiet
   (URSim) – a dead laptop would stop the arm mid-motion with a stone in the jaws. A crashed laptop only lets the
-  current block finish.
+  current block finish. A link whose RTDE stream stays silent for RTDE_LOST_S during a block aborts the program
+  and fails the block (the laptop is blind; review 2026-10-08).
+- HALT latch (`inhibit()` / `release_inhibit()`, review 2026-10-08): while inhibited, `send_program` refuses every
+  program except the abort program, checked under the send lock - so a block is either sent before the abort (which
+  then stops it) or never sent. A block waiting for its done marker gives up within HALT_WAIT_S once inhibited.
 
 Flange pose: `T_base_flange = T_base_tcp @ inv(T_flange_tcp)`. T_flange_tcp comes from the RTDE field `tcp_offset`
 ("Transformation from the output flange coordinate system to the TCP", RTDE guide; present on URSim CB3 3.15.8).
@@ -63,6 +67,8 @@ RUNTIME_STOPPED = 1
 BIT_POWER_ON, BIT_PROGRAM_RUNNING = 0x1, 0x2   # robot_status_bits (RTDE guide: bits 0-3)
 
 FRESH_STATE_WAIT_S = 2.0   # a block waits this long for a current RTDE sample before it fails (stale stream)
+RTDE_LOST_S = 5.0          # no RTDE sample for this long during a block: abort it, fail (a reconnect takes ~2 s)
+HALT_WAIT_S = 3.0          # inhibited during a block: wait this long for the program to stop, then fail anyway
 
 # RTDE output recipe: name -> wire type. Required fields exist on every CB3 >= 3.9 (registers 24..47 since 3.9.0).
 REQUIRED_FIELDS = {
@@ -86,6 +92,10 @@ OPTIONAL_FIELDS = {
 
 class URLinkError(RuntimeError):
     """Link setup / connection problem (not a block failure – those come back as BlockResult)."""
+
+
+class URLinkInhibited(URLinkError):
+    """send_program refused a program: the link is inhibited (HALT latch) - nothing was sent."""
 
 
 class URBlockError(RuntimeError):
@@ -267,6 +277,7 @@ class URLink:
         self._send_lock = threading.Lock()
         self._block_lock = threading.Lock()
         self._next_id = 1
+        self._inhibit: str | None = None             # HALT latch: reason; None = programs allowed
 
     @classmethod
     def from_config(cls, cfg: dict, host: str | None = None, **kw) -> "URLink":
@@ -497,11 +508,35 @@ class URLink:
         if self._sock is s:
             self._sock_dead = True
 
+    # ── HALT latch ───────────────────────────────────────────────────────────
+    def inhibit(self, reason: str = "HALT") -> None:
+        """Latch a HALT: send_program refuses every program but the abort program until release_inhibit(). Sets a
+        flag only (never blocks - callable from a GUI thread); send_program checks it under the send lock, and the
+        abort sent after this call waits for that lock, so a program already passing the check is stopped by it."""
+        self._inhibit = str(reason) or "HALT"
+
+    def release_inhibit(self) -> None:
+        """Lift the HALT latch (the operator restarts / resumes explicitly)."""
+        self._inhibit = None
+
+    @property
+    def inhibited(self) -> str | None:
+        """Reason of the HALT latch, None when programs are allowed."""
+        return self._inhibit
+
     def send_program(self, text: str) -> None:
         """Send URScript text on the persistent 30002 socket (reconnects once if it broke). A `def` program
-        stops a running program; prefer run_block, which adds markers and error detection."""
+        stops a running program; prefer run_block, which adds markers and error detection. Raises URLinkInhibited
+        (nothing sent) while the link is inhibited."""
+        self._send(text, force=False)
+
+    def _send(self, text: str, force: bool) -> None:
         data = (text if text.endswith("\n") else text + "\n").encode("ascii")
         with self._send_lock:
+            reason = self._inhibit
+            if reason is not None and not force:
+                raise URLinkInhibited(f"{reason}: robot programs inhibited until the run is started / resumed again "
+                                      "- program not sent")
             for attempt in (0, 1):
                 try:
                     if self._sock is None or self._sock_dead:
@@ -555,6 +590,9 @@ class URLink:
             log.error("block %s #%d failed: %s", name, res.block_id, res.error)
             return res
 
+        if self._inhibit is not None:                       # HALT latch: nothing is sent (t_sent stays None)
+            return fail(f"{self._inhibit}: robot programs inhibited until the run is started / resumed again - "
+                        "program not sent")
         s0 = self.state()
         if s0 is None or self.state_age_s() > 0.5:          # e.g. a reconnect, or right after the IDS camera opened
             s0 = self.wait_until(lambda x: time.time() - x.t_laptop <= 0.5, FRESH_STATE_WAIT_S)   # (UR5, 2026-10-06)
@@ -577,17 +615,22 @@ class URLink:
         res.t_sent = time.time()
         try:
             self.send_program(res.program)
+        except URLinkInhibited as e:                        # HALT latched meanwhile: nothing was sent
+            res.t_sent = None
+            return fail(str(e), s0)
         except URLinkError as e:
             return fail(str(e), s0)
         log.debug("block %s #%d sent", name, bid)
 
         # ── start marker ──
-        s = self.wait_until(lambda s: s.reg_started == bid or s.reg_done == bid or s.safety_mode not in SAFETY_OK,
-                            start_timeout_s)
+        s = self.wait_until(lambda s: s.reg_started == bid or s.reg_done == bid or s.safety_mode not in SAFETY_OK
+                            or self._inhibit is not None, start_timeout_s)
         if s is None:
             return fail(f"did not start within {start_timeout_s:.1f} s - compile/syntax error? The reason is only "
                         "in the PolyScope Log tab (program text in BlockResult.program)")
         if s.reg_started != bid and s.reg_done != bid:
+            if s.safety_mode in SAFETY_OK and self._inhibit is not None:
+                return fail(f"{self._inhibit} right after the block was sent - the abort stops it", s)
             return fail(f"safety_mode {SAFETY_MODE.get(s.safety_mode, s.safety_mode)} before the block started", s)
         res.t_started = self._first_time(lambda x: x.reg_started == bid or x.reg_done == bid, res.t_sent) or s.t_laptop
         T_tcp = script.parse_set_tcp(body)
@@ -596,10 +639,16 @@ class URLink:
 
         # ── done marker / failure ──
         deadline = res.t_sent + timeout_s
+
+        def stopped(x: URState) -> bool:
+            return x.runtime_state == RUNTIME_STOPPED and not x.program_running
+
+        def lost(x: URState) -> bool:                       # the predicate also runs on the last (stale) sample
+            return time.time() - x.t_laptop > RTDE_LOST_S
+
         while True:
-            s = self.wait_until(lambda s: s.reg_done == bid or s.safety_mode not in SAFETY_OK or
-                                (s.runtime_state == RUNTIME_STOPPED and not s.program_running),
-                                max(0.0, deadline - time.time()))
+            s = self.wait_until(lambda s: s.reg_done == bid or s.safety_mode not in SAFETY_OK or stopped(s) or
+                                lost(s) or self._inhibit is not None, max(0.0, deadline - time.time()))
             if s is None:
                 last = self.state()
                 if abort_on_timeout:
@@ -611,6 +660,21 @@ class URLink:
             if s.safety_mode not in SAFETY_OK:
                 return fail(f"safety_mode {SAFETY_MODE.get(s.safety_mode, s.safety_mode)} during the block "
                             "(protective stop / emergency stop) - inspect, then Dashboard unlock protective stop", s)
+            if lost(s):                                     # blind: stop the arm rather than wait for the timeout
+                note = self.abort()
+                return fail(f"RTDE lost during the block: no sample for {time.time() - s.t_laptop:.1f} s "
+                            f"({self.rtde_error or 'stream silent'}) - program aborted ({note})", s)
+            halt = self._inhibit
+            if halt is not None and not stopped(s):         # HALT: the abort is on its way - wait briefly for it
+                s2 = self.wait_until(lambda x: x.reg_done == bid or x.safety_mode not in SAFETY_OK or stopped(x)
+                                     or lost(x), HALT_WAIT_S)
+                if s2 is not None and s2.reg_done == bid:   # finished just before the abort arrived
+                    s = s2
+                    break
+                s = s2 or self.state()
+                return fail(f"{halt}: block stopped" + ("" if s2 is not None and stopped(s2) else
+                                                        f" - no stop seen within {HALT_WAIT_S:.0f} s, the program "
+                                                        "may still be running"), s)
             # stopped: the done marker may still be in flight
             s2 = self.wait_until(lambda x: x.reg_done == bid or x.safety_mode not in SAFETY_OK, 0.25)
             if s2 is not None and s2.reg_done == bid:
@@ -619,6 +683,8 @@ class URLink:
             s = s2 or self.state()
             if s.safety_mode not in SAFETY_OK:
                 return fail(f"safety_mode {SAFETY_MODE.get(s.safety_mode, s.safety_mode)} during the block", s)
+            if self._inhibit is not None:
+                return fail(f"{self._inhibit}: block stopped", s)
             return fail("program stopped without the done marker (runtime error, halt/IK guard, or stopped from "
                         "the pendant/Dashboard - see the PolyScope Log tab)", s)
         res.t_done = self._first_time(lambda x: x.reg_done == bid, res.t_sent) or s.t_laptop
@@ -636,10 +702,10 @@ class URLink:
 
     def abort(self, dashboard: bool = True) -> str:
         """Stop the running program: send a stopl program on 30002 (interrupts the running program at once), then
-        (dashboard=True) Dashboard 'stop'. Returns what was done. Does not raise."""
+        (dashboard=True) Dashboard 'stop'. Returns what was done. Does not raise. Allowed while inhibited."""
         done = []
         try:
-            self.send_program(script.abort_program())
+            self._send(script.abort_program(), force=True)
             done.append("stopl program sent")
         except (URLinkError, OSError) as e:
             done.append(f"stopl program failed: {e}")

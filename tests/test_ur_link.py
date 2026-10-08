@@ -23,7 +23,8 @@ import pytest
 from mauer import geometry as g
 from mauer.ur import script as s
 from mauer.ur.dashboard import Dashboard, DashboardError
-from mauer.ur.link import ROBOT_MODE, URLink, URLinkError, flange_T
+from mauer.ur import link as link_mod
+from mauer.ur.link import ROBOT_MODE, URLink, URLinkError, URLinkInhibited, flange_T
 
 WIRE = {"DOUBLE": "d", "VECTOR6D": "6d", "INT32": "i", "UINT32": "I", "UINT64": "Q"}
 TYPES = {"timestamp": "DOUBLE", "actual_q": "VECTOR6D", "actual_qd": "VECTOR6D", "actual_TCP_pose": "VECTOR6D",
@@ -43,6 +44,7 @@ class FakeUR:
         self.tcp_pose = [0.1, -0.2, 0.3, 0.0, 3.0, 0.0]
         self.tcp_offset = [0.0] * 6
         self.robot_mode, self.safety_mode, self.runtime, self.bits = 7, 1, 1, 0x1
+        self.silent = False                 # True: RTDE connection stays open, no data packages (stream lost)
         self.regs = dict(regs or {})
         self.dout, self.voltage = 0, 0
         self.programs: list[str] = []
@@ -138,7 +140,7 @@ class FakeUR:
                     elif cmd == ord("P"):
                         streaming = False
                         send(cmd, b"\x01")
-                if streaming and time.time() >= t_next:
+                if streaming and not self.silent and time.time() >= t_next:
                     t_next = time.time() + 0.008
                     names, types = recipe
                     with self.lock:
@@ -381,6 +383,67 @@ def test_timeout_aborts(fake):
         r = ur.run_block("sleep(5.0)", "slow", timeout_s=0.3)
         assert not r.ok and "timeout" in r.error and "aborted" in r.error and time.time() - t0 < 2.0
         assert fake.programs[-1] == s.abort_program() and "stop" in fake.dash_cmds
+
+
+def test_inhibit_refuses_every_program_but_the_abort(fake):
+    """HALT latch (review 2026-10-08): nothing but the abort program leaves the link while it is inhibited."""
+    with make_link(fake) as ur:
+        ur.inhibit("HALT")
+        assert ur.inhibited == "HALT"
+        r = ur.run_block("sleep(0.01)", "after_halt", timeout_s=2.0)
+        assert not r.ok and r.error.startswith("HALT: robot programs inhibited") and r.t_sent is None
+        with pytest.raises(URLinkInhibited):
+            ur.send_program("def x():\n  sleep(0.01)\nend\n")
+        assert fake.programs == []
+        assert "stopl program sent" in ur.abort(dashboard=False) and fake.programs == [s.abort_program()]
+        ur.release_inhibit()
+        assert ur.inhibited is None and ur.run_block("sleep(0.01)", "released", timeout_s=2.0).ok
+
+
+def test_halt_during_a_block_ends_the_wait(fake):
+    """A block that is running when HALT latches fails as soon as the abort stopped it - not after its timeout."""
+    with make_link(fake) as ur:
+        out = {}
+        th = threading.Thread(target=lambda: out.setdefault("r", ur.run_block("sleep(5.0)", "long", timeout_s=30.0)))
+        th.start()
+        assert ur.wait_until(lambda x: x.program_running, 2.0) is not None
+        t0 = time.time()
+        ur.inhibit("HALT")                                   # as RunController.halt(), then the helper's abort
+        ur.abort()
+        th.join(5.0)
+        r = out["r"]
+        assert not r.ok and r.error.startswith("HALT: block stopped") and r.t_sent is not None
+        assert time.time() - t0 < 2.0 and fake.programs[-1] == s.abort_program()
+
+
+def test_halt_without_a_stop_gives_up_after_the_halt_wait(fake, monkeypatch):
+    monkeypatch.setattr(link_mod, "HALT_WAIT_S", 0.3)
+    with make_link(fake) as ur:
+        out = {}
+        th = threading.Thread(target=lambda: out.setdefault("r", ur.run_block("sleep(3.0)", "long", timeout_s=30.0)))
+        th.start()
+        assert ur.wait_until(lambda x: x.program_running, 2.0) is not None
+        t0 = time.time()
+        ur.inhibit("HALT")                                   # the abort never comes (e.g. 30002 broken)
+        th.join(5.0)
+        assert "may still be running" in out["r"].error and time.time() - t0 < 1.5
+
+
+def test_rtde_lost_during_a_block_aborts_it(fake, monkeypatch):
+    """Review 2026-10-08: a silent RTDE stream during a block no longer waits for the block timeout (180 s for the
+    URRobot): the program is aborted and the block fails."""
+    monkeypatch.setattr(link_mod, "RTDE_LOST_S", 0.5)
+    with make_link(fake) as ur:
+        out = {}
+        th = threading.Thread(target=lambda: out.setdefault("r", ur.run_block("sleep(5.0)", "long", timeout_s=60.0)))
+        th.start()
+        assert ur.wait_until(lambda x: x.program_running, 2.0) is not None
+        t0 = time.time()
+        fake.silent = True
+        th.join(5.0)
+        r = out["r"]
+        assert not r.ok and r.error.startswith("RTDE lost during the block") and "program aborted" in r.error
+        assert time.time() - t0 < 2.0 and fake.programs[-1] == s.abort_program() and "stop" in fake.dash_cmds
 
 
 def test_flange_from_tcp_offset(fake):
