@@ -51,7 +51,7 @@ solve: tools/handeye_solve.py on the dataset (hold-out every [vision] holdout_ev
 verify: new look poses (seed + 1000), board measured in the base frame with the calibrated T_flange_cam; reports each
   pose's deviation from the calibrated board pose, the spread, and handeye.holdout_check (incl. reprojection).
 
-Real robot: --host is required ([ur].host is an empty PLACEHOLDER), a typed confirmation precedes the first motion
+Real robot: --host, default [ur] host (the lab's UR5), a typed confirmation precedes the first motion
 (--yes skips it), speeds come from [ur] (v_joint/a_joint, ASSUMPTION first-run values), and the tool refuses to move
 while [ur] payload_tool_kg is 0 (unknown) unless --sim (URSim/simulation only). Ctrl-C aborts the running block.
 Run the calibration with the deck magazine EMPTY: the look poses pass ~250-450 mm above the deck around ARES x = 0,
@@ -381,8 +381,7 @@ def parse_inject(text: str | None) -> np.ndarray:
 def add_robot_args(ap: argparse.ArgumentParser,
                    settle_help: str = "wait before each image [s] (default [camera] settle_s)") -> None:
     """Options shared by the tools that move the robot (also used by tools/measure_target.py)."""
-    ap.add_argument("--host", default=None, help="UR controller IP (required for the real robot; [ur].host is an "
-                                                 "empty PLACEHOLDER)")
+    ap.add_argument("--host", default=None, help="UR controller IP (default: [ur] host in config/station.toml)")
     ap.add_argument("--ursim", action="store_true", help=f"URSim at {URSIM_HOST} (or --host) with the synthetic "
                                                          "camera; simulator speeds, payload fallback")
     ap.add_argument("--start-ursim", action="store_true", help="start the URSim container first (tests/ursim.py; "

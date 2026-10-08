@@ -182,7 +182,8 @@ trusting stop distances; the camera loop corrects the error anyway.
   unknown (MA runbook W3.4).
 - There is no interlock between UR5 and ARES in the PLC; the sequencer only moves ARES when the arm is parked and idle.
   Whether the UR5 and ARES E-stops are linked is unknown.
-- Payload: stone ≈ 5.2 kg (estimate, `[brick] mass_kg` = 0 unknown) + gripper + camera exceeds the UR5's 5 kg.
+- Payload: tool 1.68 kg (`[ur] payload_tool_kg`, CONFIRMED 2026-10-06) + stone 3.0 kg (`[brick] mass_kg`, ASSUMPTION
+  "about 3 kg", weigh it) = 4.68 kg of the UR5's 5 kg; the half stone is not weighed yet (`[half_brick] mass_kg`).
 - First runs: `--step` (confirm every motion), the conservative `[ur]` speeds, one stop at a time.
 
 ## 11. Running a job

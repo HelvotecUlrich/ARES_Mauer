@@ -5,7 +5,7 @@
     py.exe tools/measure_target.py mount [--boards calib] [--move-mm 10] [--exposure-us 20000] [--yes]
 
 Chain: T_base_board = T_base_flange (RTDE at the exposure, mauer.capture) @ T_flange_cam (--handeye, default
-[vision] handeye_file; --nominal-mount = [camera.mount] PLACEHOLDER, planning/simulation only) @ T_cam_board (solvePnP
+[vision] handeye_file; --nominal-mount = [camera.mount] design value, planning/simulation only) @ T_cam_board (solvePnP
 with --intrinsics / [vision] intrinsics_file; --nominal-intrinsics = ideal pinhole).
 
 repeat: N shots from the CURRENT pose (no motion without --move-mm). Per visible board: mean T_base_board and its
@@ -101,7 +101,7 @@ def select_specs(cfg: dict, text: str | None) -> dict:
 
 def flange_cam(args, cfg: dict) -> tuple[np.ndarray, str]:
     if args.nominal_mount:
-        return config.T_flange_cam_nominal(cfg), "nominal [camera.mount] (PLACEHOLDER)"
+        return config.T_flange_cam_nominal(cfg), "nominal [camera.mount] (design value)"
     p = config.repo_path(args.handeye or cfg.get("vision", {}).get("handeye_file", "calib/handeye.json"))
     if not p.exists():
         raise SystemExit(f"{p} missing - run tools/calib_handeye.py solve (or --nominal-mount for a rough check)")
@@ -414,7 +414,7 @@ def build_parser() -> argparse.ArgumentParser:
         p = sub.add_parser(name, help=hlp)
         p.add_argument("--boards", default="all", help="comma-separated board names or 'all'")
         p.add_argument("--handeye", default=None, help="T_flange_cam JSON (default [vision] handeye_file)")
-        p.add_argument("--nominal-mount", action="store_true", help="use the [camera.mount] PLACEHOLDER instead")
+        p.add_argument("--nominal-mount", action="store_true", help="use the [camera.mount] design value instead")
         p.add_argument("--intrinsics", default=None)
         p.add_argument("--nominal-intrinsics", action="store_true")
         p.add_argument("--dataset", default=None, help="also store the images as a 'measure' dataset")

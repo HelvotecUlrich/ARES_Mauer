@@ -7,7 +7,7 @@
     py.exe tools/ur_check.py block my.script          # run URScript statements as a block with start/done markers
     py.exe tools/ur_check.py grip open|close          # gripper pulse on [ur] do_grip_*, the pulse read back via RTDE
 
-Host: --host, else [ur].host from config/station.toml (currently an empty PLACEHOLDER). URSim: --host 127.0.0.1
+Host: --host, else [ur].host from config/station.toml (the lab's UR5). URSim: --host 127.0.0.1
 (tests/ursim.py start). A block is its own `def` program: it stops any program running on the controller.
 """
 from __future__ import annotations
