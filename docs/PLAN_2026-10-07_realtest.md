@@ -70,3 +70,12 @@ Environment: Windows py.exe 3.14.3, PySide6 6.11.0, pyads 3.5.2, ids_peak, OpenC
 - 2026-10-07 night: A5 done; motion guard (74e8328), stamp (f954da9), review fixes (48e79b9). RoboDK reruns for the
   new park / looks running (they also write the stamped jobs). HMI workflow wf_7a4d2776-741 resumed: maps cached,
   design done (88 kB), core implementing in /mnt/c/Users/samue/ARES_Mauer_wt/hmi-core.
+- 2026-10-08 02:20: second review of the guard world fixed (22340be: wall that stands at a later start, pins, stone
+  edges, floor, frames, restart fill, stamp from a clean tree). Guarded full sims (main, c_acb) running against
+  22340be; then the RoboDK reruns (stamps must match 22340be or later). HMI workflow: core, camera, status, twin done
+  (branches hmi-*), integrate running in /mnt/c/Users/samue/ARES_Mauer_wt/hmi-integration; then review, test plan, fix.
+  hmi-integration is based on ed5ea2a: merging main brings 21b7731 + 22340be (rigs.py URRobot guard needs
+  approach_mm=job.approach_mm; REAL start at stop k > 0 needs restart_fill / declare_placed like tools/run_job.py).
+- 2026-10-08 02:47: guarded full sims against 22340be: main 76/76 (243 detours, 661 s), c_acb 74/74 (230, 605 s),
+  nothing refused. RoboDK reruns started (main, then c_acb, both with video). HMI integrate done (639 passed; smoke run
+  SIM + twin on port 20640; screenshot /mnt/c/Users/samue/ARES_Mauer_wt/hmi_screenshot.png); review + test plan running.
