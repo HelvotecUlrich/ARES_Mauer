@@ -370,6 +370,16 @@ def supports(stone: Stone, by_course: dict, length: float) -> list:
     return [s for s in by_course.get(stone.course - 1, []) if s.leg == stone.leg and overlap(s, stone, length)]
 
 
+def corners_below(stone: Stone, by_course: dict, length: float, head_joint: float = 0.0) -> list:
+    """Stones of the course below (same leg) that touch `stone` end to end - an aligned joint, at an opening's jamb
+    (guarded world sim 2026-10-09: A.1.3 below the window, set after the jamb stone A.2.2h, ended with its corner
+    1 mm under it). They go before `stone` like its supports."""
+    if stone.course == 0:
+        return []
+    return [s for s in by_course.get(stone.course - 1, [])
+            if s.leg == stone.leg and adjacent(s, stone, length, head_joint)]
+
+
 def _by_course(stones: Sequence[Stone]) -> dict:
     out: dict = {}
     for s in stones:
@@ -444,7 +454,7 @@ def _fill_stop(cfg: Mapping, stones: Sequence[Stone], by_course: dict, placed: s
     batch = []
     while True:
         cand = [s for s in stones if s.key not in placed and reach(s.course, s.u - a)
-                and all(p.key in placed for p in supports(s, by_course, L))
+                and all(p.key in placed for p in supports(s, by_course, L) + corners_below(s, by_course, L, hj))
                 and not _in_the_open(s, by_course.get(0, []), placed, piece, L, hj)]
         if not cand:
             return batch
@@ -563,7 +573,7 @@ def _sequence_leg(cfg: Mapping, stones: Sequence[Stone], reach: Callable[[int, f
 
 def check_plan(cfg: dict, stones: list, plan: list) -> list:
     """Independent check of a plan (one leg or the straight wall): every stone once, supports (footprint overlap)
-    before the stone, never a stone under a placed one, never a course-0 stone in the open."""
+    before the stone, never a stone under a placed one or under its corner, never a course-0 stone in the open."""
     L = cfg["brick"]["length"]
     hj = cfg["brick"]["head_joint"]
     by_course = _by_course(stones)
@@ -580,6 +590,9 @@ def check_plan(cfg: dict, stones: list, plan: list) -> list:
         for t in above:
             if t.key in placed:
                 errors.append(f"stone {s.key} would have to go under the already placed {t.key}")
+        for t in by_course.get(s.course + 1, []):
+            if t.leg == s.leg and t.key in placed and adjacent(t, s, L, hj):
+                errors.append(f"stone {s.key} would end with its corner under the already placed {t.key}")
         if _in_the_open(s, by_course.get(0, []), placed, piece, L, hj):
             errors.append(f"stone {s.key} placed in the open (no neighbour in course 0)")
         placed.add(s.key)

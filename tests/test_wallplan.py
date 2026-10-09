@@ -128,6 +128,41 @@ def test_check_plan_catches_order_errors(cfg, table):
     assert "before its support" in errs
 
 
+def test_check_plan_catches_a_stone_set_under_the_corner_of_one_above(cfg):
+    """Guarded world sim 2026-10-09 (the C with a window in A): the jamb stone A.2.2h (u 700..800, course 2) was set
+    before A.1.3 (u 500..700, course 1) below the window - A.1.3's corner then ends 1 mm under the jamb stone (the
+    motion guard refuses the target). A stone of the course above that touches a stone end to end (aligned joint at
+    an opening) counts like one lying on it."""
+    A = wp.Leg("A", 5, openings=(wp.Opening(300.0, 700.0, 2, 3, "window"),))
+    st = wp.layout_leg(cfg, A)
+    late = next(s for s in st if s.course == 1 and s.u == 600.0)
+    jamb = next(s for s in st if s.course == 2 and s.u == 750.0)
+    rest = sorted((s for s in st if s.key not in (late.key, jamb.key)), key=lambda s: (s.course, s.u))
+    k = max(i for i, s in enumerate(rest) if s.course <= 1) + 1
+    bad = rest[:k] + [jamb, late] + rest[k:]
+    errs = wp.check_plan(cfg, st, [(0.0, bad)])
+    assert any(str(late.key) in e and str(jamb.key) in e and "corner" in e for e in errs), errs
+    good = rest[:k] + [late, jamb] + rest[k:]
+    assert wp.check_plan(cfg, st, [(0.0, good)]) == []
+
+
+def test_the_window_leg_built_from_its_far_end_sets_no_stone_under_a_corner(cfg):
+    """The C with a door and a window (main config): A is built from its corner with B; the stone below the window
+    next to the jamb comes before the jamb stones above it."""
+    c = config.load()
+    legs = wp.legs(c)
+    A = next(lg for lg in legs if lg.openings)
+    _, plans = _plans(c)
+    order = [s for _, b in plans[A.name] for s in b]
+    pos = {s.key: i for i, s in enumerate(order)}
+    L = float(c["brick"]["length"])
+    by = wp._by_course(order)
+    for s in order:
+        for t in by.get(s.course + 1, []):
+            if wp.adjacent(t, s, L):
+                assert pos[s.key] < pos[t.key], (s.label, t.label)
+
+
 def test_reach_fn_is_conservative(table):
     reach, lo, hi, grid = wp.reach_fn(table)
     assert grid == 20.0 and lo[3] == -620.0 and hi[3] == 620.0             # 840 mm, pins up (2026-10-06)
@@ -336,6 +371,20 @@ def test_a_door_in_the_middle_of_course_0_frees_the_first_stone_of_each_piece(cf
     assert wp.check_plan(cfg, st, plan) == []
     order = [s.key for _, b in plan for s in b]
     assert sorted(order) == sorted(s.key for s in st)
+
+
+def _plans(c):
+    """(stones, plans) of the config's legs as make_job plans them (own reach table per leg side, stop limits)."""
+    import sys
+    if str(REPO / "tools") not in sys.path:
+        sys.path.insert(0, str(REPO / "tools"))
+    import make_job as mj
+    from mauer import reach_cache
+    legs = wp.legs(c)
+    tables = {lg.name: reach_cache.get(c, mj.leg_dist(c, lg, c["wall"]["dist_nominal"]), side=mj.leg_side(c, lg))
+              for lg in legs}
+    return wp.plan_legs(c, legs, {}, True, float(c["wall"]["reach_margin_mm"]), tables=tables,
+                        a_limits=mj.stop_limits(c, legs, c["wall"]["dist_nominal"]))
 
 
 def _closures(c):
