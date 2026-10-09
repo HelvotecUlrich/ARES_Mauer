@@ -140,6 +140,9 @@ class Sim:
         self.H = cfg["brick"]["height"]
         hb = cfg.get("half_brick") or {}
         self.held_h = max(float(self.H), float(hb.get("height", self.H)) + float(hb.get("grasp_above_top_mm", 0.0)))
+        self.rel = float(cfg.get("ur", {}).get("release_above_mm", 0.0))
+        # [ur] release_above_mm (Samuel 2026-10-09): every place (wall, magazine) lets go this far above the place pose,
+        # the stone drops onto the pins / cones (LSim.lay / transfer: the planner targets the raised pose)
         # a held stone reaches this far below the TCP: a half stone is held 20 mm higher (2026-10-09)
         self.magazine: list = []
         self.n_new = 0
@@ -619,8 +622,8 @@ class LSim(Sim):
             # until the station is updated (observed 2026-10-05: prebuilt stones jumped to the wall origin)
             self.RDK.Update()
             st.setParentStatic(self.f_wall)
+        st.setPose(self.wall_pose(task))         # the drop from [ur] release_above_mm onto the pins (or: failed)
         if failed:
-            st.setPose(self.wall_pose(task))
             st.setColor(FAILED)
         st.setName(f"Stone_wall_{task.label}_{self.n_new:03d}")
         set_static(self.RDK, st, stones_in_station(self.RDK), self.ares)
@@ -752,12 +755,13 @@ class LSim(Sim):
             return self.fail(rec, "retreat from the magazine", None, None, st, task)
         self.go(ret[0])
         place = invH(self.f_ares.Pose()) * self.f_wall.Pose() * self.g.to_robodk(task.T_wall_tcp)
+        place = transl(0, 0, self.rel) * place           # let go [ur] release_above_mm above (wall z = ARES z: up)
         side, low = None, None
         if getattr(task, "side_mm", 0.0):                # from the side (Samuel 2026-10-09): the shift in the ARES frame
             from mauer import config as mconfig
             off = place * transl(float(task.side_mm), 0, 0)
             side = tuple(off.Pos()[i] - place.Pos()[i] for i in range(3))
-            low = mconfig.side_lift_mm(self.cfg)
+            low = mconfig.side_lift_mm(self.cfg) - self.rel     # above the release pose
         P.z_safe = self.safe_z()
         res = P.plan_to(r.Joints().list(), place, side=side, low=low)
         if not res:
@@ -818,7 +822,7 @@ class LSim(Sim):
         if not ret:
             return self.transfer_fail(rec, "retreat from the station", None, None, held=st)
         self.go(ret[0])
-        place = self.slot_T[mid]
+        place = transl(0, 0, self.rel) * self.slot_T[mid]             # let go [ur] release_above_mm above the slot
         P.z_safe = self.station_safe_z()
         res = P.plan_to(r.Joints().list(), place)
         if not res:
@@ -830,6 +834,7 @@ class LSim(Sim):
         self.go(moves)
         self.RDK.Update()
         st.setParentStatic(self.f_ares)                                       # release on the deck
+        st.setPose(self.slot_T[mid] * rotx(PI) * T_tc_cad(self.cfg, kind))   # the drop onto the cones
         st.setName(st.Name().replace("Stone_station_", "Stone_mag_").replace(ssid, mid))
         set_static(self.RDK, st, stones_in_station(self.RDK), self.ares)
         self.cam_pairs([st], True)

@@ -9,7 +9,7 @@ floor in one row; 2026-10-09: two rows, stacks up to 5 - layout "final", `final/
 |---|---|
 | `floor_map.pdf` | page 1: top view at 1:20 on A3 (print at 100 %, check the 1 m bar); page 2: marking points, diagonals, parts |
 | `floor_plan.md` | the same coordinates and diagonals as text |
-| `laser_sheet_1..5.dxf` | Trotec, 4 mm MDF 800 x 600: layer CUT (red) = cut, ENGRAVE (blue) = engrave on top, SHEET (green) = sheet border, do not process |
+| `laser_sheet_1..5.dxf` | Trotec, 5 mm MDF 800 x 600 (`[guides] mdf_t`, Samuel 2026-10-09; was 4 mm): layer CUT (red) = cut, ENGRAVE (blue) = engrave on top, SHEET (green) = sheet border, do not process |
 | `laser_test.dxf` | test pieces - cut and check these first |
 | `laser_sheets.png` / `.svg` | previews |
 | `locating_cone.stl` | Bambu Lab X1E, already in print orientation (narrow top on the bed, peg up, no supports) |
@@ -17,7 +17,8 @@ floor in one row; 2026-10-09: two rows, stacks up to 5 - layout "final", `final/
 
 ## Order
 
-1. **Test first.** Cut `peg_fit_test.dxf` (`tools/make_peg_test.py`: peg holes 7.5-8.4 mm finished, labelled) and
+1. **Test first** - again in the 5 mm MDF (2026-10-09: `kerf_mm` and `peg_hole_d` were measured in 4 mm MDF, the
+   cones have 4 mm pegs now, `[guides] peg_len`). Cut `peg_fit_test.dxf` (`tools/make_peg_test.py`: peg holes 7.5-8.4 mm finished, labelled) and
    push a printed cone into each: the smallest hole that takes the peg by hand without play -> `[guides] peg_hole_d`,
    regenerate. Then cut `laser_test.dxf`, print two `locating_cone.stl`. Check:
    - the cones' pegs go into the peg holes of `test1` without play and without force (`[guides] peg_hole_d`);
@@ -34,6 +35,6 @@ floor in one row; 2026-10-09: two rows, stacks up to 5 - layout "final", `final/
 4. Put the cones in (pegs into the peg holes; the engraved circles show where), the board plates onto the V-tabs
    (plate names are engraved next to their tab), S0 / S1 into their windows.
 
-The stones stand pins up directly on the MDF (`[wall] base_z` = 4 mm), two diagonally opposite sockets of each
+The stones stand pins up directly on the MDF (`[wall] base_z` = 5 mm), two diagonally opposite sockets of each
 first-course stone over its two cones; the courses above sit 1 mm apart (`[brick] bed_joint`, mortar joint) -> course
 pitch 121 mm.

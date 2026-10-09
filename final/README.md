@@ -35,8 +35,8 @@ der Tabelle füllen.** Ein Stein darüber ist der Software unbekannt und liegt d
 | `steinliste.pdf` | Steine je Schenkel / Lage, Beladeplan, **Stapelhöhen der Station**, Setzreihenfolge |
 | `floor_map.pdf` | Bodenplan 1:20 auf A3 (in 100 % drucken, 1-m-Balken prüfen), Seite 2: Messpunkte, Diagonalen, Teile |
 | `floor_plan.md` | dieselben Koordinaten und Diagonalen als Text |
-| `laser/laser_sheet_1..5.dxf` | MDF 4 mm 800 × 600: Blatt 1 + 2 Station, 3 – 5 Bodenführungen (Ebenen CUT / ENGRAVE / SHEET) |
-| `laser/peg_fit_test.dxf`, `laser/laser_test.dxf` | **zuerst** lasern und prüfen (Ablauf: `targets/guides/README.md`) |
+| `laser/laser_sheet_1..5.dxf` | MDF **5 mm** 800 × 600 (seit 2026-10-09, vorher 4 mm): Blatt 1 + 2 Station, 3 – 5 Bodenführungen (Ebenen CUT / ENGRAVE / SHEET) |
+| `laser/peg_fit_test.dxf`, `laser/laser_test.dxf` | **zuerst** im 5-mm-MDF lasern und prüfen (Schnittbreite und Zapfenloch wurden in 4 mm eingemessen) (Ablauf: `targets/guides/README.md`) |
 | `laser/locating_cone.stl` | Zentrierkegel, 64 Stück + Reserve (Bambu X1E, liegt schon in Druckrichtung) |
 | `laser/laser_sheets.png` / `.svg` | Vorschau der Blätter |
 | `l_wall_sim.md` | Bericht der RoboDK-Kollisionssimulation |

@@ -230,6 +230,18 @@ def test_station_cut_never_runs_through_a_stack_of_the_other_row(cfg, data):
         mg.station_pieces(c2, data["params"], mg._station_plates(c2))
 
 
+def test_guides_are_cut_from_5_mm_mdf_the_existing_plates_stay_4(cfg, data):
+    """Samuel 2026-10-09: the MDF of the guides (wall strips, station piece) is 5 mm thick instead of 4 - the first
+    course and the station stones stand 1 mm higher, the cone pegs are 1 mm shorter than the MDF. The board plates
+    (W0..W7, S0 / S1, 2026-10-05) and the deck plate on ARES (2026-10-08) are made already: 4 mm."""
+    p = data["params"]
+    assert cfg["guides"]["mdf_t"] == 5.0 and p.mdf_t == 5.0
+    assert cfg["wall"]["base_z"] == 5.0 and cfg["pickup_station"]["holder_z"] == 5.0
+    assert p.peg_len == pytest.approx(p.mdf_t - 1.0)
+    assert cfg["plates"]["mdf_t"] == 4.0 and cfg["deck"]["holder_z"] == 4.0
+    assert all(abs(float(t["xyz"][2]) - 4.1) < 1e-9 for t in cfg["targets"] if t.get("parent") in ("wall", "station"))
+
+
 def test_cli_writes_everything(tmp_path):
     assert mg.main(["--out", str(tmp_path), "--no-map"]) == 0
     for f in ("laser_sheet_1.dxf", "laser_test.dxf", "laser_sheets.svg", "laser_sheets.png", "locating_cone.stl",

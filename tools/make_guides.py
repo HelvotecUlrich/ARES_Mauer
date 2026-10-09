@@ -6,7 +6,7 @@ on A3 at a fixed scale + a coordinate table) to measure out the room.
 
 Design (config [guides], Samuel 2026-10-06: stones PINS UP ([brick] pins_up), MDF strip + printed locating cones,
 carpet tape, V-tabs for the existing board plates, station on the floor in one row):
-- Per wall leg a 4 mm MDF strip ([plates] mdf_t), [guides] strip_width wide, centred on the leg's wall line, from
+- Per wall leg an MDF strip ([guides] mdf_t, 5 mm since 2026-10-09), [guides] strip_width wide, centred on the leg's wall line, from
   u = 0 to n0 x pitch. Every first-course stone stands directly on the strip ([wall] base_z = mdf_t); two peg holes
   per stone take the pegs of two locating cones in diagonally opposite sockets of its underside (a half stone: one
   cone in each of its two sockets).
@@ -96,7 +96,7 @@ class GuideParams:
 
 def params(cfg: dict) -> GuideParams:
     gd, pl, b = cfg["guides"], cfg["plates"], cfg["brick"]
-    mdf = float(pl["mdf_t"])
+    mdf = float(gd.get("mdf_t", pl["mdf_t"]))       # guides 5 mm since 2026-10-09; the board plates stay [plates] mdf_t
     hb = cfg.get("half_brick") or b
     p = GuideParams(
         pitch=float(b["length"]), strip_w=float(gd["strip_width"]), mdf_t=mdf, stone_l=float(b["length"]),
@@ -113,7 +113,7 @@ def params(cfg: dict) -> GuideParams:
     if not b.get("pins_up"):
         raise ValueError("make_guides is designed for [brick] pins_up = true (locating cones in the sockets)")
     if abs(float(cfg["wall"]["base_z"]) - mdf) > 1e-9:
-        raise ValueError("[wall] base_z must equal [plates] mdf_t: the first course stands on the MDF strip")
+        raise ValueError("[wall] base_z must equal [guides] mdf_t: the first course stands on the MDF strip")
     if not 0.0 < p.locator_h < p.socket_depth or p.peg_len >= mdf:
         raise ValueError("[guides]: locator_h must be inside the socket and the peg shorter than the MDF is thick")
     if 2 * cone_r(p, p.locator_h) <= p.peg_d + 4.0:

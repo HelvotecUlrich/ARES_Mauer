@@ -115,8 +115,9 @@ grasp_above_top_mm = 20.0   # ASSUMPTION (Samuel 2026-10-09: "bei halben Steinen
 side = "front"              # Samuel 2026-10-02: wall on the short (front) edge of ARES, ARES moves sideways (+y)
 courses = 4                 # CONFIRMED: Samuel 2026-10-05 (4 stones high); was 3 (PLACEHOLDER)
 bond_offset = 0.5           # running bond, half a stone (100 mm) = pin spacing of the stone
-base_z = 4.0                # ASSUMPTION (design 2026-10-06, [guides]): pins up -> the first course stands directly on
-                            # the 4 mm MDF guide strip ([plates] mdf_t), located by two printed cones in its sockets.
+base_z = 5.0                # ASSUMPTION (design 2026-10-06, [guides]): pins up -> the first course stands directly on
+                            # the MDF guide strip ([guides] mdf_t: 5 mm since 2026-10-09, was 4), located by two printed
+                            # cones in its sockets.
                             # In the reach-cache key -> reach tables recomputed in RoboDK
 dist_nominal = 840.0        # CONFIRMED: Samuel 2026-10-06, ARES farther from the wall (was 740 = reach study 2026-10-02, the plates
                             # then ended 10 mm before the ARES front). 840: ARES front 220 mm from the wall face, 110 mm
@@ -472,7 +473,7 @@ margin = 14.0               # ASSUMPTION: plain plates (station, calib): MDF mar
 
 [guides]
 # Floor guides of the first course and of the pick-up station (design Samuel/Claude 2026-10-06, stones PINS UP:
-# tools/make_guides.py -> targets/guides/): per wall leg a laser-cut 4 mm MDF strip ([plates] mdf_t; Trotec 800 x
+# tools/make_guides.py -> targets/guides/): per wall leg a laser-cut MDF strip ([guides] mdf_t; Trotec 800 x
 # 600 mm) centred on the wall line, fixed with carpet tape. Every first-course stone stands directly on the strip
 # (bottom at [wall] base_z) and is located by TWO 3D-printed locating cones (Bambu Lab X1E) in two diagonally
 # opposite sockets of its underside (position +-socket_clearance, rotation about +-0.25 deg); each cone has a peg in a
@@ -481,6 +482,10 @@ margin = 14.0               # ASSUMPTION: plain plates (station, calib): MDF mar
 # joints (u = 200 k) for the plates' V-notches. Strips are cut into pieces (<= segment_max, cut cut_offset after a
 # stone joint so a V-tab stays whole) joined with dovetails; the last two stones of a leg and the first two of the
 # next form one L-piece across the corner (exact corner offset).
+mdf_t = 5.0                 # CONFIRMED: Samuel 2026-10-09 ("das MDF fuer die Guides neu 5 mm dick anstatt 4"): wall
+                            # strips and the station piece. The board plates ([plates] mdf_t) and the deck plate on
+                            # ARES stay 4 mm (made 2026-10-05 / 2026-10-08). kerf_mm and peg_hole_d were measured in
+                            # 4 mm MDF: cut peg_fit_test.dxf and laser_test.dxf in the 5 mm MDF first
 strip_width = 120.0         # ASSUMPTION: = [plates] block_width (plates rest against the edge at v = +60) = stone
                             # width
 segment_max = 760.0         # ASSUMPTION: longest piece along x on the 800 x 600 bed (20 mm margins)
@@ -504,7 +509,7 @@ locator_h = 21.5            # ASSUMPTION (design, Samuel 2026-10-06): socket dep
                             # mouth), the final fit is the same socket_clearance
 socket_clearance = 0.25     # ASSUMPTION: radial clearance of the printed cone in the socket - print the test first
 peg_d = 8.0                 # ASSUMPTION: peg under every locating cone (printed: 7.94 mm, Samuel 2026-10-08)
-peg_len = 3.0               # ASSUMPTION: 1 mm shorter than the MDF is thick
+peg_len = 4.0               # ASSUMPTION: 1 mm shorter than the MDF is thick ([guides] mdf_t 5; 3.0 for the 4 mm MDF)
 peg_hole_d = 8.0            # CONFIRMED: Samuel 2026-10-08 peg_fit_test.dxf (tools/make_peg_test.py): the hole labelled
                             # 8.0 (cut circle 7.7 = 8.0 - kerf_mm) measured ~7.82 mm, printed peg 7.94 -> press fit.
                             # Keep kerf_mm as is: this value is tied to the 0.3 mm compensation (real hole kerf ~0.12)
@@ -550,7 +555,8 @@ row2_y = 410.0              # ASSUMPTION (Samuel 2026-10-09: "moeglichst viele S
                             # uebereinander"): centre line of row 2, 200 mm behind row 1 - a 76.6 mm lane between the rib
                             # crests for the open jaws (28 mm beyond the stone face, 45 mm below its top; the motion
                             # guard's jaw capsules 45 mm) when a stone of one row is picked beside a full stack of the other
-holder_z = 4.0              # ASSUMPTION: = [wall] base_z, the stones stand on the 4 mm MDF piece
+holder_z = 5.0              # ASSUMPTION: = [wall] base_z, the stones stand on the MDF piece ([guides] mdf_t 5 mm,
+                            # 2026-10-09; was 4)
 ares_xyz = [737.5, -630.0, 0.0]       # ASSUMPTION: ARES base_link at the dock: row centre line - 840 mm; ARES front
                                       # (x 560) 70 mm before the station area
 ares_rpy_deg = [0.0, 0.0, 90.0]       # ASSUMPTION: ARES x (forward) towards the row (+y station)
@@ -625,8 +631,9 @@ release_above_mm = 10.0     # CONFIRMED: Samuel 2026-10-09 ("immer 10 mm drueber
                             # wall) opens the jaws this far above the place pose, along the frame z, and the stone
                             # settles on the cones / pins below. Going down to the place pose pressed the stone onto
                             # the magazine cones: protective stop (run 2026-10-09_103903, first real dry run).
-                            # URRobot / SimRobot place_magazine, place_wall (mauer.backends.release_pose). Not in the
-                            # RoboDK simulation (robodk/) yet: it still places at the place pose
+                            # URRobot / SimRobot place_magazine, place_wall (mauer.backends.release_pose); RoboDK
+                            # (robodk/simulate.py LSim.lay / transfer, 2026-10-09): the planner targets the raised
+                            # pose, the stone drops onto its place pose after the release
 place_side_mm = 20.0        # ASSUMPTION (Samuel 2026-10-09: "seitlich und von oben anfahren ... dann seitlich zum Stein
                             # nebendran hinfahren", 20 mm chosen): a wall stone with ONE placed neighbour in its course
                             # comes down this far beside its place pose (along the stone, away from the neighbour) and
