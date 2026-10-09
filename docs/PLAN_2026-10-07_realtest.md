@@ -160,3 +160,24 @@ other arm only a 400 mm piece at its free end + a 600 mm door (all courses) next
   diff (6 lenses + 2 skeptics); RoboDK full sim + video of the new C running (scratchpad rdk_newc.log; rerun at the
   end if code in the stamp paths changes). Ultracode on (Samuel): workflows per task.
 
+
+## Track F (Samuel 2026-10-09, parallel to the real test): pick-up station with two rows, sim of the new C
+
+Samuel: "die Sim mit dem angepassten C machen und schauen, dass wir bei der Aufladestation moeglichst viele Steine
+haben, evtl. zwei Reihen und 4 uebereinander". Branch `station2` (worktree `/mnt/c/Users/samue/ARES_Mauer_wt/station2`),
+NOT merged while the real test runs in main.
+- [x] F1 station layout: two rows 200 mm apart, stacks up to 4, half stacks one-sided in row 1 (the MDF piece keeps its
+      one cut at the centre); make_guides cut across both rows clear of every stack (c1f962f, af3ec2a)
+- [x] F2 guarded world sim found a regression of 8026b5d: A built from the corner set the window jamb A.2.2h before
+      A.1.3 below the window (guard refused, 1 mm under the jamb) -> wallplan corners_below + check_plan (75900e7)
+- [x] F3 guarded world sim seeds 2 + 3 stopped at the 3rd layer of the outer row-2 stacks (no IK for the approach
+      after docking within dock_tol_mm but turned) -> make_job drops station slots without IK within the dock
+      tolerance ([pickup_station] dock_tol_deg 1.5, ASSUMPTION) (b9e2ba7): station 52 = 40 full + 12 half
+      (56 = 42 + 14 at the nominal dock); the C needs 41 full from the station -> one operator top-up before leg C
+- [x] F4 validation: guarded world sims seeds 1-3 67/67 seated, no violation, max 2.1-2.6 mm, 4 station trips,
+      50-52 ARES moves; RoboDK 67/67 + 53/53 transfers + 11 routes collision-free, 23.2 min, no video (RoboDK crashed
+      twice in Cam2D_Snapshot during the camera live view of the real test) (387ba3d)
+- [ ] F5 after the real test: `git merge station2` in main (config/station.toml: [pickup_station] vs the test's
+      [deck] / [magtest] changes; results/l_wall_sim.md), rerun `py.exe robodk/simulate.py --animate` IN MAIN for the
+      RoboDK stamp (the worktree's stamp has no git commit: Windows git cannot follow the WSL worktree path), then
+      the guarded sims; the 7 stale tests of the old main C (wf_05321a78-cff) are still red
