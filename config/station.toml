@@ -526,20 +526,28 @@ rpy_in_wall_deg = [0.0, 0.0, 0.0]     # ASSUMPTION
 table_z = 0.0               # ASSUMPTION (floor station 2026-10-06): no table, the stones stand on the MDF piece on the
                             # floor (the "table" slab of the models lies under the floor); table_size is the station
                             # area ARES must keep clear of
-table_size = [1475.0, 280.0]  # ASSUMPTION: station area = the MDF piece: windows y 10..142.6, stones y 148.3..271.7;
-                            # x: stones +-717.5 around the centre + 20 mm
-row_y = 210.0               # ASSUMPTION: stone row centre line in the station frame (windows to 142.6 + web 5.7 +
-                            # stone 61.7)
+table_size = [1475.0, 480.0]  # ASSUMPTION: station area = the MDF piece: windows y 10..142.6, row 1 stones y
+                            # 148.3..271.7, row 2 y 348.3..471.7 (2026-10-09: two rows); x: stones +-717.5 around the
+                            # centre + 20 mm
+row_y = 210.0               # ASSUMPTION: centre line of row 1 (near ARES) in the station frame (windows to 142.6 + web
+                            # 5.7 + stone 61.7)
+row2_y = 410.0              # ASSUMPTION (Samuel 2026-10-09: "moeglichst viele Steine, evtl. zwei Reihen und 4
+                            # uebereinander"): centre line of row 2, 200 mm behind row 1 - a 76.6 mm lane between the rib
+                            # crests for the open jaws (28 mm beyond the stone face, 45 mm below its top; the motion
+                            # guard's jaw capsules 45 mm) when a stone of one row is picked beside a full stack of the other
 holder_z = 4.0              # ASSUMPTION: = [wall] base_z, the stones stand on the 4 mm MDF piece
 ares_xyz = [737.5, -630.0, 0.0]       # ASSUMPTION: ARES base_link at the dock: row centre line - 840 mm; ARES front
                                       # (x 560) 70 mm before the station area
 ares_rpy_deg = [0.0, 0.0, 90.0]       # ASSUMPTION: ARES x (forward) towards the row (+y station)
-slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [1045.0, 210.0], [1250.0, 210.0]]
-                            # ASSUMPTION: full-stone stack centres (station x 737.5 -+512.5 / 307.5 / 102.5),
-                            # length along x
-slot_layers = 2             # ASSUMPTION: stacks of 2 (layer 2 inside the course-1 reach +-740 mm)
-half_slots_xy = [[70.0, 210.0], [1405.0, 210.0]]   # ASSUMPTION: half-stone stacks at 737.5 -+667.5
-half_slot_layers = 2        # ASSUMPTION
+slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [1045.0, 210.0], [1250.0, 210.0],
+            [225.0, 410.0], [430.0, 410.0], [635.0, 410.0], [840.0, 410.0], [1045.0, 410.0], [1250.0, 410.0]]
+                            # ASSUMPTION: full-stone stack centres (station x 737.5 -+512.5 / 307.5 / 102.5), length
+                            # along x; row 1 at row_y, row 2 at row2_y (2026-10-09). tools/make_job.py drops every
+                            # stack layer the UR cannot reach (IK, tool clearance) from the dock, RoboDK checks the rest
+slot_layers = 4             # ASSUMPTION (Samuel 2026-10-09: "4 uebereinander"); was 2
+half_slots_xy = [[70.0, 210.0], [1405.0, 210.0], [70.0, 410.0], [1405.0, 410.0]]   # ASSUMPTION: half-stone stacks at
+                            # 737.5 -+667.5 in both rows
+half_slot_layers = 4        # ASSUMPTION (2026-10-09); was 2
 
 [routes]
 # ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in

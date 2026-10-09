@@ -178,7 +178,7 @@ def test_pieces_do_not_overlap_in_the_room_and_dovetails_interlock(data):
 def test_pieces_fit_the_laser_and_do_not_overlap_on_the_sheets(data):
     p = data["params"]
     sheets = mg.nest(data["leg_pieces"] + data["station_pieces"], p)
-    assert len(sheets) <= 4
+    assert len(sheets) <= 5                      # 5 since the two-row station (2026-10-09); 4 before
     for items in sheets:
         polys = [[mg._place(q, rot, off) for q in pc.outline] for pc, rot, off in items]
         for P in polys:

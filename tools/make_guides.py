@@ -437,14 +437,16 @@ def station_pieces(cfg: dict, p: GuideParams, plates: list[tuple[str, Pt, tuple[
     T = cfg["pickup_station"]["xyz_in_wall"]
     th = math.radians(float(ps["rpy_in_wall_deg"][2]))
     X, Y = (float(v) for v in ps["table_size"])
-    ry = float(ps["row_y"])
+    rows = sorted({float(ps["row_y"])} | ({float(ps["row2_y"])} if "row2_y" in ps else set()))
     hb = cfg.get("half_brick", cfg["brick"])
-    stacks = [(f"s{i:02d}", float(x), "full", float(cfg["brick"]["length"])) for i, (x, _) in enumerate(ps["slots_xy"])]
-    stacks += [(f"h{i:02d}", float(x), "half", float(hb["length"])) for i, (x, _) in enumerate(ps.get("half_slots_xy", []))]
-    for _, (x, y) in enumerate(list(ps["slots_xy"]) + list(ps.get("half_slots_xy", []))):
-        if abs(float(y) - ry) > 1e-6:
-            raise ValueError("[pickup_station]: every stack must stand on row_y (one row)")
-    stacks.sort(key=lambda s: s[1])
+    stacks = [(f"s{i:02d}", float(x), "full", float(cfg["brick"]["length"]), float(y))
+              for i, (x, y) in enumerate(ps["slots_xy"])]
+    stacks += [(f"h{i:02d}", float(x), "half", float(hb["length"]), float(y))
+               for i, (x, y) in enumerate(ps.get("half_slots_xy", []))]
+    for st in stacks:
+        if not any(abs(st[4] - r) < 1e-6 for r in rows):
+            raise ValueError(f"[pickup_station]: stack {st[0]} at y {st[4]:g} is on no row (row_y / row2_y)")
+    stacks.sort(key=lambda s: (s[1], s[4]))           # 2026-10-09: two rows - the cuts lie between the stacks of both
     # cut candidates: middle of the gaps between neighbouring stacks, away from the blocks
     cands = []
     reach = p.pin_along / 2.0 + cone_r(p, 0.0) + 5.0                    # the cones of a stone stay this far inside
@@ -465,7 +467,7 @@ def station_pieces(cfg: dict, p: GuideParams, plates: list[tuple[str, Pt, tuple[
         hw, hh2 = w / 2 + p.window_c, hh / 2 + p.window_c
         win.append((name, c, [(c[0] - hw, c[1] - hh2), (c[0] + hw, c[1] - hh2), (c[0] + hw, c[1] + hh2),
                               (c[0] - hw, c[1] + hh2)]))
-    joint_ys = [ry] + sorted({round(c[1], 3) for _, c, _ in plates})
+    joint_ys = rows + sorted({round(c[1], 3) for _, c, _ in plates})
     xs = [0.0] + cuts + [X]
     out = []
     for i, (x0, x1) in enumerate(zip(xs, xs[1:])):
@@ -476,10 +478,10 @@ def station_pieces(cfg: dict, p: GuideParams, plates: list[tuple[str, Pt, tuple[
         if i > 0:
             feats[3] = [(Y - y, "tail") for y in joint_ys]
         pc = Piece(f"station{i + 1}", (float(T[0]), float(T[1]), th), decorate(p, poly, feats), notes="station")
-        for name, x, kind, _ in stacks:
+        for name, x, kind, _, y in stacks:
             if x0 < x < x1:
-                pc.holes += stone_holes(p, kind, (x, ry), 0.0)
-                pc.blocks.append((name, (x, ry), 0.0, kind))
+                pc.holes += stone_holes(p, kind, (x, y), 0.0)
+                pc.blocks.append((name, (x, y), 0.0, kind))
         for name, c, w in win:
             if x0 < c[0] < x1:
                 pc.windows.append(w)
@@ -745,10 +747,9 @@ def floor_model(cfg: dict, p: GuideParams, legs: list, sites: list, st_pieces: l
     ps = cfg["pickup_station"]
     st = Piece("station", (float(ps["xyz_in_wall"][0]), float(ps["xyz_in_wall"][1]),
                            math.radians(float(ps["rpy_in_wall_deg"][2]))), [])
-    ry = float(ps["row_y"])
     for name, xys, length in (("s", ps["slots_xy"], float(b["length"])), ("h", ps.get("half_slots_xy", []),
                                                                          float(hb["length"]))):
-        for i, (x, _) in enumerate(xys):
+        for i, (x, ry) in enumerate(xys):                 # each stack on its own row (two rows since 2026-10-09)
             m.stones.append((f"{name}{i:02d}", [st.to_wall(q) for q in ((x - length / 2, ry - wr), (x + length / 2, ry - wr),
                                                                        (x + length / 2, ry + wr), (x - length / 2, ry + wr))]))
     X, Y = (float(v) for v in ps["table_size"])
