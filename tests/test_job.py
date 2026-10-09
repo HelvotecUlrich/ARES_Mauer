@@ -208,11 +208,12 @@ def test_station_stacks(job, cfg):
     first takeable one in take order."""
     stn = job.station
     st = mjob.SlotState.station(stn)
-    low, top = stn.slot("s00l1"), stn.slot("s00l2")
-    assert low.stack_id == top.stack_id == "s00" and (low.layer, top.layer) == (1, 2)
-    assert top.T_station_tcp[2, 3] - low.T_station_tcp[2, 3] == pytest.approx(cfg["brick"]["height"] +
-                                                                              cfg["brick"]["bed_joint"])
-    assert not st.can_take("s00l1") and st.can_take("s00l2")
+    low, second = stn.slot("s00l1"), stn.slot("s00l2")
+    assert low.stack_id == second.stack_id == "s00" and (low.layer, second.layer) == (1, 2)
+    assert second.T_station_tcp[2, 3] - low.T_station_tcp[2, 3] == pytest.approx(cfg["brick"]["height"] +
+                                                                                 cfg["brick"]["bed_joint"])
+    top = max(s.layer for s in stn.slots if s.stack_id == "s00")              # 2026-10-09: stacks up to 4 high
+    assert not st.can_take("s00l1") and st.can_take(f"s00l{top}")
     with pytest.raises(ValueError):
         st.take("s00l1")
     taken = []
@@ -221,9 +222,9 @@ def test_station_stacks(job, cfg):
         assert all(o not in st.filled for o in st.stack if st.stack[o] == st.stack[sid] and st.layer[o] > st.layer[sid])
         st.take(sid)
         taken.append(sid)
-    assert len(taken) == sum(s.kind == "full" for s in stn.slots)
-    n_top = len({stn.slot(i).stack_id for i in taken})                       # one top stone per full stack first
-    assert all(stn.slot(i).layer == 2 for i in taken[:n_top]) and all(stn.slot(i).layer == 1 for i in taken[n_top:])
+    assert len(taken) == sum(stn.slot(i).kind == "full" for i in stn.take_order)   # without the dropped layers
+    layers = [stn.slot(i).layer for i in taken]                              # the top stones of the stacks first
+    assert layers == sorted(layers, reverse=True)
 
 
 def test_validate_station_stacks(job):
@@ -232,7 +233,7 @@ def test_validate_station_stacks(job):
     bad.station.slot("s02l2").kind = "half"                                   # a half stone on a full one
     bad.station.take_order.remove("s03l1")                                    # s03l2 would float
     text = "\n".join(mjob.validate(bad))
-    for frag in ("station stack s01: layers [1, 3]", "station stack s02: mixed stone types",
+    for frag in ("station stack s01: layers [1, 3", "station stack s02: mixed stone types",
                  "station slot s03l2: in take_order but the slot(s) below it are not (['s03l1'])"):
         assert frag in text, frag
 
@@ -521,6 +522,8 @@ def test_l_magazine_types_follow_the_stones(ljob):
 def test_reload_plan_unit(ljob):
     mag = mjob.SlotState.magazine(ljob.magazine, filled=[], kinds={})
     st = mjob.SlotState.station(ljob.station)
+    while st.count("half") > 2:                    # fewer half stones in the station than half slots in the magazine
+        st.take(st.next_take(kind="half"))
     n_half = st.count("half")
     up = ["half", "full", "full"] + ["half"] * n_half + ["full"]
     plan = mjob.reload_plan(mag, st, up)

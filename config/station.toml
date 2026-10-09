@@ -510,10 +510,14 @@ window_clearance = 0.3      # ASSUMPTION: per side around the plain station plat
 # ([guides]); stacks 2 high (the pins of the lower stone in the sockets of the upper one, 1 mm [brick] bed_joint).
 # Reach from the front reach table at the wall distance 840 mm: layer 1 =
 # course 0 +-760 mm, layer 2 = course 1 +-740 mm (minus the 20 mm reach margin) along the row from the UR axis.
-# 6 full stacks at 205 mm pitch (5 mm gaps; the jaws open across the stone, not between the stacks) +-102.5 / 307.5 /
-# 512.5 mm and a half-stone stack at each end at +-667.5 mm: 12 full + 4 half stones per trip. The existing plain
-# S0 / S1 plates (140 x 132 mm) drop into closed windows (y 10..142.6, a 10 mm web in front) of the same MDF piece
-# on the ARES side of the row.
+# 2026-10-09 (Samuel: as many stones as possible, two rows, 4 high): full stacks at 205 mm pitch (5 mm gaps; the jaws
+# open across the stone, not between the stacks) +-102.5 / 307.5 / 512.5 mm around the UR axis, 6 in row 2, 5 in row 1
+# (without +512.5) and half-stone stacks in row 1 at -667.5 and +462.5 / 565 / 667.5 mm (one-sided: the MDF piece
+# needs its one cut at the centre, between the stacks of both rows). With the unreachable top layers dropped:
+# 42 full + 14 half = 56 stones; with the magazine (12 full + 2 half) the whole C (53 full + 14 half) without a top-up
+# (variants with the half stacks in row 2 gave 46 full + 6 half / 40 full + 16 half and needed one top-up).
+# The existing plain S0 / S1 plates (140 x 132 mm) drop into closed windows (y 10..142.6, a 10 mm web in front) of
+# the same MDF piece on the ARES side of the row.
 # Station frame: origin at the front-left corner of the station area (ARES side = the windows' front edge), x along
 # the row, y away from ARES, z up from the floor.
 xyz_in_wall = [-2437.5, 1470.0, 0.0]  # ASSUMPTION: 600 mm farther from the C than before (2026-10-08: with the UR
@@ -539,14 +543,18 @@ holder_z = 4.0              # ASSUMPTION: = [wall] base_z, the stones stand on t
 ares_xyz = [737.5, -630.0, 0.0]       # ASSUMPTION: ARES base_link at the dock: row centre line - 840 mm; ARES front
                                       # (x 560) 70 mm before the station area
 ares_rpy_deg = [0.0, 0.0, 90.0]       # ASSUMPTION: ARES x (forward) towards the row (+y station)
-slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [1045.0, 210.0], [1250.0, 210.0],
+slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [1045.0, 210.0],
             [225.0, 410.0], [430.0, 410.0], [635.0, 410.0], [840.0, 410.0], [1045.0, 410.0], [1250.0, 410.0]]
-                            # ASSUMPTION: full-stone stack centres (station x 737.5 -+512.5 / 307.5 / 102.5), length
-                            # along x; row 1 at row_y, row 2 at row2_y (2026-10-09). tools/make_job.py drops every
-                            # stack layer the UR cannot reach (IK, tool clearance) from the dock, RoboDK checks the rest
+                            # ASSUMPTION: full-stone stack centres (station x 737.5 -+102.5 / 307.5 / 512.5), length
+                            # along x; row 1 at row_y without +512.5, row 2 at row2_y (2026-10-09).
+                            # tools/make_job.py drops every stack layer the UR cannot reach (IK, tool clearance) from the
+                            # dock (2026-10-09: the 4th layer of the outer row-2 stack on each side), RoboDK checks the
+                            # rest
 slot_layers = 4             # ASSUMPTION (Samuel 2026-10-09: "4 uebereinander"); was 2
-half_slots_xy = [[70.0, 210.0], [1405.0, 210.0], [70.0, 410.0], [1405.0, 410.0]]   # ASSUMPTION: half-stone stacks at
-                            # 737.5 -+667.5 in both rows
+half_slots_xy = [[70.0, 210.0], [1200.0, 210.0], [1302.5, 210.0], [1405.0, 210.0]]   # ASSUMPTION: half-stone stacks
+                            # in row 1 at 737.5 - 667.5 and + 462.5 / 565 / 667.5 (5 mm gap to the full stack, 2.5 mm
+                            # between the half stacks); the outer ones reach 3 layers. Row-2 half stacks reached at most
+                            # 3 / 2 layers
 half_slot_layers = 4        # ASSUMPTION (2026-10-09); was 2
 
 [routes]
