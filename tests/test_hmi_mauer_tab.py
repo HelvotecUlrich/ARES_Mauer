@@ -356,3 +356,27 @@ def test_mauer_tab_options_follow_the_state(fake_win, qapp):
     fw.status.emit(status(eAmrState=C.ST_MANUAL))
     qapp.processEvents()
     assert tab.browse_btn.isEnabled()
+
+
+def test_real_speed_slider_works_with_the_mouse_during_a_run(fake_win, qapp):
+    """Samuel 2026-10-09: the typed speed field could not be edited (no keyboard focus: Space / Esc are HALT) - a
+    slider with - / + that never takes the keyboard, live during a REAL run, applied through set_speed_pct."""
+    w, fw, fake = fake_win
+    tab = w.mauer
+    fake.set_session(short_sim_session())
+    fake.set_state("running", mode="real")
+    qapp.processEvents()
+    s = tab.real_speed
+    assert s.isEnabled() and s.focusPolicy() == Qt.NoFocus and s.value() == 25 and tab.real_speed_lbl.text() == "25 %"
+    plus = next(b for b in tab.findChildren(type(tab.start_btn)) if b.text() == "+")
+    minus = next(b for b in tab.findChildren(type(tab.start_btn)) if b.text() == "-")
+    assert plus.isEnabled() and minus.isEnabled()
+    plus.click()
+    assert s.value() == 30 and fake.of("set_speed_pct")[-1] == (30.0,) and tab.real_speed_lbl.text() == "30 %"
+    minus.click()
+    minus.click()
+    assert fake.of("set_speed_pct")[-1] == (20.0,)
+    for _ in range(10):
+        minus.click()
+    assert s.value() == 5                                          # the floor of the range
+    assert tab.options().speed_pct == 5.0

@@ -14,8 +14,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QRadioButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout,
-    QWidget,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QRadioButton, QScrollArea, QSlider, QSpinBox, QSplitter,
+    QVBoxLayout, QWidget,
 )
 
 from mauer.reference import Pose2D
@@ -34,6 +34,9 @@ STATE_COLOURS = {"empty": "#888888", "loading": "#66AACC", "loaded": "#AAAAAA", 
                  "paused": "#FFAA00", "aborted": "#FF8844", "error": "#FF4444", "done": "#44CCFF",
                  "releasing": "#66AACC"}
 LEFT_W = 430
+
+
+SPEED_MIN_PCT, SPEED_STEP_PCT = 5, 5     # REAL speed slider [%]
 
 
 def _spin(lo: float, hi: float, value: float, suffix: str, decimals: int = 1, step: float = 1.0) -> QDoubleSpinBox:
@@ -166,17 +169,14 @@ class MauerTab(QWidget):
         self.step = QCheckBox("Step mode: confirm every motion")
         self.step.toggled.connect(self._ctl.set_step)
         self.sim_speed = _spin(0.0, 5.0, float(self._ctx.hmi.get("sim_step_s", 0.3)), " s", 2, 0.1)
-        self.real_speed = _spin(5.0, 100.0, float(self._ctx.hmi.get("real_speed_pct", 25.0)), " %", 0, 5.0)
-        self.real_speed.setToolTip("REAL: % of the [ur] speeds and accelerations, from the next move on (instead of "
-                                   "the pendant's speed slider)")
-        self.real_speed.valueChanged.connect(self._ctl.set_speed_pct)
+        speed_row = self._speed_row()
         self.sim_speed.valueChanged.connect(self._ctl.set_sim_step_s)
         stops = QHBoxLayout()
         stops.addWidget(self.stop_from)
         stops.addWidget(lbl("to"))
         stops.addWidget(self.stop_to)
         for w in (self.scenario, self.seed, self.lenient, self.stop_from, self.stop_to, self.camera_loop,
-                  self.save_images, self.step, self.sim_speed, self.real_speed, self.guard, self.untouched):
+                  self.save_images, self.step, self.sim_speed, self.guard, self.untouched):
             w.setFocusPolicy(Qt.NoFocus)
         later = QHBoxLayout()
         later.addWidget(self.resume_log, 1)
@@ -193,11 +193,50 @@ class MauerTab(QWidget):
         f.addRow(self.save_images)
         f.addRow(self.step)
         f.addRow("SIM s per motion", self.sim_speed)
-        f.addRow("REAL speed", self.real_speed)
+        f.addRow("REAL speed", speed_row)
         self._option_widgets = (self.sim_rb, self.real_rb, self.scenario, self.seed, self.lenient, self.stop_from,
                                 self.stop_to, self.camera_loop, self.save_images, self.guard, self.untouched,
                                 self.resume_btn_log, self.resume_clear)
         return box
+
+    def _speed_row(self) -> QWidget:
+        """REAL speed in % of the [ur] speeds / accelerations: a slider with - / + (mouse only - Space / Esc are HALT,
+        a field to type in would take the keyboard). Changeable during the run: it acts from the next motion on (the
+        block already sent keeps its speed). Samuel 2026-10-09: no speed slider in use on the pendant."""
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.real_speed = QSlider(Qt.Horizontal)
+        self.real_speed.setRange(SPEED_MIN_PCT, 100)
+        self.real_speed.setSingleStep(SPEED_STEP_PCT)
+        self.real_speed.setPageStep(SPEED_STEP_PCT)
+        self.real_speed.setTickInterval(10)
+        self.real_speed.setTickPosition(QSlider.TicksBelow)
+        self.real_speed.setTracking(False)               # dragging: applied on release, not at every pixel
+        self.real_speed.setValue(int(round(float(self._ctx.hmi.get("real_speed_pct", 25.0)))))
+        self.real_speed.setFocusPolicy(Qt.NoFocus)
+        self.real_speed.setToolTip("REAL: % of the [ur] speeds and accelerations, from the next motion on - also "
+                                   "during the run")
+        self.real_speed_lbl = QLabel()
+        self.real_speed_lbl.setMinimumWidth(110)
+        minus = self._button("-", "#333333", lambda: self._step_speed(-SPEED_STEP_PCT), 34)
+        plus = self._button("+", "#333333", lambda: self._step_speed(SPEED_STEP_PCT), 34)
+        self.real_speed.valueChanged.connect(self._speed_changed)
+        self.real_speed.sliderMoved.connect(lambda v: self.real_speed_lbl.setText(f"{v} % (release)"))
+        row.addWidget(minus)
+        row.addWidget(self.real_speed, 1)
+        row.addWidget(plus)
+        row.addWidget(self.real_speed_lbl)
+        self._speed_changed(self.real_speed.value(), send=False)
+        return w
+
+    def _step_speed(self, d: int) -> None:
+        self.real_speed.setValue(self.real_speed.value() + d)       # clamped to the range; valueChanged applies it
+
+    def _speed_changed(self, v: int, send: bool = True) -> None:
+        self.real_speed_lbl.setText(f"{v} %")
+        if send:
+            self._ctl.set_speed_pct(float(v))
 
     def _buttons(self) -> QWidget:
         w = QWidget()
@@ -372,7 +411,7 @@ class MauerTab(QWidget):
                           seed=self.seed.value(), lenient_grasp=self.lenient.isChecked(),
                           sim_step_s=self.sim_speed.value(), guard=self.guard.isChecked(),
                           resume_log=self._resume_log, stop_untouched=self.untouched.isChecked(),
-                          speed_pct=self.real_speed.value())
+                          speed_pct=float(self.real_speed.value()))
 
     def _set_resume_log(self, path) -> None:
         """The run log of an interrupted run: its stones stand (placed / declared), the run starts after them."""
