@@ -215,7 +215,7 @@ def test_station_stacks(job, cfg):
     assert low.stack_id == second.stack_id == "s00" and (low.layer, second.layer) == (1, 2)
     assert second.T_station_tcp[2, 3] - low.T_station_tcp[2, 3] == pytest.approx(cfg["brick"]["height"] +
                                                                                  cfg["brick"]["bed_joint"])
-    top = max(s.layer for s in stn.slots if s.stack_id == "s00")              # 2026-10-09: stacks up to 4 high
+    top = max(s.layer for s in stn.slots if s.stack_id == "s00" and s.id in stn.take_order)   # up to 5 high
     assert not st.can_take("s00l1") and st.can_take(f"s00l{top}")
     with pytest.raises(ValueError):
         st.take("s00l1")

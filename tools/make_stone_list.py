@@ -75,6 +75,22 @@ def loading_plan(job: mjob.Job) -> dict:
     return out
 
 
+def station_stacks(job: mjob.Job) -> list[dict]:
+    """Every stack of the pick-up station (name as engraved on the MDF piece, tools/make_guides.py) with its row (1 =
+    near ARES), centre (station frame, mm), stone type and the number of layers the UR reaches (the job's take order;
+    2026-10-09: 5 / 4 / 2 - a stone above them is unknown to the software and in the jaws' way), sorted by row and x."""
+    st = job.station
+    rows = sorted({round(float(s.T_station_tcp[1, 3]), 1) for s in st.slots})
+    out = []
+    for sid in sorted({s.stack_id for s in st.slots}):
+        sl = [s for s in st.slots if s.stack_id == sid]
+        base = min(sl, key=lambda s: s.layer)
+        y = round(float(base.T_station_tcp[1, 3]), 1)
+        out.append({"stack": sid, "row": rows.index(y) + 1, "x_mm": float(base.T_station_tcp[0, 3]), "y_mm": y,
+                    "kind": base.kind, "layers": sum(1 for s in sl if s.id in st.take_order)})
+    return sorted(out, key=lambda s: (s["row"], s["x_mm"]))
+
+
 def _de(x: float, nd: int = 1) -> str:
     return f"{x:.{nd}f}".replace(".", ",")
 
@@ -164,6 +180,14 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
               Paragraph(f"<b>Start:</b> Magazin auf ARES {_n(plan['magazine'])}, Abholstation voll "
                         f"{_n(plan['station'])} → zu Beginn {sum(plan['magazine'].values()) + sum(plan['station'].values())}"
                         " Steine bereitlegen.", P), Spacer(1, 2 * mm)]
+    stacks = station_stacks(job)
+    rows = [["Stapel (Gravur)", "Reihe", "x [mm]", "Typ", "Lagen"]]
+    rows += [[s["stack"], f"{s['row']} ({'vorne' if s['row'] == 1 else 'hinten'})", f"{s['x_mm']:.1f}",
+              KIND_DE[s["kind"]], s["layers"] if s["layers"] else "leer lassen"] for s in stacks]
+    story += [Paragraph("<b>Abholstation füllen:</b> jeder Stapel genau so hoch wie angegeben (Reihe 1 = an ARES; "
+                        "x ab der linken Kante der MDF-Platte wie im Bodenplan). Ein Stein darüber ist der Software "
+                        "unbekannt und liegt den Greifbacken im Weg.", P), Spacer(1, 1 * mm),
+              table(rows, (35, 30, 22, 18, 22)), Spacer(1, 2 * mm)]
     rows = [["Fahrt", "ab Halt (Schenkel)", "vorher in die Station nachlegen", "Station → Magazin"]]
     for i, tr in enumerate(plan["trips"], 1):
         rows.append([i, f"{tr['stop']} ({tr['leg'] or '-'})", _n(tr["topup"]) if any(tr["topup"].values()) else "–",
@@ -210,7 +234,7 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
     SimpleDocTemplate(str(path), pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=15 * mm,
                       bottomMargin=15 * mm, title="Steinliste", author="ARES_Mauer").build(
         story, onFirstPage=footer, onLaterPages=footer)
-    return {"counts": n_kind, "plan": plan, "put_out": put}
+    return {"counts": n_kind, "plan": plan, "put_out": put, "stacks": stacks}
 
 
 def main(argv: list[str] | None = None) -> int:
