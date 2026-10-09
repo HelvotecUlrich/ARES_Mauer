@@ -177,7 +177,12 @@ NOT merged while the real test runs in main.
 - [x] F4 validation: guarded world sims seeds 1-3 67/67 seated, no violation, max 2.1-2.6 mm, 4 station trips,
       50-52 ARES moves; RoboDK 67/67 + 53/53 transfers + 11 routes collision-free, 23.2 min, no video (RoboDK crashed
       twice in Cam2D_Snapshot during the camera live view of the real test) (387ba3d)
-- [ ] F5 after the real test: `git merge station2` in main (config/station.toml: [pickup_station] vs the test's
+- [x] F5 Samuel: "5 Lagen in der Mitte", keep both station boards (one would do for the fit, at a less precise
+      heading; a longer station does not help - reach ends at +-725 / +-550 mm): the 4 inner row-1 stacks 5 high ->
+      56 = 44 full + 12 half, the whole C from one fill; the stone list gives the layers per stack (e465091).
+      Guarded world sims seeds 1-3 67/67, no violation, max 2.1-2.6 mm; RoboDK 67/67 + 53/53, 0 top-ups, 11 routes
+      clean, WITH video results/l_wall_sim.mp4 (15.2 min)
+- [ ] F6 after the real test: `git merge station2` in main (config/station.toml: [pickup_station] vs the test's
       [deck] / [magtest] changes; results/l_wall_sim.md), rerun `py.exe robodk/simulate.py --animate` IN MAIN for the
       RoboDK stamp (the worktree's stamp has no git commit: Windows git cannot follow the WSL worktree path), then
       the guarded sims; the 7 stale tests of the old main C (wf_05321a78-cff) are still red
