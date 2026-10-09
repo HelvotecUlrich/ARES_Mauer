@@ -78,9 +78,14 @@ def test_real_magazine_dry_run_opens_the_ur_only(qapp, tmp_path, mt_session):
     try:
         c.set_session(mt_session)
         assert c.can("prepare", "real") == (True, "")                     # no --ares: ARES is not moved
-        c.prepare(RunOptions("real", step=True))
+        c.prepare(RunOptions("real", step=True, speed_pct=25.0))
         assert wait_until(lambda: c.state == "ready" and reports, 30.0, qapp), c.state
         assert not any(x in calls for x in ("ads", "camera", "intrinsics", "handeye")), calls
+        u = mt_session.cfg["ur"]                    # REAL speed (2026-10-09: no speed slider on the pendant)
+        assert c.rig.robot.speeds.v_joint == pytest.approx(0.25 * u["v_joint"])
+        assert c.rig.robot.speeds.a_lin == pytest.approx(0.25 * u["a_lin"])
+        c.set_speed_pct(50.0)                       # live, from the next move on
+        assert c.rig.robot.speeds.v_contact == pytest.approx(0.5 * u["v_contact"])
         assert c.rig.robot is not None and c.rig.ads is None and c.rig.camera_kind is None
         assert isinstance(c.sequencer, MagazineTest)
         rep = reports[-1]

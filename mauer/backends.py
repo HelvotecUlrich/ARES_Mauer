@@ -81,16 +81,24 @@ class Shot:
     meta: dict = field(default_factory=dict)
 
 
+def release_pose(T_frame_tcp: np.ndarray, release_above_mm: float) -> np.ndarray:
+    """A place pose (magazine slot in the ARES frame, wall stone in the wall frame) raised by release_above_mm along
+    the frame z (up): where the jaws let go ([ur] release_above_mm, Samuel 2026-10-09)."""
+    return g.transl(0.0, 0.0, float(release_above_mm)) @ np.asarray(T_frame_tcp, float)
+
+
 # ── protocols ─────────────────────────────────────────────────────────────────
 @runtime_checkable
 class Robot(Protocol):
     def park(self) -> Any: ...
     def goto_look(self, look) -> Any: ...
     def shot(self, camera) -> Any: ...
-    def pick_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full") -> Any: ...
+    def pick_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full",
+                      approach_mm: float | None = None) -> Any: ...
     def place_wall(self, T_base_wall: np.ndarray, stone) -> Any: ...
     def pick_station(self, T_base_station: np.ndarray, slot) -> Any: ...
-    def place_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full") -> Any: ...
+    def place_magazine(self, slot, T_base_ares: np.ndarray, kind: str = "full",
+                       approach_mm: float | None = None) -> Any: ...
     def dry_place(self, T_base_frame: np.ndarray, stone, hover_mm: float, dwell_s: float) -> Any: ...
     def is_parked(self) -> bool: ...
     def is_idle(self) -> bool: ...
@@ -144,13 +152,16 @@ class URRobot:
         self.link, self.cfg, self.job, self.sim = link, cfg, job, sim
         u, b = cfg["ur"], cfg["brick"]
         self.speeds = script.Speeds.from_config(dict(cfg))
+        self._speeds_cfg = self.speeds
         self.T_flange_tcp = np.asarray(job.T_flange_tcp, float)
         self.park_q = np.asarray(job.park_q_rad, float)
         self.approach_mm = float(job.approach_mm)
+        # every place lets go this far above the place pose: the stone settles on the cones / pins (2026-10-09)
+        self.release_above_mm = float(u.get("release_above_mm", 0.0))
         self.contact_mm = float(u.get("contact_mm", 60.0))
         self.do_open, self.do_close = int(u["do_grip_open"]), int(u["do_grip_close"])
         self.pulse_s, self.wait_s = float(u["grip_pulse_s"]), float(u["grip_wait_s"])
-        self.timeout_s = float(timeout_s)
+        self.timeout_s = self._timeout_cfg = float(timeout_s)
         # the IK checks write their error code into the register the link reads ([ur] reg_error; PolyScope 3.3 has
         # no script.REG_ERROR 26) and use the check the controller knows ([ur] ik_check, mauer.ur.script.IK_CHECKS)
         reg = getattr(link, "reg_error", None)
@@ -187,6 +198,12 @@ class URRobot:
         self.guard = guard
         self.holding: str | None = None          # kind of the stone the jaws may hold (guard), None = empty: set
         # when a pick starts, cleared only by a successful place - the operator confirms empty jaws at start-up
+
+    def set_speed_factor(self, f: float) -> None:
+        """Every following move at f times the [ur] speeds and accelerations (0 < f <= 1; the HMI's REAL speed, as
+        the pendant's speed slider). The block timeout grows by 1/f. A block already sent keeps its speed."""
+        self.speeds = self._speeds_cfg.scaled(f)
+        self.timeout_s = self._timeout_cfg / f
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _q_now(self) -> np.ndarray:
@@ -229,12 +246,13 @@ class URRobot:
                              + " | ".join(v.problems[-3:]), action=name)
         return self._vias(v.vias)
 
-    def _q_above(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, q_hint, name: str) -> np.ndarray:
-        """Joints of the approach pose (approach_mm along the frame z above the TCP pose), as the script's
-        get_inverse_kin(above, qnear) - nominal kinematics near the hint."""
+    def _q_above(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, q_hint, name: str,
+                 approach_mm: float | None = None) -> np.ndarray:
+        """Joints of the approach pose (approach_mm, default the job's, along the frame z above the TCP pose), as the
+        script's get_inverse_kin(above, qnear) - nominal kinematics near the hint."""
         from .simworld import ik_near
-        T = T_base_frame @ g.transl(0.0, 0.0, self.approach_mm) @ np.asarray(T_frame_tcp, float) @ \
-            g.inv(self.T_flange_tcp)
+        a = self.approach_mm if approach_mm is None else float(approach_mm)
+        T = T_base_frame @ g.transl(0.0, 0.0, a) @ np.asarray(T_frame_tcp, float) @ g.inv(self.T_flange_tcp)
         q = ik_near(T, np.asarray(q_hint, float))
         if q is None:
             raise RobotError(f"{name}: no IK solution for the approach pose", action=name)
@@ -279,7 +297,9 @@ class URRobot:
         except CaptureError as e:
             raise ShotError(str(e)) from e
 
-    def _pick(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str, kind: str = "full"):
+    def _pick(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str, kind: str = "full",
+              approach_mm: float | None = None):
+        a = self.approach_mm if approach_mm is None else float(approach_mm)
         if kind not in self.payloads:
             raise RobotError(f"{name}: no payload for stone type {kind!r}", action=name)
         self.held_kind = kind
@@ -287,13 +307,13 @@ class URRobot:
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
         column = T_base_frame @ np.asarray(T_frame_tcp, float)        # target TCP: the descent column
         if self.guard is not None:                   # the script's IK near the checked joints = the checked path
-            q = self._q_above(T_base_frame, T_frame_tcp, q, name)
+            q = self._q_above(T_base_frame, T_frame_tcp, q, name, a)
             path = self._guarded(q, name, vias, column)
         else:
             path = self._vias(vias)
         self.holding = kind                          # pessimistic from here on: a pick failing after the close may
         body = "\n".join([self._preamble(False), *path,             # leave the stone in the jaws (review 2026-10-07)
-                          self.script.pick_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
+                          self.script.pick_stone(T_base_frame, T_frame_tcp, a, q, self.speeds,
                                                  self.do_close, self.pulse_s, self.wait_s, do_open=self.do_open,
                                                  contact_mm=self.contact_mm, open_first=True,
                                                  payload_after=self.payloads[kind], reg_error=self.reg_error,
@@ -305,17 +325,19 @@ class URRobot:
                 self.holding = None
             raise
 
-    def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str):
+    def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str,
+               approach_mm: float | None = None):
+        a = self.approach_mm if approach_mm is None else float(approach_mm)
         T_base_frame = np.asarray(T_base_frame, float)
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
         column = T_base_frame @ np.asarray(T_frame_tcp, float)        # target TCP: the descent column
         if self.guard is not None:                   # the script's IK near the checked joints = the checked path
-            q = self._q_above(T_base_frame, T_frame_tcp, q, name)
+            q = self._q_above(T_base_frame, T_frame_tcp, q, name, a)
             path = self._guarded(q, name, vias, column)
         else:
             path = self._vias(vias)
         body = "\n".join([self._preamble(True), *path,
-                          self.script.place_stone(T_base_frame, T_frame_tcp, self.approach_mm, q, self.speeds,
+                          self.script.place_stone(T_base_frame, T_frame_tcp, a, q, self.speeds,
                                                   self.do_open, self.pulse_s, self.wait_s, do_close=self.do_close,
                                                   contact_mm=self.contact_mm,
                                                   payload_after=(self.tool_kg, self.tool_cog),
@@ -324,20 +346,28 @@ class URRobot:
         self.holding = None
         return res
 
-    def pick_magazine(self, slot, T_base_ares, kind: str = "full"):
-        return self._pick(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_pick_mag", kind)
+    def pick_magazine(self, slot, T_base_ares, kind: str = "full", approach_mm: float | None = None):
+        """approach_mm: approach / retract height above the slot (default the job's) - mauer.magtest lifts it so the
+        held stone clears the neighbouring stacks (magazine_approach_mm)."""
+        return self._pick(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_pick_mag", kind, approach_mm)
 
     def place_wall(self, T_base_wall, stone):
+        """The jaws open [ur] release_above_mm above the place pose (wall frame z), as place_magazine."""
         self.held_kind = getattr(stone, "kind", self.held_kind)
-        return self._place(T_base_wall, stone.T_wall_tcp, stone.qnear_rad, stone.via_q_rad, "mauer_place_wall")
+        return self._place(T_base_wall, release_pose(stone.T_wall_tcp, self.release_above_mm), stone.qnear_rad,
+                           stone.via_q_rad, "mauer_place_wall")
 
     def pick_station(self, T_base_station, slot):
         return self._pick(T_base_station, slot.T_station_tcp, slot.qnear_rad, None, "mauer_pick_station",
                           getattr(slot, "kind", "full"))
 
-    def place_magazine(self, slot, T_base_ares, kind: str = "full"):
+    def place_magazine(self, slot, T_base_ares, kind: str = "full", approach_mm: float | None = None):
+        """The jaws open [ur] release_above_mm above the slot pose (the stone drops onto the cones / pins and
+        centres itself; going down to the slot pose pressed the stone onto the cones -> protective stop, 2026-10-09).
+        approach_mm is measured from that release pose (default the job's)."""
         self.held_kind = kind
-        return self._place(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_place_mag")
+        return self._place(T_base_ares, release_pose(slot.T_ares_tcp, self.release_above_mm), slot.qnear_rad,
+                           None, "mauer_place_mag", approach_mm)
 
     def dry_place(self, T_base_frame, stone, hover_mm: float, dwell_s: float):
         """Magazine dry run (mauer/magtest.py): the held stone down to hover_mm above stone.T_wall_tcp in the frame,

@@ -292,3 +292,119 @@ def test_wall_runs_are_refused_while_the_frame_points_to_the_vehicle_rear(cfg, j
     assert not any("vehicle REAR" in p for p in preflight_real(front, job))
     from mauer import magtest
     assert magtest.preflight(cfg, job) == []
+
+
+def test_speed_factor_scales_every_following_move_and_the_timeout(cfg, job):
+    """HMI "REAL speed" (2026-10-09, no speed slider on the pendant): speeds and accelerations times f."""
+    from mauer.ur import script
+    link = _FakeLink(job.park_q_rad)
+    r = URRobot(link, cfg, job, guard=_guard(cfg, job))
+    t0 = r.timeout_s
+    r.set_speed_factor(0.25)
+    u = cfg["ur"]
+    assert r.speeds == script.Speeds(0.25 * u["v_joint"], 0.25 * u["a_joint"], 0.25 * u["v_lin"],
+                                     0.25 * u["a_lin"], 0.25 * u["v_contact"])
+    assert r.timeout_s == pytest.approx(4.0 * t0)
+    r.pick_magazine(job.magazine.slot(job.stops[0].stones[0].slot), g.inv(np.asarray(job.T_ares_base)))
+    body = link.blocks[-1][1]
+    assert f"v={script.num(0.25 * u['v_joint'])})" in body
+    r.set_speed_factor(1.0)                                      # back to the [ur] values, not 0.25 * 0.25
+    assert r.speeds == script.Speeds.from_config(dict(cfg)) and r.timeout_s == pytest.approx(t0)
+    with pytest.raises(ValueError):
+        r.set_speed_factor(0.0)
+
+
+# ── put-down height and separation (real dry run 2026-10-09) ──────────────────
+def test_put_down_lets_go_above_the_slot_and_comes_from_above_the_neighbours(cfg, job):
+    """Samuel 2026-10-09: the put-down pressed the stone onto the cones (protective stop) - the jaws open [ur]
+    release_above_mm above the slot pose; the approach is high enough for the held stone to clear the neighbours."""
+    from mauer.magtest import magazine_approach_mm
+    rel = float(cfg["ur"]["release_above_mm"])
+    assert rel == 10.0
+    link = _FakeLink(job.park_q_rad)
+    r = URRobot(link, cfg, job, guard=_guard(cfg, job))
+    T_base_ares = g.inv(np.asarray(job.T_ares_base))
+    src, dst = job.magazine.slot("r0y0l2"), job.magazine.slot("r0y1l1")
+    r.pick_magazine(src, T_base_ares)
+    link.st.actual_q = np.asarray(job.park_q_rad, float)
+    a = magazine_approach_mm(cfg, job, {"r0y0l1"}, {}, dst.id, "full", float(dst.T_ares_tcp[2, 3]) + rel,
+                             job.approach_mm)
+    b = cfg["brick"]                      # held stone bottom at the approach = neighbour pin tips + approach_clear_mm
+    assert a == pytest.approx(b["pin_length"] + cfg["magtest"]["approach_clear_mm"] - rel + b["height"])
+    assert a > job.approach_mm
+    r.place_magazine(dst, T_base_ares, "full", approach_mm=a)
+    name, body = link.blocks[-1]
+    assert name == "mauer_place_mag"
+    at, above = _pose_xyz_m(body, "pl_at"), _pose_xyz_m(body, "pl_above")     # local poses in the ARES frame [m]
+    z_slot = float(dst.T_ares_tcp[2, 3])
+    assert at[2] * 1000.0 == pytest.approx(z_slot + rel, abs=0.05)
+    assert above[2] * 1000.0 == pytest.approx(z_slot + rel + a, abs=0.05)
+    # nothing in the other stacks, or a stone below in the same stack: the job's approach
+    assert magazine_approach_mm(cfg, job, set(), {}, dst.id, "full", 0.0, 150.0) == 150.0
+    assert magazine_approach_mm(cfg, job, {"r0y1l1"}, {}, "r0y1l2", "full",
+                                float(job.magazine.slot("r0y1l2").T_ares_tcp[2, 3]) + rel, 150.0) == 150.0
+
+
+def test_sim_run_never_detours_via_the_park_pose_and_keeps_the_stone_clear(cfg, job1, tmp_path, monkeypatch):
+    """Samuel 2026-10-09: no park pose between the front and the magazine; the held stone keeps [magtest]
+    stone_clear_mm from every magazine stone on every joint move (the guard enforces it, park detours last)."""
+    from mauer import motionguard as mg
+    plans = []
+    orig = mg.MotionGuard.plan
+
+    def plan(self, q_from, q_to, holding=None, vias=(), column=None):
+        v = orig(self, q_from, q_to, holding, vias, column)
+        plans.append((self.park_last, self.stone_clear_mm, [np.allclose(q, self.park_q) for q in v.vias]))
+        return v
+    monkeypatch.setattr(mg.MotionGuard, "plan", plan)
+    w, seq = _sim(cfg, job1, tmp_path)
+    res = seq.run()
+    assert res.state == "done" and len(res.placed) == len(_moves(job1)) and w.violations == []
+    assert plans and all(p[0] and p[1] == cfg["magtest"]["stone_clear_mm"] for p in plans)
+    assert not any(any(p[2]) for p in plans)                      # no via is the park pose
+    rel = float(cfg["ur"]["release_above_mm"])
+    from mauer.sequencer import read_log
+    moves = [r for r in read_log(seq.log.path) if r["event"] == "magtest_move"]
+    assert len(moves) == len(_moves(job1)) and all(r["release_above_mm"] == rel for r in moves)
+    assert all(r["approach_put_mm"] >= job1.approach_mm and r["approach_pick_mm"] >= job1.approach_mm for r in moves)
+
+
+def test_guard_park_last_and_stone_clearance(cfg, job):
+    """MotionGuard.park_last moves the park detours behind the others; stone_clear_mm flags a held stone closer than
+    that to a magazine stone outside the descent column (default off: wall jobs unchanged)."""
+    gd = _guard(cfg, job)
+    assert gd.park_last is False and gd.stone_clear_mm == 0.0
+    from mauer.motionguard import GuardWorld
+    slot = job.magazine.slot("r0y0l1")
+    gd.set_world(GuardWorld(magazine=[slot]))
+    from mauer.simworld import ik_near
+    T_base_ares = g.inv(np.asarray(job.T_ares_base))
+    # held stone 20 mm above the neighbour's pin tips, straight above slot r0y1l1 (5 mm beside r0y0l1)
+    b = cfg["brick"]
+    dst = job.magazine.slot("r0y1l1")
+    T = T_base_ares @ g.transl(0.0, 0.0, b["pin_length"] + 20.0 + b["height"]) @ dst.T_ares_tcp
+    q = ik_near(T @ g.inv(np.asarray(job.T_flange_tcp)), np.asarray(dst.qnear_rad, float))
+    assert q is not None
+    assert gd.state_problems(q, "full") == []                     # 20 mm > CLEARANCE_MM
+    gd.stone_clear_mm = 30.0
+    assert any("magazine stone r0y0l1" in p for p in gd.state_problems(q, "full"))
+    assert gd.state_problems(q, None) == []                       # only a held stone keeps the larger distance
+
+
+def test_wall_place_lets_go_above_the_place_pose_too(cfg, job):
+    """Samuel 2026-10-09 "immer 10 mm drueber loslassen": place_wall opens [ur] release_above_mm above the place pose
+    (wall frame z), like the magazine put-down."""
+    rel = float(cfg["ur"]["release_above_mm"])
+    link = _FakeLink(job.park_q_rad)
+    r = URRobot(link, cfg, job, guard=_guard(cfg, job))
+    T_base_ares = g.inv(np.asarray(job.T_ares_base))
+    t = job.stops[0].stones[0]
+    r.pick_magazine(job.magazine.slot(t.slot), T_base_ares)
+    link.st.actual_q = np.asarray(job.park_q_rad, float)
+    r.place_wall(T_base_ares, t)                                  # magtest: wall frame = ARES frame
+    name, body = link.blocks[-1]
+    assert name == "mauer_place_wall"
+    at, above = _pose_xyz_m(body, "pl_at"), _pose_xyz_m(body, "pl_above")
+    assert at[2] * 1000.0 == pytest.approx(t.T_wall_tcp[2, 3] + rel, abs=0.05)
+    assert above[2] * 1000.0 == pytest.approx(t.T_wall_tcp[2, 3] + rel + job.approach_mm, abs=0.05)
+    assert r.holding is None

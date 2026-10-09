@@ -3,8 +3,12 @@
 ARES stands still - no ADS move, no camera, no wall. Two full stones are moved through the magazine: every MOVE picks
 one stone from a magazine slot, takes it forward over a place pose of the front leg, lowers it to [magtest] hover_mm
 above the place height, holds dwell_s and comes back up WITHOUT opening the jaws (URRobot.dry_place), then puts it
-down in the next slot (a real open). The plan comes from tools/make_magtest.py as a job file (mauer.job, meta "kind"
-"magtest"): one stop with ARES at the origin (wall frame = ARES frame), one StoneTask per move (its place pose
+down in the next slot (a real open, [ur] release_above_mm above the slot pose). Picks and put-downs approach the
+slot straight from above, from a height where the held stone clears every other magazine stack by [magtest]
+approach_clear_mm (magazine_approach_mm); on the way the motion guard keeps the held stone [magtest] stone_clear_mm
+from every stone and tries the detours without the park pose first (Samuel 2026-10-09: with the job's 150 mm approach
+the held stone hung 6.5 mm above the neighbour's pins and the guard sent the arm round the park pose). The plan comes
+from tools/make_magtest.py as a job file (mauer.job, meta "kind" "magtest"): one stop with ARES at the origin (wall frame = ARES frame), one StoneTask per move (its place pose
 T_wall_tcp, its pick slot `slot`), meta["magtest"]["moves"] = [{"key", "from", "to"}, ...] in run order.
 
     is_magtest(job)                      the job is a magazine dry run
@@ -53,6 +57,26 @@ def pendant_check(cfg: Mapping) -> tuple[str, str]:
         out.append(names[0] if names else f"between the vehicle axes ({np.degrees(np.arctan2(y, x)):.0f} deg from "
                                          "forward towards left)")
     return out[0], out[1]
+
+
+def magazine_approach_mm(cfg: Mapping, job: Job, filled, kinds: Mapping[str, str], sid: str, kind: str,
+                         z_tcp: float, approach_mm: float) -> float:
+    """Approach / retract height [mm] above the TCP pose of magazine slot `sid` (TCP z_tcp in the ARES frame: the slot
+    pose, or the release pose of a put-down) so that a held stone of `kind` hanging there clears the top (pins
+    included) of every stone in the OTHER stacks (`filled` slot ids, their types in `kinds`) by [magtest]
+    approach_clear_mm;
+    at least approach_mm (the job's). The TCP is the top centre of the held stone (body, pins above it)."""
+    b, hb = cfg["brick"], cfg.get("half_brick", {}) or {}
+    clear = float(cfg.get("magtest", {}).get("approach_clear_mm", 0.0))
+    height = {"full": float(b["height"]), "half": float(hb.get("height", b["height"]))}
+    pins = {"full": float(b.get("pin_length", 0.0)), "half": float(hb.get("pin_length", b.get("pin_length", 0.0)))}
+    stack = job.magazine.slot(sid).stack
+    tops = [float(s.T_ares_tcp[2, 3]) + pins.get(kinds.get(k, "full"), pins["full"])
+            for k in filled for s in [job.magazine.slot(k)] if s.stack != stack]
+    if not tops:
+        return float(approach_mm)
+    bottom_at_slot = float(z_tcp) - height.get(kind, height["full"])     # held stone bottom with the TCP at z_tcp
+    return max(float(approach_mm), max(tops) + clear - bottom_at_slot)
 
 
 def is_magtest(job: Job | None) -> bool:
@@ -131,6 +155,10 @@ class MagazineTest(Sequencer):
         self.moves = {tuple(mv["key"]): mv for mv in m["moves"]}
         self.n_moves = len(m["moves"])
         self.move_from: str | None = None            # pick slot of the move in progress (clear_held puts it back)
+        guard = getattr(robot, "guard", None)
+        if guard is not None:                        # Samuel 2026-10-09: no park pose between front and magazine
+            guard.park_last = True                   # unless nothing else is clear, and the held stone keeps
+            guard.stone_clear_mm = float(cfg.get("magtest", {}).get("stone_clear_mm", 0.0))   # its distance
 
     def _guard_world(self):
         return replace(super()._guard_world(), wall_stones=[])
@@ -155,11 +183,18 @@ class MagazineTest(Sequencer):
         if not self.magazine.can_fill(dst):
             raise SequencerError(f"{tag}: magazine slot {dst} cannot take a stone (taken, or nothing below it)", 0,
                                  t.key)
+        mag, filled, kinds = self.job.magazine, self.magazine.filled, self.magazine.kinds
+        rel = float(self.cfg["ur"].get("release_above_mm", 0.0))
+        a_pick = magazine_approach_mm(self.cfg, self.job, filled - {src}, kinds, src, "full",
+                                      float(mag.slot(src).T_ares_tcp[2, 3]), self.job.approach_mm)
+        a_put = magazine_approach_mm(self.cfg, self.job, filled - {src}, kinds, dst, "full",
+                                     float(mag.slot(dst).T_ares_tcp[2, 3]) + rel, self.job.approach_mm)
         self.log.write("magtest_move", move=i, n_moves=self.n_moves, stone=t.key, slot_from=src, slot_to=dst,
-                       u_mm=t.u_mm, course=t.course)
+                       u_mm=t.u_mm, course=t.course, approach_pick_mm=a_pick, approach_put_mm=a_put,
+                       release_above_mm=rel)
         self.move_from = src
-        self._robot("pick_magazine", f"{tag}: pick magazine slot {src}", self.job.magazine.slot(src),
-                    self.T_base_ares, "full")
+        self._robot("pick_magazine", f"{tag}: pick magazine slot {src} (from {a_pick:.0f} mm above)", mag.slot(src),
+                    self.T_base_ares, "full", approach_mm=a_pick)
         self.magazine.take(src)
         self._set_held({"from": "magazine", "slot": src, "kind": "full", "stone": list(t.key), "unknown": False})
         self._robot("dry_place", f"{tag}: dry place in front (u {t.u_mm:+.0f} mm, course {t.course}): down to "
@@ -167,8 +202,9 @@ class MagazineTest(Sequencer):
                     self.T_base_wall, t, self.hover_mm, self.dwell_s)
         self.log.write("dry_placed", move=i, stone=t.key, u_mm=t.u_mm, course=t.course, hover_mm=self.hover_mm,
                        T_base_tcp=self.T_base_wall @ t.T_wall_tcp)
-        self._robot("place_magazine", f"{tag}: put down in magazine slot {dst}", self.job.magazine.slot(dst),
-                    self.T_base_ares, "full")
+        self._robot("place_magazine", f"{tag}: put down in magazine slot {dst} (from {a_put:.0f} mm above, let go "
+                                      f"{rel:g} mm above the slot)", mag.slot(dst), self.T_base_ares, "full",
+                    approach_mm=a_put)
         self.magazine.fill(dst, "full")
         self._set_held(None)
         self.move_from = None

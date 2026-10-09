@@ -19,6 +19,7 @@ l.491) are accepted over 30002 (URSim, place block).
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Sequence
@@ -133,6 +134,13 @@ class Speeds:
         u = cfg["ur"]
         return cls(float(u["v_joint"]), float(u["a_joint"]), float(u["v_lin"]), float(u["a_lin"]),
                    float(u["v_contact"]))
+
+    def scaled(self, f: float) -> "Speeds":
+        """Every speed and acceleration times f (0 < f <= 1): the HMI's REAL speed, for a pendant without the
+        speed slider in use (2026-10-09)."""
+        if not (math.isfinite(f) and 0.0 < f <= 1.0):
+            raise ValueError(f"speed factor must be in (0, 1], got {f}")
+        return Speeds(self.v_joint * f, self.a_joint * f, self.v_lin * f, self.a_lin * f, self.v_contact * f)
 
 
 # ── single statements ────────────────────────────────────────────────────────

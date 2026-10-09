@@ -371,7 +371,7 @@ class FakeRunController(QObject):
     def __getattr__(self, name: str):
         if name in ("load_file", "build_from_config", "prepare", "recheck", "start", "resume", "confirm_pose",
                     "set_pose", "apply_odometry", "clear_held", "grab", "release", "pause", "abort", "halt",
-                    "answer_confirm", "set_step", "set_sim_step_s", "set_shot_processor"):
+                    "answer_confirm", "set_step", "set_sim_step_s", "set_speed_pct", "set_shot_processor"):
             return lambda *a, **k: self.calls.append((name, a))
         raise AttributeError(name)
 

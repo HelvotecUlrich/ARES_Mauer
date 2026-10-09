@@ -452,10 +452,11 @@ class SimRobot:
             raise RobotError(f"{what}: refused by the motion guard: " + " | ".join(v.problems[-3:]), action=what)
         self.guard_vias += len(v.vias)
 
-    def _guard_above(self, T_base_frame, T_frame_tcp, hint, what: str) -> None:
+    def _guard_above(self, T_base_frame, T_frame_tcp, hint, what: str, approach_mm: float | None = None) -> None:
         if self.guard is None:
             return
-        T = (np.asarray(T_base_frame, float) @ g.transl(0.0, 0.0, float(self.world.job.approach_mm))
+        a = float(self.world.job.approach_mm if approach_mm is None else approach_mm)
+        T = (np.asarray(T_base_frame, float) @ g.transl(0.0, 0.0, a)
              @ np.asarray(T_frame_tcp, float) @ g.inv(self.T_flange_tcp))
         q = ik_near(T, np.asarray(hint if hint is not None else self.q_cmd, float))
         if q is None:
@@ -517,20 +518,29 @@ class SimRobot:
         self.holding = None
         return sid, self.T_world_tcp() @ T_tcp_stone, T_tcp_stone
 
-    def pick_magazine(self, slot, T_base_ares, kind: str = "full"):
+    def pick_magazine(self, slot, T_base_ares, kind: str = "full", approach_mm: float | None = None):
         self._call("pick_magazine")
-        self._guard_above(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, f"pick magazine {slot.id}")
+        self._guard_above(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, f"pick magazine {slot.id}", approach_mm)
         self._move_tcp(np.asarray(T_base_ares, float) @ slot.T_ares_tcp, f"pick magazine {slot.id}")
         sid, T_ares_stone = self.world.mag_stones.pop(slot.id, (None, None))
         if sid is None:
             raise RobotError(f"magazine slot {slot.id} is empty (gripper closes on air)", action="pick_magazine")
         self._grip(sid, self.world.T_wall_ares_true() @ T_ares_stone, kind)
 
+    def _release_above(self) -> float:
+        return float(self.world.cfg.get("ur", {}).get("release_above_mm", 0.0))
+
     def place_wall(self, T_base_wall, stone):
+        """As URRobot.place_wall: the jaws open [ur] release_above_mm above the place pose; the stone drops that far
+        (world z) onto the pins / cones below."""
+        from .backends import release_pose
         self._call("place_wall")
-        self._guard_above(T_base_wall, stone.T_wall_tcp, stone.qnear_rad, f"place {stone.key}")
-        self._move_tcp(np.asarray(T_base_wall, float) @ stone.T_wall_tcp, f"place {stone.key}")
+        rel = self._release_above()
+        T_rel = release_pose(stone.T_wall_tcp, rel)
+        self._guard_above(T_base_wall, T_rel, stone.qnear_rad, f"place {stone.key}")
+        self._move_tcp(np.asarray(T_base_wall, float) @ T_rel, f"place {stone.key}")
         sid, T_wall_stone, T_tcp_stone = self._release()
+        T_wall_stone = g.transl(0.0, 0.0, -rel) @ T_wall_stone                # the drop
         kind = self.world.kind_of.get(sid, "full")
         if kind != getattr(stone, "kind", "full"):
             self.world.violations.append(f"{kind} stone {sid} placed as {stone.key} ({stone.kind})")
@@ -545,11 +555,17 @@ class SimRobot:
             raise RobotError(f"station slot {slot.id} is empty (gripper closes on air)", action="pick_station")
         self._grip(sid, self.world.T_wall_station_true @ T_st_stone, getattr(slot, "kind", "full"))
 
-    def place_magazine(self, slot, T_base_ares, kind: str = "full"):
+    def place_magazine(self, slot, T_base_ares, kind: str = "full", approach_mm: float | None = None):
+        """As URRobot.place_magazine: the jaws open [ur] release_above_mm above the slot pose; the stone drops that
+        far (world z) before the holder's cones / the pins below seat it."""
+        from .backends import release_pose
         self._call("place_magazine")
-        self._guard_above(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, f"place magazine {slot.id}")
-        self._move_tcp(np.asarray(T_base_ares, float) @ slot.T_ares_tcp, f"place magazine {slot.id}")
+        rel = self._release_above()
+        T_rel = release_pose(slot.T_ares_tcp, rel)
+        self._guard_above(T_base_ares, T_rel, slot.qnear_rad, f"place magazine {slot.id}", approach_mm)
+        self._move_tcp(np.asarray(T_base_ares, float) @ T_rel, f"place magazine {slot.id}")
         sid, T_wall_stone, _ = self._release()
+        T_wall_stone = g.transl(0.0, 0.0, -rel) @ T_wall_stone                # the drop
         true_kind = self.world.kind_of.get(sid, "full")
         if true_kind != kind:
             self.world.violations.append(f"{true_kind} stone {sid} put into magazine slot {slot.id} as {kind}")

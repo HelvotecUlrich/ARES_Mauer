@@ -83,6 +83,7 @@ class RunOptions:
     guard: bool = True                # SIM: plan every joint move with mauer.motionguard (REAL: always)
     resume_log: Path | None = None    # run log of an interrupted run: its stones stand (Sequencer.declare_placed)
     stop_untouched: bool = False      # start at stop k > 0 without a run log: no stone of stop k is placed yet
+    speed_pct: float = 100.0          # REAL: % of the [ur] speeds/accelerations (changeable live: set_speed_pct)
 
 
 @dataclass(frozen=True)
@@ -470,6 +471,7 @@ class RunController(QObject):
             else:
                 rig = RealRig(s.cfg, s.job, self._factories)
                 rig.open()
+                self._apply_speed(rig)
             self._prepare_on(rig)
         except Exception:
             # nothing may stay open (REAL: UR, ARES, camera connections) when the state falls back to "loaded"
@@ -872,6 +874,19 @@ class RunController(QObject):
         self._step = bool(on)
         if self._opts is not None:
             self._opts.step = bool(on)
+
+    def set_speed_pct(self, pct: float) -> None:
+        """REAL speed in % of the [ur] values, from the next move on (the robot runs the block already sent)."""
+        if self._opts is not None:
+            self._opts.speed_pct = float(pct)
+        if self._rig is not None and self._rig.mode == "real":
+            self._apply_speed(self._rig)
+            self._log("speed", speed_pct=float(pct))
+
+    def _apply_speed(self, rig) -> None:
+        robot = getattr(rig, "robot", None)
+        if robot is not None and self._opts is not None and hasattr(robot, "set_speed_factor"):
+            robot.set_speed_factor(min(100.0, max(1.0, float(self._opts.speed_pct))) / 100.0)
 
     def set_sim_step_s(self, s: float) -> None:
         self._sim_step_s = max(0.0, float(s))

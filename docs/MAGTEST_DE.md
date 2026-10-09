@@ -23,6 +23,21 @@ Zwei Vollsteine wandern durch das Magazin. Ein **Zug** besteht aus:
    Greifer bleibt **zu**, es gibt keinen Greiferbefehl.
 4. Wieder hoch und den Stein in den nächsten Magazinplatz stellen (echtes Öffnen).
 
+**Abstellen und Abstand (nach dem ersten echten Lauf, 2026-10-09):**
+- Der Greifer öffnet **10 mm über der Ablagehöhe** (`[ur] release_above_mm`, gilt für jedes Ablegen, auch an der
+  Mauer). Der Stein fällt die 10 mm und zentriert sich auf den Kegeln bzw. Pins. Vorher fuhr der Arm bis auf die
+  Ablagehöhe und drückte den Stein auf die Kegel; das löste einen Schutzstopp aus (Lauf
+  `2026-10-09_103903_hmi_real`, Zug 1).
+- Greifen und Abstellen kommen **senkrecht von oben**. Der Anfahrpunkt über dem Platz liegt so hoch, dass die
+  Unterkante des gehaltenen Steins **50 mm über den Pins** jedes anderen Stapels hängt (`[magtest] approach_clear_mm`;
+  vorher 150 mm über der Ablage, also nur 6,5 mm über den Pins des Nachbarn).
+- Auf jeder Gelenkbewegung hält der gehaltene Stein **mindestens 30 mm** Abstand zu jedem Magazinstein
+  (`[magtest] stone_clear_mm`, vom Motion Guard erzwungen). Ausgenommen ist nur das senkrechte Absenken auf den Platz
+  (der Nachbar steht dort 5 mm daneben).
+- Der Umweg über die **Parkpose** zwischen Ablage vorne und Magazin entfällt. Der Motion Guard nimmt ihn nur noch,
+  wenn kein anderer Umweg frei ist. Simulation einer Runde (20 Züge): keine Parkpose, drei Züge mit einem
+  Zwischenpunkt hoch über dem Ziel, kleinster Abstand Stein–Magazinstein 30,4 mm.
+
 **Platzfolge ("Raupe"):** Zu Beginn stehen beide Steine gestapelt auf **r0y0** (Lage 1 + 2). Pro Schritt geht der
 obere Stein auf Lage 1 der nächsten Position, der untere wird oben drauf gestellt (Lage 2). Die Positionen werden
 in der Reihenfolge r0y0 → r0y1 → r0y2 → r1y2 → r1y1 → r1y0 und zurück durchlaufen. Jede der 6 Positionen wird in
