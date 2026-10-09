@@ -513,9 +513,10 @@ window_clearance = 0.3      # ASSUMPTION: per side around the plain station plat
 # 2026-10-09 (Samuel: as many stones as possible, two rows, 4 high): full stacks at 205 mm pitch (5 mm gaps; the jaws
 # open across the stone, not between the stacks) +-102.5 / 307.5 / 512.5 mm around the UR axis, 6 in row 2, 5 in row 1
 # (without +512.5) and half-stone stacks in row 1 at -667.5 and +462.5 / 565 / 667.5 mm (one-sided: the MDF piece
-# needs its one cut at the centre, between the stacks of both rows). With the unreachable top layers dropped:
-# 42 full + 14 half = 56 stones; with the magazine (12 full + 2 half) the whole C (53 full + 14 half) without a top-up
-# (variants with the half stacks in row 2 gave 46 full + 6 half / 40 full + 16 half and needed one top-up).
+# needs its one cut at the centre, between the stacks of both rows). With the layers dropped that the UR cannot reach
+# at the dock (42 full + 14 half) or somewhere within the dock tolerance (dock_tol_deg): 40 full + 12 half = 52 stones;
+# with the magazine (12 full + 2 half) the C (53 full + 14 half) is one full stone short - the operator tops the
+# station up once, before the trip of leg C. Variants with the half stacks in row 2 hold fewer half stones.
 # The existing plain S0 / S1 plates (140 x 132 mm) drop into closed windows (y 10..142.6, a 10 mm web in front) of
 # the same MDF piece on the ARES side of the row.
 # Station frame: origin at the front-left corner of the station area (ARES side = the windows' front edge), x along
@@ -548,14 +549,20 @@ slots_xy = [[225.0, 210.0], [430.0, 210.0], [635.0, 210.0], [840.0, 210.0], [104
                             # ASSUMPTION: full-stone stack centres (station x 737.5 -+102.5 / 307.5 / 512.5), length
                             # along x; row 1 at row_y without +512.5, row 2 at row2_y (2026-10-09).
                             # tools/make_job.py drops every stack layer the UR cannot reach (IK, tool clearance) from the
-                            # dock (2026-10-09: the 4th layer of the outer row-2 stack on each side), RoboDK checks the
-                            # rest
+                            # dock or within the dock tolerance (2026-10-09: layers 3 + 4 of the outer row-2 stack on
+                            # each side), RoboDK checks the rest
 slot_layers = 4             # ASSUMPTION (Samuel 2026-10-09: "4 uebereinander"); was 2
 half_slots_xy = [[70.0, 210.0], [1200.0, 210.0], [1302.5, 210.0], [1405.0, 210.0]]   # ASSUMPTION: half-stone stacks
                             # in row 1 at 737.5 - 667.5 and + 462.5 / 565 / 667.5 (5 mm gap to the full stack, 2.5 mm
-                            # between the half stacks); the outer ones reach 3 layers. Row-2 half stacks reached at most
-                            # 3 / 2 layers
+                            # between the half stacks); the outer ones reach 2 layers within the dock tolerance (3 at the
+                            # nominal dock). Row-2 half stacks reached at most 3 / 2 layers at the nominal dock
 half_slot_layers = 4        # ASSUMPTION (2026-10-09); was 2
+dock_tol_deg = 1.5          # ASSUMPTION: ARES heading error at the dock every station slot must tolerate - the sequencer
+                            # corrects the dock POSITION beyond [sequencer] dock_tol_mm, not the heading (E003: ~1.2 deg
+                            # loss after reversing a rotation + 2 sigma of the 0.14 deg scatter). tools/make_job.py drops
+                            # the slots without IK for pick and approach with the dock anywhere on the circle of
+                            # dock_tol_mm and turned by +-dock_tol_deg (guarded world sim 2026-10-09, seeds 2 + 3: the 3rd
+                            # layer of the outer row-2 stacks failed)
 
 [routes]
 # ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in

@@ -196,8 +196,16 @@ of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config
   a **window** in courses 3+4 (400 mm wide, 300 mm from both ends); C (left, 5 stones) is only a 400 mm piece at its
   free end beside a **door** 600 mm wide at B. Openings are cut out of the leg's running bond with half stones at the
   jambs (`wallplan.Opening`, `layout_leg`; A's window courses differ from the photo so that no joint stands over a
-  joint, C's piece is the photo, `start_half`). 67 stones (53 full, 14 half), built B, A, C in 4 stops, 5 station
+  joint, C's piece is the photo, `start_half`). 67 stones (53 full, 14 half), built B, A, C in 4 stops, 4 station
   trips; boards W0..W7 re-placed (W7 on a spare block beyond C's free end, no base block in the door).
+- **Pick-up station** (2026-10-09, Samuel: "as many stones as possible, maybe two rows and 4 high"; ASSUMPTION
+  layout, `[pickup_station]`): two rows 200 mm apart on one MDF piece (cut at the centre), stacks up to 4 high; row 1
+  5 full stacks + half stacks at -667.5 and +462.5 / 565 / 667.5 mm from the UR axis, row 2 6 full stacks.
+  `make_job` drops the top layers the UR cannot reach from the dock or somewhere within the dock tolerance
+  (`[sequencer] dock_tol_mm` 30 mm, `[pickup_station] dock_tol_deg` 1.5 deg, ASSUMPTION - the guarded world sim
+  failed at the 3rd layer of the outer row-2 stacks in 2 of 3 seeds): **52 stones (40 full + 12 half)**; with the
+  magazine (12 full + 2 half) the C is one full stone short - the operator tops the station up once, before the trip
+  for leg C (`results/steinliste.pdf`). At the nominal dock 56 would be reachable (42 + 14).
 - **Controller**: `[ares] controller_*` (CB3 box 462 x 418 x 268 mm, ASSUMPTION position) in the arm's collision boxes
   (motion guard, look checks, `calib_handeye orbit`), in the ARES footprint (routes, rotations; the pick-up station
   moved 600 mm farther from the C) and in the RoboDK ARES object; the ARES STEP is turned by 180 deg in RoboDK because

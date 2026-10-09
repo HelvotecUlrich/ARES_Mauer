@@ -116,9 +116,12 @@ def test_station_and_park(job, cfg):
     n_full = len(ps["slots_xy"]) * ps["slot_layers"]
     n_half = len(ps["half_slots_xy"]) * ps["half_slot_layers"]
     assert len(st.slots) == n_full + n_half and sum(s.kind == "half" for s in st.slots) == n_half
-    # the PLACEHOLDER layout of 2026-10-06 was laid out from the kinematic reach at the dock: every holder is usable
-    assert sorted(st.take_order) == sorted(s.id for s in st.slots) and all(s.ik_ok for s in st.slots)
-    assert not any("station slot" in w for w in job.meta["warnings"])
+    # the PLACEHOLDER layout of 2026-10-09 (two rows, 4 high) goes beyond the reach: every holder the UR cannot reach
+    # at the dock or within the dock tolerance is dropped and named in a warning, the others are taken
+    dropped = {s.id for s in st.slots} - set(st.take_order)
+    warned = " ".join(w for w in job.meta["warnings"] if "station slot" in w)
+    assert all(f"'{d}'" in warned for d in dropped), (sorted(dropped), warned)
+    assert all(s.ik_ok for s in st.slots if s.id in st.take_order)
     for s in st.slots:
         h = cfg["brick"]["height"] if s.kind == "full" else cfg["half_brick"]["height"]
         assert s.T_station_tcp[2, 3] == pytest.approx(ps["table_z"] + ps["holder_z"] + s.layer * h
@@ -622,6 +625,27 @@ def test_c_legs_corners_and_stops(ccfg, cjob):
     assert {d["name"]: (d["side"], d["dist_mm"]) for d in cjob.meta["legs"]} == {
         "A": ("right", 580.0), "B": ("front", 840.0), "C": ("left", 580.0)}
     assert mjob.validate(cjob, boards=[p.name for p in placements(ccfg)]) == []
+
+
+def test_station_slots_stay_reachable_within_the_dock_tolerance(ccfg, cjob):
+    """Guarded world sim 2026-10-09 (seeds 2 + 3): ARES docked within [sequencer] dock_tol_mm but turned - the 3rd
+    layer of the outer stacks of station row 2 had no IK for the approach and the run stopped. Every station slot of
+    the job has IK for pick and approach with the dock anywhere on the circle of dock_tol_mm and turned by
+    +-[pickup_station] dock_tol_deg (the sequencer corrects the dock position, not the heading)."""
+    tol_mm = float(ccfg["sequencer"]["dock_tol_mm"])
+    tol_deg = float(ccfg["pickup_station"]["dock_tol_deg"])
+    ctx = make_job._Ctx(ccfg, float(ccfg["wall"]["dist_nominal"]), 2, make_job.LOOK_MARGIN_MM)
+    st = cjob.station
+    perts = [(tol_mm * math.cos(math.radians(a)), tol_mm * math.sin(math.radians(a)), dt)
+             for a in range(0, 360, 45) for dt in (-tol_deg, 0.0, tol_deg)] + [(0.0, 0.0, -tol_deg), (0.0, 0.0, tol_deg)]
+    assert st.take_order
+    for sid in st.take_order:
+        s = st.slot(sid)
+        for dx, dy, dt in perts:
+            T_bs = ctx.T_base_ares @ g.inv(st.dock.T @ g.transl(dx, dy, 0.0) @ g.rotz(math.radians(dt)))
+            T_bf = T_bs @ s.T_station_tcp @ g.inv(ctx.T_flange_tcp)
+            assert make_job.ik_near(T_bf, ctx.q_park) is not None, (sid, dx, dy, dt)
+            assert make_job.ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is not None, (sid, dx, dy, dt)
 
 
 def test_c_routes_and_floor(ccfg, cjob):

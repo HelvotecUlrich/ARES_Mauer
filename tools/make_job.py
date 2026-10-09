@@ -485,9 +485,39 @@ def holder_pose(ctx: _Ctx, T_base_x: np.ndarray, T_x_tcp: np.ndarray) -> tuple[n
     return T, q, bool(has_q and has_qa), float(c)
 
 
-def _drop_unusable(ctx: _Ctx, what: str, slots: list, clear: dict[str, float]) -> list:
-    """Usable holders: IK for pick and approach, tool-vs-arm clearance >= armcheck.SELF_CLEARANCE_MM, and every holder
-    below in the stack usable (a stone cannot lie on an empty holder)."""
+def _dock_shaky(ctx: _Ctx, dock_T: np.ndarray, slots: list) -> list[str]:
+    """Station slots (with IK at the nominal dock) without IK for pick or approach for the dock anywhere on the circle
+    of [sequencer] dock_tol_mm (8 directions) and turned by +-[pickup_station] dock_tol_deg - the sequencer corrects
+    the dock position beyond dock_tol_mm, not the heading (guarded world sim 2026-10-09: the 3rd layer of the outer
+    row-2 stacks failed). [] without dock_tol_deg."""
+    cfg = ctx.cfg
+    tol_deg = cfg["pickup_station"].get("dock_tol_deg")
+    if tol_deg is None:
+        return []
+    tol_mm = float(cfg.get("sequencer", {}).get("dock_tol_mm", 30.0))
+    t = float(tol_deg)
+    perts = [(tol_mm * math.cos(math.radians(a)), tol_mm * math.sin(math.radians(a)), dt)
+             for a in range(0, 360, 45) for dt in (-t, 0.0, t)] + [(0.0, 0.0, -t), (0.0, 0.0, t)]
+    T_bs = [ctx.T_base_ares @ g.inv(dock_T @ g.transl(dx, dy, 0.0) @ g.rotz(math.radians(dt))) for dx, dy, dt in perts]
+    out = []
+    for s in slots:
+        if not s.ik_ok:
+            continue
+        for T in T_bs:
+            T_bf = T @ s.T_station_tcp @ g.inv(ctx.T_flange_tcp)
+            if ik_near(T_bf, ctx.q_park) is None or ik_near(g.transl(0, 0, ctx.approach) @ T_bf, ctx.q_park) is None:
+                out.append(s.id)
+                break
+    if out:
+        ctx.warnings.append(f"station slots without IK somewhere within the dock tolerance (+-{tol_mm:g} mm, "
+                            f"+-{t:g} deg) (dropped): {out}")
+    return out
+
+
+def _drop_unusable(ctx: _Ctx, what: str, slots: list, clear: dict[str, float], shaky: Sequence[str] = ()) -> list:
+    """Usable holders: IK for pick and approach, tool-vs-arm clearance >= armcheck.SELF_CLEARANCE_MM, not in `shaky`
+    (no IK somewhere within the dock tolerance, _dock_shaky), and every holder below in the stack usable (a stone
+    cannot lie on an empty holder)."""
     no_ik = [s.id for s in slots if not s.ik_ok]
     if no_ik:
         ctx.warnings.append(f"{what} slots without a kinematic IK solution (dropped): {no_ik}")
@@ -495,7 +525,7 @@ def _drop_unusable(ctx: _Ctx, what: str, slots: list, clear: dict[str, float]) -
     if tight:
         ctx.warnings.append(f"{what} slots with the tool closer than {armcheck.SELF_CLEARANCE_MM:g} mm to the arm in "
                             f"both grasp yaws (dropped): {tight}")
-    good = {s.id for s in slots if s.ik_ok and clear[s.id] >= armcheck.SELF_CLEARANCE_MM}
+    good = {s.id for s in slots if s.ik_ok and clear[s.id] >= armcheck.SELF_CLEARANCE_MM and s.id not in shaky}
     stack = (lambda s: s.stack) if what == "magazine" else (lambda s: s.stack_id)
     usable = []
     for s in slots:
@@ -574,7 +604,8 @@ def _station(ctx: _Ctx) -> mjob.Station:
                 sid = f"{stack}l{lay}"
                 T, q, ok, clear[sid] = holder_pose(ctx, T_base_station, T0)
                 st_slots.append(mjob.StationSlot(sid, T, None if q is None else q.tolist(), ok, kind, lay, stack))
-    usable = _drop_unusable(ctx, "station", st_slots, clear)    # at the nominal dock; [pickup_station] is a PLACEHOLDER
+    shaky = _dock_shaky(ctx, dock.T, st_slots)                  # within the dock tolerance
+    usable = _drop_unusable(ctx, "station", st_slots, clear, shaky)   # [pickup_station] is a PLACEHOLDER
     st_take = [s.id for s in sorted(usable, key=lambda s: (-s.layer, float(np.sum(np.abs(np.asarray(s.qnear_rad)
                                                                                          - ctx.q_park))), s.id))]
     if not st_take:
