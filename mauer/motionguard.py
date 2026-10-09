@@ -19,7 +19,8 @@ wall stone set from the side (StoneTask.side_mm, 2026-10-09) the descent column 
 at config.side_lift_mm is a contact move as well -, and the wall stones of OTHER legs than the job's (all legs of the
 job are included).
 
-Detours (plan), first clear one wins: direct; via the park pose; straight above the target (transfer height, else
+Detours (plan), the clear one with the least joint travel wins (travel_deg, Samuel 2026-10-09 "keine unnoetigen
+Wege"; the job's own vias are tried first): direct; via the park pose; straight above the target (transfer height, else
 OVER_TARGET_MM higher), alone or after the park pose; lift the TCP vertically to the transfer height at the start;
 lift at the start and above the target; lift - park - lift; compact poses near the base towards the target (as
 robodk/motion.Planner.compact), with and without a via above the target; up from the start by OVER_TARGET_MM; then a
@@ -97,6 +98,13 @@ class Verdict:
     ok: bool
     vias: list = field(default_factory=list)           # joint vias before the target (rad)
     problems: list = field(default_factory=list)       # why the direct move (and every detour) was refused
+
+
+def travel_deg(qs: Sequence[Sequence[float]]) -> float:
+    """Joint travel of a joint path [deg]: the largest joint angle of every segment, summed - a movej takes about
+    that long (the joints move together, the largest one sets the time)."""
+    return float(sum(np.degrees(np.max(np.abs(np.asarray(b, float) - np.asarray(a, float))))
+                     for a, b in zip(qs, qs[1:])))
 
 
 class MotionGuard:
@@ -322,14 +330,13 @@ class MotionGuard:
         finally:
             self._column = None
 
-    def _plan(self, q_from, q_to, holding, vias) -> Verdict:
+    def candidates(self, q_from, q_to, vias: Sequence[Sequence[float]] = ()) -> list[list[np.ndarray]]:
+        """The via lists plan() tries, in order: the job's vias first (if any), then direct and every detour of the
+        module docstring sorted by joint travel (travel_deg ~ movej time; Samuel 2026-10-09 "keine unnoetigen Wege" -
+        the list order used to send 43 of 134 blocked picks / places of the C through the park pose); park_last puts
+        the detours through the park pose behind the others."""
         q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
-        end = self.state_problems(q_to, holding)
-        if end:
-            return Verdict(False, [], ["target: " + "; ".join(end)])
-        problems: list[str] = []
-        cands: list[list[np.ndarray]] = [[np.asarray(v, float) for v in vias]] if vias else []
-        cands.append([])
+        cands: list[list[np.ndarray]] = [[]]
         up_from, up_to = self.lift(q_from), self.lift(q_to)
         cands.append([self.park_q])
         for over in [up_to] + [self.lift(q_to, dz) for dz in OVER_TARGET_MM]:   # come down onto the target
@@ -355,11 +362,23 @@ class MotionGuard:
                                                     or (i and np.allclose(v, c[i - 1])))]
             if not any(len(c) == len(u) and all(np.allclose(x, y) for x, y in zip(c, u)) for u in uniq):
                 uniq.append(c)
-        cands = uniq
-        if self.park_last:
-            via_park = [any(np.allclose(v, self.park_q) for v in c) for c in cands]
-            cands = [c for c, p in zip(cands, via_park) if not p] + [c for c, p in zip(cands, via_park) if p]
-        for c in cands:
+        via_park = [any(np.allclose(v, self.park_q) for v in c) for c in uniq]
+        order = sorted(range(len(uniq)), key=lambda i: ((via_park[i] if self.park_last else False),
+                                                        travel_deg([q_from, *uniq[i], q_to]), i))
+        cands = [uniq[i] for i in order]
+        if vias:
+            job = [np.asarray(v, float) for v in vias]
+            cands = [job] + [c for c in cands if not (len(c) == len(job)
+                                                      and all(np.allclose(x, y) for x, y in zip(c, job)))]
+        return cands
+
+    def _plan(self, q_from, q_to, holding, vias) -> Verdict:
+        q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
+        end = self.state_problems(q_to, holding)
+        if end:
+            return Verdict(False, [], ["target: " + "; ".join(end)])
+        problems: list[str] = []
+        for c in self.candidates(q_from, q_to, vias):
             p = self.path_problems([q_from, *c, q_to], holding)
             if not p:
                 return Verdict(True, c, problems)
