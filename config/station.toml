@@ -14,12 +14,14 @@ length = 1120.0             # CONFIRMED: chassis mesh x ±560 (MCD export 2026-0
 width = 600.0               # CONFIRMED: chassis mesh y ±300
 deck_corner_r = 80.0        # CONFIRMED: deck top (z 333.6) of cad/2026-09-23_030718_A_1-AMR_SIM.stl is the full
                             # 1120 x 600 rectangle with R 80 corners, no openings (fitted 2026-10-08)
-controller_out_mm = 250.0   # ASSUMPTION: Samuel 2026-10-08 "der ganze Controller ... ragt rund 25 cm nach hinten raus"
-                            # - the UR CB3 control box at the ARES end OPPOSITE the UR (this repo's -x end), this far
-                            # beyond the chassis edge; measure. Part of the arm's collision boxes (mauer.armcheck
+controller_out_mm = 250.0   # CONFIRMED (by eye, not measured to the mm): Samuel 2026-10-08 "ragt rund 25 cm nach
+                            # hinten raus", checked on ARES 2026-10-09 ("die Annahmen sind richtig") - the UR CB3
+                            # control box at the ARES end OPPOSITE the UR (this repo's -x end), this far beyond the
+                            # chassis edge. Part of the arm's collision boxes (mauer.armcheck
                             # ares_boxes -> motion guard, look checks) and of the ARES footprint (mauer.floor.AresShape:
                             # routes, rotations, floor checks) - config.ares_controller_box
-controller_top_mm = 200.0   # ASSUMPTION: Samuel "etwa 20 cm ueber die Flaeche von ARES" - top above deck_top_z; measure
+controller_top_mm = 200.0   # CONFIRMED (by eye): Samuel "etwa 20 cm ueber die Flaeche von ARES", checked on ARES
+                            # 2026-10-09 - top above deck_top_z
 controller_size_mm = [268.0, 462.0, 418.0]  # CONFIRMED: UR5 manual "Control Box Size (W x H x D) 462 mm x 418 mm x
                             # 268 mm" as (depth along x, width, height). ASSUMPTION: upright, its depth along x, the
                             # lateral position unknown -> modelled over the full ARES width (y +-300)
