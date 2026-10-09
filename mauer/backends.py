@@ -144,13 +144,14 @@ class URRobot:
         self.link, self.cfg, self.job, self.sim = link, cfg, job, sim
         u, b = cfg["ur"], cfg["brick"]
         self.speeds = script.Speeds.from_config(dict(cfg))
+        self._speeds_cfg = self.speeds
         self.T_flange_tcp = np.asarray(job.T_flange_tcp, float)
         self.park_q = np.asarray(job.park_q_rad, float)
         self.approach_mm = float(job.approach_mm)
         self.contact_mm = float(u.get("contact_mm", 60.0))
         self.do_open, self.do_close = int(u["do_grip_open"]), int(u["do_grip_close"])
         self.pulse_s, self.wait_s = float(u["grip_pulse_s"]), float(u["grip_wait_s"])
-        self.timeout_s = float(timeout_s)
+        self.timeout_s = self._timeout_cfg = float(timeout_s)
         # the IK checks write their error code into the register the link reads ([ur] reg_error; PolyScope 3.3 has
         # no script.REG_ERROR 26) and use the check the controller knows ([ur] ik_check, mauer.ur.script.IK_CHECKS)
         reg = getattr(link, "reg_error", None)
@@ -187,6 +188,12 @@ class URRobot:
         self.guard = guard
         self.holding: str | None = None          # kind of the stone the jaws may hold (guard), None = empty: set
         # when a pick starts, cleared only by a successful place - the operator confirms empty jaws at start-up
+
+    def set_speed_factor(self, f: float) -> None:
+        """Every following move at f times the [ur] speeds and accelerations (0 < f <= 1; the HMI's REAL speed, as
+        the pendant's speed slider). The block timeout grows by 1/f. A block already sent keeps its speed."""
+        self.speeds = self._speeds_cfg.scaled(f)
+        self.timeout_s = self._timeout_cfg / f
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _q_now(self) -> np.ndarray:

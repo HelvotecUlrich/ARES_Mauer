@@ -292,3 +292,23 @@ def test_wall_runs_are_refused_while_the_frame_points_to_the_vehicle_rear(cfg, j
     assert not any("vehicle REAR" in p for p in preflight_real(front, job))
     from mauer import magtest
     assert magtest.preflight(cfg, job) == []
+
+
+def test_speed_factor_scales_every_following_move_and_the_timeout(cfg, job):
+    """HMI "REAL speed" (2026-10-09, no speed slider on the pendant): speeds and accelerations times f."""
+    from mauer.ur import script
+    link = _FakeLink(job.park_q_rad)
+    r = URRobot(link, cfg, job, guard=_guard(cfg, job))
+    t0 = r.timeout_s
+    r.set_speed_factor(0.25)
+    u = cfg["ur"]
+    assert r.speeds == script.Speeds(0.25 * u["v_joint"], 0.25 * u["a_joint"], 0.25 * u["v_lin"],
+                                     0.25 * u["a_lin"], 0.25 * u["v_contact"])
+    assert r.timeout_s == pytest.approx(4.0 * t0)
+    r.pick_magazine(job.magazine.slot(job.stops[0].stones[0].slot), g.inv(np.asarray(job.T_ares_base)))
+    body = link.blocks[-1][1]
+    assert f"v={script.num(0.25 * u['v_joint'])})" in body
+    r.set_speed_factor(1.0)                                      # back to the [ur] values, not 0.25 * 0.25
+    assert r.speeds == script.Speeds.from_config(dict(cfg)) and r.timeout_s == pytest.approx(t0)
+    with pytest.raises(ValueError):
+        r.set_speed_factor(0.0)
