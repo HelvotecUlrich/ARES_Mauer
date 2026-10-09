@@ -44,10 +44,25 @@ der Tabelle füllen.** Ein Stein darüber ist der Software unbekannt und liegt d
 | `bilder/` | RoboDK-Ansichten (Station, Draufsicht, Ecke, letzter Halt) und die Layout-Zeichnung |
 | `l_wall_sim_final.mp4` | Video der Simulation (nur lokal, nicht in Git: 25 MB) |
 
+## Bewegungen (Stand 2026-10-09 nachmittags)
+
+- **Halbsteine 20 mm höher greifen** (`[half_brick] grasp_above_top_mm`, ASSUMPTION): Das Pin-Paar eines Halbsteins steht
+  in der Mitte unter dem Greifer. Alle Halbstein-Posen in Magazin, Station und Wand sind entsprechend angehoben.
+- **Seitlich setzen** (`[ur] place_side_mm` 20 mm, `place_side_above_pins_mm` 30 mm): Ein Stein mit genau einem schon
+  gesetzten Nachbarn in seiner Lage (auch über die Ecke) kommt 20 mm neben seiner Endlage herunter, weg vom Nachbarn,
+  bis seine Unterkante 30 mm über den Pins der unteren Lage ist. Dann fährt er seitlich an den Nachbarn und erst danach
+  nach unten. Das betrifft 57 von 67 Steinen. Ohne Nachbarn oder mit Nachbarn auf beiden Seiten geht es senkrecht nach
+  unten wie bisher.
+- **Kürzester freier Umweg**: Ist der direkte Weg blockiert, nimmt der Motion Guard den kollisionsfreien Umweg mit dem
+  kleinsten Gelenkweg, nicht automatisch die Parkpose. Im ganzen C sind das rund 6 % weniger Armweg.
+
+Bericht, Bilder und Video sind von diesem Stand (Branch `station2`). Das Tag `layout-final` markiert die Festlegung des
+Layouts, und das Layout selbst hat sich seitdem nicht geändert.
+
 ## Geprüft
 
-- RoboDK (`robodk/simulate.py --animate --video`): 67/67 Steine und 53/53 Umlagerungen Station → Magazin mit
-  Kollisionsprüfung, 11 ARES-Fahrten ohne Kollision, 0 Mal Nachlegen.
+- RoboDK (`robodk/simulate.py --animate --video`, mit seitlichem Setzen und Halbstein-Griff): 67/67 Steine und 53/53
+  Umlagerungen Station → Magazin mit Kollisionsprüfung, 11 ARES-Fahrten ohne Kollision, 0 Mal Nachlegen.
 - Weltsimulation mit Motion Guard (wie die HMI-SIM; realistische Fahr-, Andock- und Messfehler), Seeds 1 – 3:
   je 67/67 Steine gesetzt, keine Verletzung, maximal 2,1 – 2,6 mm Abweichung, 50 – 52 ARES-Fahrten.
 
