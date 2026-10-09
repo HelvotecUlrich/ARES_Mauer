@@ -532,14 +532,14 @@ class Sequencer:
         self.held = None
 
     # ── robot ────────────────────────────────────────────────────────────────
-    def _robot(self, action: str, desc: str, *args) -> Any:
+    def _robot(self, action: str, desc: str, *args, **kw) -> Any:
         self._confirm(f"robot: {desc}")
         self.log.write("robot", action=action, what=desc)
         guard = getattr(self.robot, "guard", None)
         if guard is not None:                        # mauer.motionguard: what the arm must not touch right now
             guard.set_world(self._guard_world())
         try:
-            return getattr(self.robot, action)(*args)
+            return getattr(self.robot, action)(*args, **kw)
         except RobotError as e:
             self.log.write("robot_error", action=action, what=desc, error=str(e))
             if action in ("pick_magazine", "pick_station"):        # the jaws may or may not hold the stone now

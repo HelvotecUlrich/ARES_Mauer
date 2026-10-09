@@ -21,7 +21,8 @@ Detours (plan), first clear one wins: direct; via the park pose; straight above 
 OVER_TARGET_MM higher), alone or after the park pose; lift the TCP vertically to the transfer height at the start;
 lift at the start and above the target; lift - park - lift; compact poses near the base towards the target (as
 robodk/motion.Planner.compact), with and without a via above the target; up from the start by OVER_TARGET_MM; then a
-seeded joint-space RRT-Connect (RRT_*) with shortcut. The transfer height carries a stone with its
+seeded joint-space RRT-Connect (RRT_*) with shortcut. park_last (magazine dry run): the same list with every detour
+through the park pose moved behind the others. The transfer height carries a stone with its
 pins LIFT_MARGIN_MM over a full magazine (as robodk/simulate.py safe_z(full)).
 
 Units mm, rad. Frames: docs/ARCHITECTURE.md (UR base frame for joints and poses).
@@ -110,6 +111,11 @@ class MotionGuard:
         self._checkers: list | None = None
         self._column: np.ndarray | None = None     # target TCP pose (base frame) of the plan in progress
         self.approach_mm = float(approach_mm)
+        self.park_last = False                     # True: detours through the park pose only after every other one
+        # of the fixed list (mauer.magtest, Samuel 2026-10-09: the park pose between the front and the magazine "is not
+        # really necessary") - lift / over-target / compact first, RRT still last
+        self.stone_clear_mm = 0.0                  # > CLEARANCE_MM: the held stone keeps this from every stone of the
+        # world outside the descent column (mauer.magtest, Samuel 2026-10-09 "enough separation to the stones next to it")
         b, dk, a = cfg["brick"], cfg["deck"], cfg["ares"]
         layers = int(dk.get("magazine_layers", dk.get("layers", 1)))
         top_ares = (float(a["deck_top_z"]) + float(dk["holder_z"])
@@ -206,6 +212,11 @@ class MotionGuard:
                 if in_column and cap in GRIPPER_PARTS and depth <= armcheck.CLEARANCE_MM:
                     continue                       # gripper / stone over the slot, beside its neighbours: touching ok
                 out[(cap, f"{box} ({what})")] = max(out.get((cap, f"{box} ({what})"), 0.0), depth)
+            if holding and self.stone_clear_mm > armcheck.CLEARANCE_MM and not in_column:
+                held = [c for c in caps if c.name == "held stone"]
+                stones = [b for b in boxes if "stone" in b.name]
+                for cap, box, depth in armcheck.collisions(held, stones, self.stone_clear_mm):
+                    out[(cap, f"{box} ({what})")] = max(out.get((cap, f"{box} ({what})"), 0.0), depth)
         return out
 
     def _self_pairs(self, q, tool) -> dict[tuple[str, str], float]:
@@ -337,6 +348,9 @@ class MotionGuard:
             if not any(len(c) == len(u) and all(np.allclose(x, y) for x, y in zip(c, u)) for u in uniq):
                 uniq.append(c)
         cands = uniq
+        if self.park_last:
+            via_park = [any(np.allclose(v, self.park_q) for v in c) for c in cands]
+            cands = [c for c, p in zip(cands, via_park) if not p] + [c for c, p in zip(cands, via_park) if p]
         for c in cands:
             p = self.path_problems([q_from, *c, q_to], holding)
             if not p:

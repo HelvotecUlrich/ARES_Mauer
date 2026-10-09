@@ -588,6 +588,12 @@ ik_check = "get_inverse_kin" # CONFIRMED 2026-10-06 (probe on the UR5, see host)
                             # "has_solution" for URSim 3.15. ASSUMPTION: the qnear keyword works on 3.3 - check with
                             # tools/calib_handeye.py plan --check (blocks that do not move) before the first look
 contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
+release_above_mm = 10.0     # CONFIRMED: Samuel 2026-10-09 ("immer 10 mm drueber loslassen"): EVERY place (magazine and
+                            # wall) opens the jaws this far above the place pose, along the frame z, and the stone
+                            # settles on the cones / pins below. Going down to the place pose pressed the stone onto
+                            # the magazine cones: protective stop (run 2026-10-09_103903, first real dry run).
+                            # URRobot / SimRobot place_magazine, place_wall (mauer.backends.release_pose). Not in the
+                            # RoboDK simulation (robodk/) yet: it still places at the place pose
 abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
 do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel; tools/ur_check.py grip on the UR5): the gripper switches on
@@ -688,6 +694,15 @@ positions = ["r0y0", "r0y1", "r0y2", "r1y2", "r1y1", "r1y0"]  # ASSUMPTION: walk
                             # ([deck] magazine_rows_dx x magazine_y, r<row>y<column>; neighbours only). r1y0 holds
                             # half stones in the wall job - its holder has the 4 cones of a full stone ([deck])
 rounds = 2                  # ASSUMPTION: there and back twice = 40 moves, every front target (7 u x 4 courses) once
+approach_clear_mm = 50.0    # ASSUMPTION (Samuel 2026-10-09: "enough separation to the stones next to it"): picks and
+                            # put-downs approach the slot straight from above, from where the held stone's bottom is
+                            # this far above the pins of every other magazine stack (mauer.magtest.magazine_approach_mm;
+                            # the job's 150 mm approach left 6.5 mm and the guard detoured via the park pose)
+stone_clear_mm = 30.0       # ASSUMPTION (Samuel 2026-10-09: "enough separation to the stones next to it"): the motion
+                            # guard keeps the held stone this far from every magazine stone on every joint move (not in
+                            # the vertical descent onto the slot, where the neighbour stands 5 mm away by design); the
+                            # approach above the slot clears the neighbours' pins by approach_clear_mm. The guard
+                            # also tries every detour without the park pose first (MotionGuard.park_last)
 
 [hmi]
 # Mauer HMI (hmi/, copy of MA 10_robot/hmi/amr_hmi v2, commit 5935c5b, 2026-10-07). ADS target, timeout and the
