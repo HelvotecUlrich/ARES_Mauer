@@ -138,6 +138,9 @@ class Sim:
         self.mesh = str(REPO / cfg["brick"]["mesh"])
         self.deck = cfg["ares"]["deck_top_z"] + cfg["deck"]["holder_z"]
         self.H = cfg["brick"]["height"]
+        hb = cfg.get("half_brick") or {}
+        self.held_h = max(float(self.H), float(hb.get("height", self.H)) + float(hb.get("grasp_above_top_mm", 0.0)))
+        # a held stone reaches this far below the TCP: a half stone is held 20 mm higher (2026-10-09)
         self.magazine: list = []
         self.n_new = 0
         self.planner = Planner(RDK, cfg, self.robot, self.tool, self.f_ares)
@@ -210,7 +213,7 @@ class Sim:
     def safe_z(self, full: bool = False) -> float:
         """TCP height that carries a stone (incl. pins) 60 mm over the magazine (full: over a full magazine)."""
         top = self.deck + MAG_LAYERS * self.H if full else self.stack_top()
-        return top + self.H + self.cfg["brick"]["pin_length"] + 60.0
+        return top + self.held_h + self.cfg["brick"]["pin_length"] + 60.0
 
     def go(self, moves) -> None:
         self.planner.execute(moves)
@@ -587,15 +590,21 @@ class LSim(Sim):
             self.cam_pairs([st], True)
             self.st[sid] = (st, slot.kind)
             L, W, H = stone_dims(self.cfg, slot.kind)
-            c = np.array([[x, y, z] for x in (-L / 2, L / 2) for y in (-W / 2, W / 2) for z in (0.0, H)])
+            o = self.grasp(slot.kind)
+            c = np.array([[x, y, z] for x in (-L / 2, L / 2) for y in (-W / 2, W / 2) for z in (o, o + H)])
             p = g.apply(self.T_ws_np @ slot.T_station_tcp, c)              # TCP z points into the stone
             self.st_boxes[sid] = (p.min(0), p.max(0))
+
+    def grasp(self, kind: str) -> float:
+        """mauer.config.grasp_above_top_mm: the stone's top face this far below its TCP pose (half stones 20 mm)."""
+        from mauer import config as mconfig
+        return mconfig.grasp_above_top_mm(self.cfg, kind)
 
     def station_safe_z(self) -> float:
         """Transfer height at the dock: a held stone (incl. pins) 60 mm over the magazine as it is and over the
         highest station holder (the station frame lies at floor level like the ARES frame)."""
         top = max(T.Pos()[2] for T in self.st_slot_T.values())
-        return max(self.safe_z(), top + self.H + self.cfg["brick"]["pin_length"] + 60.0)
+        return max(self.safe_z(), top + self.held_h + self.cfg["brick"]["pin_length"] + 60.0)
 
     def wall_pose(self, task):
         """CAD-frame pose (wall frame) of a placed stone of the job."""
@@ -618,7 +627,8 @@ class LSim(Sim):
         self.cam_pairs([st], True)
         self.wall_items[task.key] = st
         L, W, H = stone_dims(self.cfg, task.kind)
-        c = np.array([[x, y, z] for x in (-L / 2, L / 2) for y in (-W / 2, W / 2) for z in (0.0, H)])
+        o = self.grasp(task.kind)
+        c = np.array([[x, y, z] for x in (-L / 2, L / 2) for y in (-W / 2, W / 2) for z in (o, o + H)])
         p = self.g.apply(np.asarray(task.T_wall_tcp, float), c)            # TCP z points into the stone
         self.wall_boxes[task.key] = (p.min(0), p.max(0))
         if failed:
@@ -742,11 +752,17 @@ class LSim(Sim):
             return self.fail(rec, "retreat from the magazine", None, None, st, task)
         self.go(ret[0])
         place = invH(self.f_ares.Pose()) * self.f_wall.Pose() * self.g.to_robodk(task.T_wall_tcp)
+        side, low = None, None
+        if getattr(task, "side_mm", 0.0):                # from the side (Samuel 2026-10-09): the shift in the ARES frame
+            from mauer import config as mconfig
+            off = place * transl(float(task.side_mm), 0, 0)
+            side = tuple(off.Pos()[i] - place.Pos()[i] for i in range(3))
+            low = mconfig.side_lift_mm(self.cfg)
         P.z_safe = self.safe_z()
-        res = P.plan_to(r.Joints().list(), place)
+        res = P.plan_to(r.Joints().list(), place, side=side, low=low)
         if not res:
             self.park_safe()
-            res = P.plan_to(r.Joints().list(), place)
+            res = P.plan_to(r.Joints().list(), place, side=side, low=low)
         if not res:
             return self.fail(rec, "place", place, r.Joints().list(), st, task)
         moves, j_t, pose = res

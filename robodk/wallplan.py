@@ -634,6 +634,34 @@ def polys_overlap(P: Sequence, Q: Sequence, tol: float = 1e-6) -> bool:
     return True
 
 
+def _point_in_convex(q: Sequence[float], P: Sequence) -> bool:
+    n = len(P)
+    c = [(P[(i + 1) % n][0] - P[i][0]) * (q[1] - P[i][1]) - (P[(i + 1) % n][1] - P[i][1]) * (q[0] - P[i][0])
+         for i in range(n)]
+    return all(v > 0.0 for v in c) or all(v < 0.0 for v in c)
+
+
+def side_signs(cfg: Mapping, legs_: Sequence[Leg], order: Sequence[Stone], probe_mm: float = 5.0) -> dict:
+    """{stone key: +1 / -1 / 0} for the stones in placement order (Samuel 2026-10-09: set a stone from the side, not
+    straight down into the small joint): +1 = it comes from +u along its leg and moves towards -u onto a neighbour
+    that stands at its -u end (-1 the other way round); 0 = no neighbour or one at both ends (straight down). A
+    neighbour is a stone of the same course placed earlier, of ANY leg (the corner: a butting leg's end face against
+    the through-leg's long face, 1 mm + rib away), found by probing probe_mm beyond each end face on the stone's
+    centre line inside the earlier stones' footprints over the ribs (stone_footprint)."""
+    by_name = {lg.name: lg for lg in legs_}
+    L = float(cfg["brick"]["length"])
+    placed: dict[int, list] = {}
+    out = {}
+    for s in order:
+        lg = by_name.get(s.leg) or Leg(s.leg or "", 0)
+        half = s.len_(L) / 2.0 + probe_mm
+        same = placed.get(s.course, [])
+        ends = [e for e in (-1, 1) if any(_point_in_convex(lg.to_wall(s.u + e * half, 0.0), P) for P in same)]
+        out[s.key] = -ends[0] if len(ends) == 1 else 0
+        placed.setdefault(s.course, []).append(stone_footprint(cfg, s, lg, ribs=True))
+    return out
+
+
 def check_legs(cfg: Mapping, legs_: Sequence[Leg], stones: Sequence[Stone]) -> list[str]:
     """Cross-leg checks: no two stones of the same course overlap (any legs; footprints over the ribs - the ribs of a
     leg's long face reach into the corner), no stone overlaps a stone of ANOTHER leg in the course below (= would be

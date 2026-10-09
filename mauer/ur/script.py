@@ -336,19 +336,77 @@ def _contact_move(prefix: str, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray
     return "\n".join(lines)
 
 
+def _side_move(prefix: str, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, approach_mm: float,
+               qnear_rad: Sequence[float], speeds: Speeds, contact_mm: float | None, side_mm: float,
+               side_low_mm: float, grip_lines: str, payload_after: tuple[float, Sequence[float]] | None,
+               reg_error: int, label: str, ik_check: str) -> str:
+    """place_stone from the side (Samuel 2026-10-09): above the side point (T_frame_tcp shifted side_mm along its TCP
+    x) -> (pre) -> down to side_low_mm above -> sideways to above T_frame_tcp -> down to it -> grip -> (payload) ->
+    straight up. Offsets in height along the FRAME z as _contact_move; every pose IK-guarded."""
+    _check_T(T_base_frame, "T_base_frame")
+    _check_T(T_frame_tcp, "T_frame_tcp")
+    if not (np.isfinite(approach_mm) and approach_mm > 0.0):
+        raise ValueError(f"approach_mm must be > 0, got {approach_mm}")
+    if not (np.isfinite(side_low_mm) and 0.0 < side_low_mm < approach_mm):
+        raise ValueError(f"side_low_mm must be > 0 and < approach_mm {approach_mm}, got {side_low_mm}")
+    if contact_mm is not None and not (np.isfinite(contact_mm) and contact_mm > 0.0):
+        raise ValueError(f"contact_mm must be > 0 or None, got {contact_mm}")
+    two_stage = contact_mm is not None and side_low_mm < contact_mm < approach_mm
+    T = np.asarray(T_frame_tcp, float)
+    S = T @ transl(float(side_mm), 0.0, 0.0)
+    F, at, above, low = f"{prefix}_F", f"{prefix}_at", f"{prefix}_above", f"{prefix}_low"
+    sabove, spre, slow = f"{prefix}_sabove", f"{prefix}_spre", f"{prefix}_slow"
+    a_l, v_free, v_c = _speed("a_lin", speeds.a_lin), _speed("v_lin", speeds.v_lin), _speed("v_contact",
+                                                                                           speeds.v_contact)
+    lines = [
+        f"# {label}: TCP relative to the measured frame, from the side ({num(side_mm)} mm along the TCP x, sideways "
+        f"{num(side_low_mm)} mm above), approach {num(approach_mm)} mm along frame z",
+        f"{F} = {pose(T_base_frame)}",
+        f"{at} = pose_trans({F}, {pose(T)})",
+        f"{above} = pose_trans({F}, {pose(transl(0.0, 0.0, approach_mm) @ T)})",
+        f"{sabove} = pose_trans({F}, {pose(transl(0.0, 0.0, approach_mm) @ S)})",
+    ]
+    if two_stage:
+        lines.append(f"{spre} = pose_trans({F}, {pose(transl(0.0, 0.0, contact_mm) @ S)})")
+    lines += [
+        f"{slow} = pose_trans({F}, {pose(transl(0.0, 0.0, side_low_mm) @ S)})",
+        f"{low} = pose_trans({F}, {pose(transl(0.0, 0.0, side_low_mm) @ T)})",
+    ]
+    lines += [ik_guard(v, qnear_rad, reg_error, ik_check=ik_check) for v in (sabove, slow, low, at, above)]
+    if two_stage:
+        lines.insert(len(lines) - 4, ik_guard(spre, qnear_rad, reg_error, ik_check=ik_check))
+    lines.append(f"movej(get_inverse_kin({sabove}, qnear={q_list(qnear_rad)}), a={_speed('a_joint', speeds.a_joint)}, "
+                 f"v={_speed('v_joint', speeds.v_joint)})")
+    if two_stage:
+        lines.append(f"movel({spre}, a={a_l}, v={v_free})")
+    lines += [f"movel({slow}, a={a_l}, v={v_c})", f"movel({low}, a={a_l}, v={v_c})",
+              f"movel({at}, a={a_l}, v={v_c})", grip_lines]
+    if payload_after is not None:
+        lines.append(set_payload(payload_after[0], payload_after[1]))
+    lines += [f"movel({low}, a={a_l}, v={v_c})", f"movel({above}, a={a_l}, v={v_free})"]
+    return "\n".join(lines)
+
+
 def place_stone(T_base_frame: np.ndarray, T_frame_tcp_place: np.ndarray, approach_mm: float,
                 qnear_rad: Sequence[float], speeds: Speeds, do_open: int, pulse_s: float, wait_s: float, *,
                 do_close: int | None = None, contact_mm: float | None = None,
                 payload_after: tuple[float, Sequence[float]] | None = None, reg_error: int = REG_ERROR,
-                ik_check: str = "has_solution") -> str:
+                ik_check: str = "has_solution", side_mm: float = 0.0, side_low_mm: float | None = None) -> str:
     """Place the held stone at T_frame_tcp_place relative to the measured frame T_base_frame (both mm).
 
     Sequence: movej (IK near qnear) to `approach_mm` above along frame z -> movel down (v_lin to `contact_mm` above,
     then v_contact; whole approach at v_contact if contact_mm is None) -> open pulse on do_open (+ do_close off)
     -> wait -> optional set_payload(payload_after = (kg, cog_mm), the payload without the stone) -> retract the
     same way. Tested shape: URSim place block (research test_place.py, tests/test_ur_ursim.py).
+    side_mm != 0 (a wall stone next to a placed neighbour, Samuel 2026-10-09): down beside the place pose (side_mm
+    along its TCP x) to side_low_mm above it, sideways over it, down; the retreat goes straight up (_side_move).
     """
     grip = gripper("open", do_open, do_close, pulse_s, wait_s)
+    if side_mm:
+        if side_low_mm is None:
+            raise ValueError("side_low_mm is needed for a place from the side")
+        return _side_move("pl", T_base_frame, T_frame_tcp_place, approach_mm, qnear_rad, speeds, contact_mm,
+                          float(side_mm), float(side_low_mm), grip, payload_after, reg_error, "place_stone", ik_check)
     return _contact_move("pl", T_base_frame, T_frame_tcp_place, approach_mm, qnear_rad, speeds, contact_mm, grip,
                          payload_after, reg_error, "place_stone", ik_check)
 

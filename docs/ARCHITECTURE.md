@@ -27,7 +27,7 @@ Free software only: OpenCV 4.14.0.94 (ArUco/ChArUco, solvePnP, calibrateCamera, 
 | `ares` | ARES base_link: floor, centre between the steering axes, x forward, y left, z up |
 | `base` | UR5 base frame = UR controller base = RoboDK UR5 base (`T_ares_base` = `[ur5]` mount) |
 | `flange` | UR5 tool flange (tool0); RTDE `actual_TCP_pose` with TCP offset removed |
-| `tcp` | gripper TCP = flange · transl(0, 0, tcp_z) · rotz(90°): x = stone length, y = jaw closing direction, z out of the flange; origin = top centre of the held stone |
+| `tcp` | gripper TCP = flange · transl(0, 0, tcp_z) · rotz(90°): x = stone length, y = jaw closing direction, z out of the flange; origin = top centre of the held stone (a half stone: [half_brick] grasp_above_top_mm = 20 mm above it, 2026-10-09 - every half-stone TCP pose is raised by it, `mauer.config.grasp_above_top_mm`) |
 | `cam` | OpenCV camera frame: origin = projection centre, z = optical axis, x = image right, y = image down |
 | `board` | OpenCV 4.14 CharucoBoard frame: origin = top-left outer corner of the printed board, x right, y down, z into the board |
 | `wall` | origin on the wall centreline at floor level, x along the wall (ARES travel direction), y towards ARES, z up |

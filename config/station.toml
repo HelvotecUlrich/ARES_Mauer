@@ -104,6 +104,12 @@ pin_across = 51.428         # PLACEHOLDER: ONE pin pair centred along the length
                             # 100 - 50.25 = 49.75 mm from the end), inside the ~10 mm capture range
 pin_length = 23.5           # PLACEHOLDER: = [brick] pin_length
 mass_kg = 0.0               # UNKNOWN: like the full stone (CAD volume of the current half stone unknown)
+grasp_above_top_mm = 20.0   # ASSUMPTION (Samuel 2026-10-09: "bei halben Steinen nicht allzuweit runter, da oben die Pins
+                            # rausstehen", 20 mm chosen; "wir haben viele Rillen im Greifer"): the gripper takes a half
+                            # stone this much higher - the TCP lies 20 mm above the stone's top centre (the full stone's
+                            # pin pairs at +-50 mm pass beside the 60 mm wide jaws, the half stone's pair stands in the
+                            # middle). tools/make_job.py raises every half-stone TCP pose (magazine, station, wall);
+                            # mauer.config.grasp_above_top_mm
 
 [wall]
 side = "front"              # Samuel 2026-10-02: wall on the short (front) edge of ARES, ARES moves sideways (+y)
@@ -621,6 +627,15 @@ release_above_mm = 10.0     # CONFIRMED: Samuel 2026-10-09 ("immer 10 mm drueber
                             # the magazine cones: protective stop (run 2026-10-09_103903, first real dry run).
                             # URRobot / SimRobot place_magazine, place_wall (mauer.backends.release_pose). Not in the
                             # RoboDK simulation (robodk/) yet: it still places at the place pose
+place_side_mm = 20.0        # ASSUMPTION (Samuel 2026-10-09: "seitlich und von oben anfahren ... dann seitlich zum Stein
+                            # nebendran hinfahren", 20 mm chosen): a wall stone with ONE placed neighbour in its course
+                            # comes down this far beside its place pose (along the stone, away from the neighbour) and
+                            # moves sideways to it - straight down into the small joint could hit the neighbour, from
+                            # the side it is at most pushed a little. Planned per stone by tools/make_job.py
+                            # (wallplan.side_signs -> StoneTask.side_mm); no neighbour or two: straight down
+place_side_above_pins_mm = 30.0  # Samuel 2026-10-09 ("so 3 cm ueber den Pins des unteren Steines"): the sideways move
+                            # runs with the held stone's bottom this far above the pin tips of the course below
+                            # (config.side_lift_mm: TCP pin_length - bed_joint + 30 = 52.5 mm above the place pose)
 abort_decel = 1.2           # ASSUMPTION: stopl deceleration for an abort [m/s²] (URScript movel default)
 block_start_timeout_s = 3.0 # ASSUMPTION: no start marker within this time = compile error (check PolyScope log)
 do_grip_close = 1           # CONFIRMED 2026-10-06 (Samuel; tools/ur_check.py grip on the UR5): the gripper switches on

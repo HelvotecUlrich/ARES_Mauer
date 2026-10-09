@@ -32,6 +32,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 
 from . import geometry as g
+from .config import grasp_above_top_mm
 from .job import Job
 from .sequencer import RunResult, Sequencer, SequencerError, SequencerPaused
 
@@ -65,7 +66,8 @@ def magazine_approach_mm(cfg: Mapping, job: Job, filled, kinds: Mapping[str, str
     pose, or the release pose of a put-down) so that a held stone of `kind` hanging there clears the top (pins
     included) of every stone in the OTHER stacks (`filled` slot ids, their types in `kinds`) by [magtest]
     approach_clear_mm;
-    at least approach_mm (the job's). The TCP is the top centre of the held stone (body, pins above it)."""
+    at least approach_mm (the job's). The held stone's top face lies config.grasp_above_top_mm below the TCP (a half
+    stone is held 20 mm higher, 2026-10-09), its body below that, its pins above it."""
     b, hb = cfg["brick"], cfg.get("half_brick", {}) or {}
     clear = float(cfg.get("magtest", {}).get("approach_clear_mm", 0.0))
     height = {"full": float(b["height"]), "half": float(hb.get("height", b["height"]))}
@@ -75,7 +77,8 @@ def magazine_approach_mm(cfg: Mapping, job: Job, filled, kinds: Mapping[str, str
             for k in filled for s in [job.magazine.slot(k)] if s.stack != stack]
     if not tops:
         return float(approach_mm)
-    bottom_at_slot = float(z_tcp) - height.get(kind, height["full"])     # held stone bottom with the TCP at z_tcp
+    bottom_at_slot = (float(z_tcp) - grasp_above_top_mm(dict(cfg), kind)      # held stone bottom with the TCP at z_tcp
+                      - height.get(kind, height["full"]))
     return max(float(approach_mm), max(tops) + clear - bottom_at_slot)
 
 

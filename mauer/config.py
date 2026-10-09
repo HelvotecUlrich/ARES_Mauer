@@ -90,6 +90,24 @@ def stack_top_z(cfg: dict, z0: float, layer: int, kind: str = "full") -> float:
     return float(z0) + layer * h + (layer - 1) * float(b.get("bed_joint", 0.0))
 
 
+def grasp_above_top_mm(cfg: dict, kind: str = "full") -> float:
+    """How far above the stone's top centre the TCP sits when the gripper holds a stone of `kind`: 0 for a full stone,
+    [half_brick] grasp_above_top_mm for a half stone (Samuel 2026-10-09: the half stone's pin pair stands in the middle,
+    under the gripper). The TCP z points into the stone: the stone fills TCP z = offset .. offset + height."""
+    if kind != "half":
+        return 0.0
+    return float((cfg.get("half_brick") or {}).get("grasp_above_top_mm", 0.0))
+
+
+def side_lift_mm(cfg: dict) -> float:
+    """TCP height above a wall place pose at which a stone set from the side moves sideways (Samuel 2026-10-09): the
+    held stone's bottom [ur] place_side_above_pins_mm above the pin tips of the course below - the pins stand
+    pin_length - bed_joint above the placed stone's bottom (bed joint 1 mm, 2026-10-06)."""
+    b = cfg["brick"]
+    return (float(b.get("pin_length", 0.0)) - float(b.get("bed_joint", 0.0))
+            + float(cfg.get("ur", {}).get("place_side_above_pins_mm", 30.0)))
+
+
 def T_flange_tcp(cfg: dict) -> np.ndarray:
     """Gripper TCP in the flange frame – identical to robodk/rdk_common.tcp_pose(): z offset, then rotz(90°)."""
     from .geometry import rotz, transl

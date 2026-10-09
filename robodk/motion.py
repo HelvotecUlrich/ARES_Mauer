@@ -281,30 +281,46 @@ class Planner:
                 return False
         return _Ctx()
 
-    def plan_to(self, j_from, target, approach: float | None = None):
+    def plan_to(self, j_from, target, approach: float | None = None, side=None, low: float | None = None):
         with self._planning():
-            return self._plan_to(j_from, target, approach)
+            return self._plan_to(j_from, target, approach, side, low)
 
-    def _plan_to(self, j_from, target, approach: float | None = None):
+    def _plan_to(self, j_from, target, approach: float | None = None, side=None, low: float | None = None):
         """Moves from j_from to the target pose (ARES frame) with a vertical approach:
-        returns (moves, j_target) with moves = [("J", joints) | ("L", pose) | ("E", pose)] ("E" = engage, untested)."""
+        returns (moves, j_target) with moves = [("J", joints) | ("L", pose) | ("E", pose)] ("E" = engage, untested).
+        side = (dx, dy, dz) mm in the ARES frame, low mm (a wall stone set from the side, Samuel 2026-10-09): the
+        approach comes down at the target shifted by `side` (tested down to the engage height), then - untested
+        contact phase - to `low` above the shifted target, sideways to `low` above the target and down."""
         app_h = approach or self.approach
+        S = transl(*side) if side is not None else None
         sols = rank(self.ik_all(target), j_from)
         for j_t, pose in sols:
             pre = transl(0, 0, self.engage) * pose
             app = transl(0, 0, app_h) * pose
+            tail = [("E", pose)]
+            chain = [j_t]
+            if S is not None:                                  # from the side: pre / app over the side point
+                lo_t = transl(0, 0, low) * pose
+                lo_s = S * lo_t
+                pre, app = S * pre, S * app
+                j_lo_s, j_lo_t = self.ik(lo_s, j_t), self.ik(lo_t, j_t)
+                if not (j_lo_s and j_lo_t):
+                    continue
+                tail = [("E", lo_s), ("E", lo_t), ("E", pose)]
+                chain = [j_lo_s, j_lo_t, j_t]
             j_pre = self.ik(pre, j_t)
             j_app = self.ik(app, j_t)
             if not (j_pre and j_app):
                 continue
             if max(abs(a - b) for a, b in zip(j_app, j_t)) > 60 or max(abs(a - b) for a, b in zip(j_pre, j_t)) > 30:
                 continue                                       # configuration change on the vertical line
-            if not self.state_free(j_app) or not self.free_l(j_app, pre) or not self.self_free_j(j_pre, j_t):
+            if not self.state_free(j_app) or not self.free_l(j_app, pre) or \
+                    not all(self.self_free_j(a, b) for a, b in zip([j_pre] + chain, chain)):
                 continue                                       # (the engage part: the tool-vs-arm model only)
             path = self._transfer(j_from, j_app)
             if path is None:
                 continue
-            moves = [("J", j) for j in path] + [("J", j_app), ("L", pre), ("E", pose)]
+            moves = [("J", j) for j in path] + [("J", j_app), ("L", pre)] + tail
             return moves, j_t, pose
         return None
 

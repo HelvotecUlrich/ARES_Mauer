@@ -125,7 +125,8 @@ def test_station_and_park(job, cfg):
     for s in st.slots:
         h = cfg["brick"]["height"] if s.kind == "full" else cfg["half_brick"]["height"]
         assert s.T_station_tcp[2, 3] == pytest.approx(ps["table_z"] + ps["holder_z"] + s.layer * h
-                                                      + (s.layer - 1) * cfg["brick"]["bed_joint"])
+                                                      + (s.layer - 1) * cfg["brick"]["bed_joint"]
+                                                      + config.grasp_above_top_mm(cfg, s.kind))   # half: 20 mm higher
         x, y = (ps["slots_xy"] if s.kind == "full" else ps["half_slots_xy"])[int(s.stack_id[1:])]
         assert s.T_station_tcp[:2, 3] == pytest.approx([x, y]) and s.id == f"{s.stack_id}l{s.layer}"
     layers = [st.slot(i).layer for i in st.take_order]
@@ -298,7 +299,8 @@ def test_l_job_stops_and_stones(ljob, lcfg):
     assert ljob.stops[0].ares.theta_deg == pytest.approx(-90.0) and abs(ljob.stops[2].ares.theta_deg) == \
         pytest.approx(180.0)
     for t in ljob.stones():                                                # place poses in the WALL frame
-        T_exp = T_legs[t.leg] @ g.transl(t.u_mm, 0.0, t.z_top_mm) @ g.rotx(math.pi)
+        T_exp = (T_legs[t.leg] @ g.transl(t.u_mm, 0.0, t.z_top_mm + config.grasp_above_top_mm(lcfg, t.kind))
+                 @ g.rotx(math.pi))                                       # a half stone is held 20 mm higher
         assert np.allclose(t.T_wall_tcp if not t.flip else t.T_wall_tcp @ g.rotz(math.pi), T_exp, atol=1e-9)
         assert t.key == (t.leg, t.course, t.index)
     for leg, lg in legs.items():
@@ -466,7 +468,7 @@ def test_l_round_trip_and_v1_still_loads(ljob, job, tmp_path):
         for k in ("leg", "route", "route_to_station", "route_from_station"):
             st.pop(k)
         for t in st["stones"]:
-            for k in ("leg", "kind", "length_mm"):
+            for k in ("leg", "kind", "length_mm", "side_mm"):          # side_mm: v2, 2026-10-09
                 t.pop(k)
     d["magazine"].pop("initial_kinds")
     d.pop("legs")

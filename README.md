@@ -208,6 +208,14 @@ of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config
   the whole C from one fill, 3 full stones left over. `results/steinliste.pdf` lists every stack (name as engraved on
   the MDF) with the number of layers to fill. Two station boards S0 / S1 (1 m baseline) stay; one would do for the
   fit, at a less precise heading. A longer station does not help: the reach ends at +-725 mm (row 1) / +-550 mm (row 2).
+- **Gripping and setting** (Samuel 2026-10-09): half stones are gripped `[half_brick] grasp_above_top_mm` = 20 mm
+  higher (their pin pair stands in the middle, under the gripper; every half-stone TCP pose is raised,
+  `mauer.config.grasp_above_top_mm`). A wall stone with ONE placed neighbour in its course (also across a corner)
+  comes down `[ur] place_side_mm` = 20 mm beside its place pose, away from the neighbour, moves sideways with its bottom
+  `[ur] place_side_above_pins_mm` = 30 mm above the pin tips of the course below and then goes down (straight down into
+  the small joint could hit the neighbour; from the side it is at most pushed a little) - planned per stone
+  (`wallplan.side_signs` -> `StoneTask.side_mm`), in the URScript (`script.place_stone`), the sim robot, the motion
+  guard's descent column and the RoboDK planner. No neighbour or one at both ends: straight down.
 - **Layout "final"** (Samuel 2026-10-09): this C with this station, frozen in `final/` (stone list, floor map, laser
   sheets, cone, RoboDK report, pictures, video locally) with a German overview `final/README.md`; git tag
   `layout-final`.

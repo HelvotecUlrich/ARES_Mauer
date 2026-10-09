@@ -34,8 +34,12 @@ JSON layout (format "ares-mauer-job", version 2; version 1 = the same without th
                 "qnear_rad": [6] | null}],          # IK branch hint for the controller's get_inverse_kin
      "stones": [{"course": 0, "index": 0, "u_mm": 100.0, "z_top_mm": 140.0,
                  "leg": "A" | null, "kind": "full" | "half", "length_mm": 200.0,   # v2
-                 "T_wall_tcp": 4x4,                 # place pose = T_wall_leg @ transl(u, 0, z_top) @ rotx(pi)
-                                                    #   [@ rotz(pi) if flip]; TCP = top centre of the stone
+                 "side_mm": 20.0,                   # v2, optional (2026-10-09): set from the side - down this far
+                                                    #   beside T_wall_tcp along its TCP x, sideways at
+                                                    #   config.side_lift_mm; 0 / missing = straight down
+                 "T_wall_tcp": 4x4,                 # place pose = T_wall_leg @ transl(u, 0, z_top + grasp) @ rotx(pi)
+                                                    #   [@ rotz(pi) if flip]; TCP = top centre of the stone, of a
+                                                    #   half stone grasp = [half_brick] grasp_above_top_mm above it
                  "flip": false, "slot": "m03" | null,   # magazine slot the stone is taken from (planned)
                  "qnear_rad": [6] | null,           # IK hint of the place pose
                  "via_q_rad": [[6], ...]}]}],       # joint waypoints of the transfer magazine -> wall (planner)
@@ -134,6 +138,9 @@ class StoneTask:
     leg: str | None = None                 # v2: wall leg (None = straight wall)
     kind: str = "full"                     # v2: "full" | "half"
     length_mm: float | None = None         # v2: stone length along the leg
+    side_mm: float = 0.0                   # side approach (2026-10-09): come down this far beside T_wall_tcp along its
+                                           # TCP x (the stone's length; signed, away from the placed neighbour), move
+                                           # sideways to it at config.side_lift_mm; 0 = straight down (old jobs too)
 
     @property
     def key(self) -> tuple:
@@ -312,7 +319,8 @@ def _stone_to(t: StoneTask, v2: bool) -> dict:
          "T_wall_tcp": _m(t.T_wall_tcp), "flip": bool(t.flip), "slot": t.slot, "qnear_rad": _q(t.qnear_rad),
          "via_q_rad": [_q(v) for v in t.via_q_rad]}
     if v2:
-        d.update(leg=t.leg, kind=t.kind, length_mm=None if t.length_mm is None else float(t.length_mm))
+        d.update(leg=t.leg, kind=t.kind, length_mm=None if t.length_mm is None else float(t.length_mm),
+                 side_mm=float(t.side_mm))
     return d
 
 
@@ -370,7 +378,8 @@ def from_dict(d: Mapping) -> Job:
                                  _T(t["T_wall_tcp"]), bool(t.get("flip", False)), t.get("slot"),
                                  _q(t.get("qnear_rad")), [_q(v) for v in t.get("via_q_rad") or []],
                                  None if t.get("leg") is None else str(t["leg"]), str(t.get("kind", "full")),
-                                 None if t.get("length_mm") is None else float(t["length_mm"]))
+                                 None if t.get("length_mm") is None else float(t["length_mm"]),
+                                 float(t.get("side_mm", 0.0) or 0.0))
                        for t in s["stones"]], None if s.get("leg") is None else str(s["leg"]),
                       _route_from(s.get("route")), _route_from(s.get("route_to_station")),
                       _route_from(s.get("route_from_station"))) for s in d["stops"]]

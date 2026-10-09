@@ -401,10 +401,12 @@ def stone_mesh_path(cfg: dict, kind: str = "full") -> Path | None:
 
 
 def T_tc_cad(cfg: dict, kind: str = "full") -> Mat:
-    """Stone CAD frame in the "top centre" frame (origin top centre, x along the length, y across, z up); full stone
-    = T_TC_CAD."""
+    """Stone CAD frame in the "top centre" frame of the TCP (origin on the TCP, x along the length, y across, z up);
+    full stone = T_TC_CAD. A half stone is held [half_brick] grasp_above_top_mm higher (2026-10-09): its top face lies
+    that far below the TCP (mauer.config.grasp_above_top_mm)."""
     L, W, H = stone_dims(cfg, kind)
-    return Mat([[0, 1, 0, L / 2], [-1, 0, 0, W / 2], [0, 0, 1, -H], [0, 0, 0, 1]])
+    off = float((cfg.get("half_brick") or {}).get("grasp_above_top_mm", 0.0)) if kind == "half" else 0.0
+    return Mat([[0, 1, 0, L / 2], [-1, 0, 0, W / 2], [0, 0, 1, -H - off], [0, 0, 0, 1]])
 
 
 def held_stone_pose_kind(cfg: dict, kind: str = "full") -> Mat:

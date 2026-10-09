@@ -22,7 +22,9 @@ joints and via points):
   floor plates ([[targets]] leg boards, spare blocks) and the station table - the build fails on any violation;
 - nominal ARES pose per stop in the wall frame: inv(wall_frame(dist) @ transl(-a, 0, 0)) (simulate.py:269,
   rdk_common.wall_frame);
-- place poses: transl(u, 0, z_top) @ rotx(pi) (rdk_common.place_pose, simulate.py:302), no flip;
+- place poses: transl(u, 0, z_top) @ rotx(pi) (rdk_common.place_pose, simulate.py:302), no flip; every TCP pose of a
+  HALF stone (wall, magazine, station) [half_brick] grasp_above_top_mm higher (mauer.config.grasp_above_top_mm,
+  Samuel 2026-10-09: the gripper must stay above the half stone's centred pins);
 - look poses: the camera fronto-parallel above a board centre at [camera] working_dist with T_flange_cam_nominal
   ([camera.mount] PLACEHOLDER), flange orientation as for a place pose, rolled about the optical axis in 15 deg steps
   until the nominal UR5 kinematics (mauer.simworld.ik_near, robodk/motion.py family) has a solution that is also
@@ -441,11 +443,16 @@ def _wall_looks(ctx: _Ctx, k: int, a: float, ares: Pose2D, T_wall_leg: np.ndarra
     return [mjob.Look(f"stop{k}-{n}", [n], cands[n][0], None, cands[n][1].tolist()) for n in chosen]
 
 
-def _stone_task(ctx: _Ctx, k: int, s, T_base_wall: np.ndarray, T_wall_leg: np.ndarray | None) -> mjob.StoneTask:
-    """Place pose T_wall_leg @ transl(u, 0, z_top) @ rotx(pi) (rdk_common.place_pose), flipped by rotz(pi) only when
-    the nominal kinematics has no solution otherwise."""
+def _stone_task(ctx: _Ctx, k: int, s, T_base_wall: np.ndarray, T_wall_leg: np.ndarray | None,
+                side: int = 0) -> mjob.StoneTask:
+    """Place pose T_wall_leg @ transl(u, 0, z_top + grasp) @ rotx(pi) (rdk_common.place_pose; grasp =
+    mconfig.grasp_above_top_mm: a half stone is held 20 mm higher, 2026-10-09), flipped by rotz(pi) only when the
+    nominal kinematics has no solution otherwise. side (wallplan.side_signs, Samuel 2026-10-09): +1 / -1 = the stone
+    comes from +u / -u along its leg onto a placed neighbour -> StoneTask.side_mm = [ur] place_side_mm along the TCP x
+    of the place pose (its sign turned with a flipped pose), 0 = straight down."""
     T_wl = np.eye(4) if T_wall_leg is None else T_wall_leg
-    T_wt = T_wl @ g.transl(s.u, 0.0, s.z_top) @ g.rotx(math.pi)
+    grasp = mconfig.grasp_above_top_mm(ctx.cfg, getattr(s, "kind", "full"))
+    T_wt = T_wl @ g.transl(s.u, 0.0, s.z_top + grasp) @ g.rotx(math.pi)
     q = ik_near(T_base_wall @ T_wt @ g.inv(ctx.T_flange_tcp), ctx.q_park)
     flip = False
     if q is None:
@@ -459,9 +466,10 @@ def _stone_task(ctx: _Ctx, k: int, s, T_base_wall: np.ndarray, T_wall_leg: np.nd
         ctx.warnings.append(f"stop {k} stone {s.key}: tool {armcheck.self_clearance(q, ctx.cfg)[0]:.0f} mm from the "
                             f"arm at the place pose (< {armcheck.SELF_CLEARANCE_MM:g})")
     leg = getattr(s, "leg", "") or None
+    side_mm = float(side) * float(ctx.cfg.get("ur", {}).get("place_side_mm", 0.0)) * (-1.0 if flip else 1.0)
     return mjob.StoneTask(s.course, s.index, float(s.u), float(s.z_top), T_wt, flip, None,
                           None if q is None else q.tolist(), [], leg, getattr(s, "kind", "full"),
-                          float(s.length) if getattr(s, "length", 0.0) else None)
+                          float(s.length) if getattr(s, "length", 0.0) else None, side_mm + 0.0)
 
 
 def holder_pose(ctx: _Ctx, T_base_x: np.ndarray, T_x_tcp: np.ndarray) -> tuple[np.ndarray, np.ndarray | None, bool,
@@ -560,7 +568,8 @@ def _magazine(ctx: _Ctx) -> mjob.Magazine:
     clear: dict[str, float] = {}
 
     def add(sid: str, stack: str, x: float, y: float, lay: int, kind: str) -> None:
-        T0 = g.transl(x, y, mconfig.stack_top_z(cfg, deck, lay, kind or "full")) @ g.rotz(math.pi / 2) @ g.rotx(math.pi)
+        z = mconfig.stack_top_z(cfg, deck, lay, kind or "full") + mconfig.grasp_above_top_mm(cfg, kind or "full")
+        T0 = g.transl(x, y, z) @ g.rotz(math.pi / 2) @ g.rotx(math.pi)
         T, q, ok, clear[sid] = holder_pose(ctx, ctx.T_base_ares, T0)
         slots.append(mjob.MagazineSlot(sid, T, lay, stack, None if q is None else q.tolist(), ok, kind))
 
@@ -600,7 +609,8 @@ def _station(ctx: _Ctx) -> mjob.Station:
         for i, (x, y) in enumerate(xys):
             stack = f"{prefix}{i:02d}"
             for lay in range(1, layers + 1):
-                T0 = g.transl(float(x), float(y), mconfig.stack_top_z(cfg, z0, lay, kind)) @ g.rotx(math.pi)
+                z = mconfig.stack_top_z(cfg, z0, lay, kind) + mconfig.grasp_above_top_mm(cfg, kind)
+                T0 = g.transl(float(x), float(y), z) @ g.rotx(math.pi)
                 sid = f"{stack}l{lay}"
                 T, q, ok, clear[sid] = holder_pose(ctx, T_base_station, T0)
                 st_slots.append(mjob.StationSlot(sid, T, None if q is None else q.tolist(), ok, kind, lay, stack))
@@ -712,12 +722,13 @@ def build_nominal(cfg: dict, length: int | None = None, dist: float | None = Non
     ctx = _Ctx(cfg, dist, max_looks, look_margin_mm)
     stops: list[mjob.Stop] = []
     built: list = []
+    sides = load_wallplan().side_signs(cfg, [], [s for _, b in plan for s in b])    # set from the side (2026-10-09)
     for k, (a, batch) in enumerate(plan):
         ares = stop_pose(cfg, dist, a)
         T_base_wall = ctx.T_base_ares @ g.inv(ares.T)
         built += list(batch)
         looks = _wall_looks(ctx, k, a, ares, np.eye(4), None, built, None, standoff_mm=0.0)   # direct moves
-        tasks = [_stone_task(ctx, k, s, T_base_wall, None) for s in batch]
+        tasks = [_stone_task(ctx, k, s, T_base_wall, None, sides[s.key]) for s in batch]
         stops.append(mjob.Stop(k, float(a), ares, looks, tasks))
     return _finish(ctx, stops, ctx.magazine(), _station(ctx), key,
                    {"shape": "straight", "length_stones": int(length), "n_stones": len(stones),
@@ -859,6 +870,7 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
             ctx.warnings.append(f"leg {lg.name} closes between legs {legs_[i - 1].name} and {legs_[i + 1].name} in "
                                 f"every course: its last stone drops into a slot with {2 * wp.corner_gap(cfg):g} mm "
                                 "play ([wall] corner_gap_mm at both corners) - stone length tolerance")
+    side_of = wp.side_signs(cfg, legs_, [s for lg in order for _, b in plans[lg.name] for s in b])   # 2026-10-09
     for lg in order:
         T_wl = T_legs[lg.name]
         for a, batch in plans[lg.name]:
@@ -867,7 +879,7 @@ def build_l(cfg: dict, dist: float | None = None, *, reach_table_path: Path | No
             T_base_wall = ctx.T_base_ares @ g.inv(ares.T)
             built += list(batch)
             looks = _wall_looks(ctx, k, a, ares, T_wl, lg.name, built, by_name)
-            tasks = [_stone_task(ctx, k, s, T_base_wall, T_wl) for s in batch]
+            tasks = [_stone_task(ctx, k, s, T_base_wall, T_wl, side_of[s.key]) for s in batch]
             stops.append(mjob.Stop(k, float(a), ares, looks, tasks, lg.name))
     magazine, station = ctx.magazine(), _station(ctx)
     sites = target_sites(cfg, legs_)

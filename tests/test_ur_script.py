@@ -174,6 +174,44 @@ def test_place_stone_sequence_and_poses():
     assert "pl_pre" not in one and "movel(pl_at, a=0.3, v=0.02)" in one and "movel(pl_above, a=0.3, v=0.02)" in one
 
 
+def test_place_stone_from_the_side_sequence_and_poses():
+    """A wall stone next to a placed neighbour (Samuel 2026-10-09): down BESIDE the place pose (side_mm along the TCP x
+    = the stone's length, away from the neighbour) to side_low_mm above it, sideways to the place pose's x, then
+    down - not straight from above into the small joint. The retreat goes straight up. Every pose is IK-guarded."""
+    F = g.ur_to_T([-0.45, -0.10, 0.05, 0.0, 0.0, 0.3])
+    local = g.transl(10.0, 20.0, 0.0) @ g.rotx(np.pi) @ g.rotz(np.pi)          # a flipped stone: TCP x = frame -x
+    txt = s.place_stone(F, local, 150.0, Q, SP, do_open=0, pulse_s=0.5, wait_s=1.0, do_close=1, contact_mm=60.0,
+                        payload_after=(0.8, [0, 0, 60]), side_mm=20.0, side_low_mm=42.5)
+    lines = [ln for ln in txt.splitlines() if not ln.startswith(("#", " ", "if ", "end"))]
+    assigned = {ln.split(" =")[0]: poses_in(ln)[0] for ln in lines if " = pose_trans(pl_F, p[" in ln}
+    side = local @ g.transl(20.0, 0.0, 0.0)
+    assert np.allclose(side[:3, 3] - local[:3, 3], [-20.0, 0.0, 0.0])          # along the stone, frame -x here
+    exp = {"pl_at": local, "pl_above": g.transl(0, 0, 150) @ local, "pl_sabove": g.transl(0, 0, 150) @ side,
+           "pl_spre": g.transl(0, 0, 60) @ side, "pl_slow": g.transl(0, 0, 42.5) @ side,
+           "pl_low": g.transl(0, 0, 42.5) @ local}
+    assert set(assigned) == set(exp)
+    for k, T in exp.items():
+        assert g.pose_delta(assigned[k], T)[0] < 1e-6, k
+    motion = [ln for ln in lines if ln.startswith(("movej", "movel", "set_standard", "sleep", "set_payload"))]
+    assert motion == [
+        "movej(get_inverse_kin(pl_sabove, qnear=[0.000000000, -1.570796327, 1.570796327, -1.570796327, "
+        "-1.570796327, 0.000000000]), a=0.6, v=0.5)",
+        "movel(pl_spre, a=0.3, v=0.1)", "movel(pl_slow, a=0.3, v=0.02)", "movel(pl_low, a=0.3, v=0.02)",
+        "movel(pl_at, a=0.3, v=0.02)",
+        "set_standard_digital_out(1, False)", "set_standard_digital_out(0, True)", "sleep(0.5)",
+        "set_standard_digital_out(0, False)", "sleep(1.0)", "set_payload(0.8, [0.0, 0.0, 0.06])",
+        "movel(pl_low, a=0.3, v=0.02)", "movel(pl_above, a=0.3, v=0.1)"]
+    assert txt.count("get_inverse_kin_has_solution(") == 6                      # every pose of the path
+    # without contact_mm the whole way down runs at contact speed; side 0 = the vertical place as before
+    one = s.place_stone(F, local, 150.0, Q, SP, 0, 0.5, 1.0, side_mm=20.0, side_low_mm=42.5)
+    assert "pl_spre" not in one and "movel(pl_slow, a=0.3, v=0.02)" in one
+    assert s.place_stone(F, local, 150.0, Q, SP, 0, 0.5, 1.0, side_mm=0.0, side_low_mm=42.5) == \
+        s.place_stone(F, local, 150.0, Q, SP, 0, 0.5, 1.0)
+    for bad in (0.0, 150.0):
+        with pytest.raises(ValueError, match="side_low_mm"):
+            s.place_stone(F, local, 150.0, Q, SP, 0, 0.5, 1.0, side_mm=20.0, side_low_mm=bad)
+
+
 def test_pick_stone_closes_and_sets_payload():
     F = g.pose_xyz_rpy([300, 200, 400], [0, 0, 90])
     txt = s.pick_stone(F, g.rotx(np.pi), 120.0, Q, SP, do_close=1, pulse_s=0.5, wait_s=1.0, do_open=0,

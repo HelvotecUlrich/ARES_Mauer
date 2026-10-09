@@ -14,8 +14,10 @@ the real motions.
 What is checked (joint space, linear interpolation like movej, every STEP_DEG of the largest joint change, both ends
 included): the tool >= armcheck.SELF_CLEARANCE_MM from the arm's own links (self_clearance of armcheck, plus the
 held stone); every capsule >= armcheck.CLEARANCE_MM from the boxes of the world (GuardWorld). Not checked: the
-vertical approach / contact moves of the pick and place scripts (contact by design, as in robodk/motion.py), and the
-wall stones of OTHER legs than the job's (all legs of the job are included).
+vertical approach / contact moves of the pick and place scripts (contact by design, as in robodk/motion.py) - for a
+wall stone set from the side (StoneTask.side_mm, 2026-10-09) the descent column is the side point, the sideways move
+at config.side_lift_mm is a contact move as well -, and the wall stones of OTHER legs than the job's (all legs of the
+job are included).
 
 Detours (plan), first clear one wins: direct; via the park pose; straight above the target (transfer height, else
 OVER_TARGET_MM higher), alone or after the park pose; lift the TCP vertically to the transfer height at the start;
@@ -37,6 +39,7 @@ import numpy as np
 
 from . import armcheck
 from . import geometry as g
+from .config import grasp_above_top_mm
 from .simworld import ik_near, ur5_fk
 
 STEP_DEG = 2.0                    # sampling of a joint move (robodk/motion.py SELF_STEP_DEG)
@@ -120,7 +123,10 @@ class MotionGuard:
         layers = int(dk.get("magazine_layers", dk.get("layers", 1)))
         top_ares = (float(a["deck_top_z"]) + float(dk["holder_z"])
                     + layers * float(b["height"]) + (layers - 1) * float(b.get("bed_joint", 0.0)))
-        held = float(b["height"]) + float(b.get("pin_length", 0.0))
+        hb = cfg.get("half_brick") or {}
+        hang = max(float(b["height"]),                       # a half stone hangs grasp_above_top_mm lower (2026-10-09)
+                   float(hb.get("height", b["height"])) + grasp_above_top_mm(dict(cfg), "half"))
+        held = hang + float(b.get("pin_length", 0.0))
         self.z_safe_base = top_ares + held + LIFT_MARGIN_MM - float(self.T_ares_base[2, 3])   # TCP z, base frame
 
     # ── world ────────────────────────────────────────────────────────────────
@@ -129,7 +135,8 @@ class MotionGuard:
         self._checkers = None
 
     def _held_capsules(self, kind: str) -> list:
-        """The held stone in the flange frame: TCP = top centre, TCP z into the stone, length along TCP x, width incl.
+        """The held stone in the flange frame: TCP z into the stone, the top face config.grasp_above_top_mm below the
+        TCP (0 for a full stone, a half stone is held 20 mm higher - 2026-10-09), length along TCP x, width incl.
         the ribs of the long faces ([brick] rib_mm). A 3 x 3 grid of capsules along the length (radius r = min(width,
         height) / 6, ends within the stone: the faces between the grid lines at most (sqrt 2 - 1) r = 8.3 mm inside
         the box, < armcheck.CLEARANCE_MM) plus the 12 box edges as zero-radius segments (the grid alone missed the
@@ -141,14 +148,15 @@ class MotionGuard:
         r = min(W, H) / 6.0
         half = max(L / 2.0 - r, 0.0)
         T = self.T_flange_tcp
+        o = grasp_above_top_mm(dict(self.cfg), kind)
         out = []
         for v in (-W / 2.0 + r, 0.0, W / 2.0 - r):
-            for z in (r, H / 2.0, H - r):
+            for z in (o + r, o + H / 2.0, o + H - r):
                 out.append(("held stone", g.apply(T, [[-half, v, z]])[0], g.apply(T, [[half, v, z]])[0], r))
         x, y = L / 2.0, W / 2.0
-        edges = ([((-x, sy, z), (x, sy, z)) for sy in (-y, y) for z in (0.0, H)]
-                 + [((sx, -y, z), (sx, y, z)) for sx in (-x, x) for z in (0.0, H)]
-                 + [((sx, sy, 0.0), (sx, sy, H)) for sx in (-x, x) for sy in (-y, y)])
+        edges = ([((-x, sy, z), (x, sy, z)) for sy in (-y, y) for z in (o, o + H)]
+                 + [((sx, -y, z), (sx, y, z)) for sx in (-x, x) for z in (o, o + H)]
+                 + [((sx, sy, o), (sx, sy, o + H)) for sx in (-x, x) for sy in (-y, y)])
         for a, b in edges:
             out.append(("held stone", g.apply(T, [a])[0], g.apply(T, [b])[0], 0.0))
         return out

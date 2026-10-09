@@ -217,3 +217,27 @@ def test_a_run_started_later_knows_the_wall_that_stands(cfg, job, tmp_path):
     n_a = len(job.stops[0].stones)
     assert res.state == "done" and min(seen) >= n_a + len(first_b)
     assert not any(k in res.placed for k in (t.key for t in first_b))              # declared stones are skipped
+
+
+def test_the_shortest_free_detour_wins(cfg, job, monkeypatch):
+    """Samuel 2026-10-09 ("keine unnötigen Wege"): when the direct move is blocked the guard takes the free detour
+    with the least joint travel (motionguard.travel_deg ~ movej time), not the park pose because it comes first in
+    the list (world sim of the C: 43 of 134 picks / places went through the park pose, +20 % joint travel). The job's
+    own vias stay first, park_last still puts the park detours behind the others."""
+    from mauer import motionguard as mgm
+    mg = _guard(cfg, job)
+    q_from = np.asarray(job.magazine.slot(job.magazine.take_order[0]).qnear_rad, float)
+    q_to = np.asarray(next(t for t in job.stones() if t.qnear_rad).qnear_rad, float)
+    monkeypatch.setattr(mg, "state_problems", lambda q, holding=None, **k: [])
+    monkeypatch.setattr(mg, "path_problems", lambda qs, holding=None, **k: ["blocked"] if len(qs) == 2 else [])
+    cands = mg.candidates(q_from, q_to)
+    assert [] in cands and any(any(np.allclose(v, mg.park_q) for v in c) for c in cands)
+    travel = [mgm.travel_deg([q_from, *c, q_to]) for c in cands]
+    assert travel == sorted(travel)                                            # shortest first
+    v = mg.plan(q_from, q_to, "full")
+    assert v.ok and mgm.travel_deg([q_from, *v.vias, q_to]) == pytest.approx(min(t for c, t in zip(cands, travel) if c))
+    via = [np.radians([10.0, -80.0, 60.0, -70.0, -90.0, 0.0])]                 # the job's vias: still tried first
+    assert all(np.allclose(a, b) for a, b in zip(mg.candidates(q_from, q_to, via)[0], via))
+    mg.park_last = True
+    pk = [any(np.allclose(v, mg.park_q) for v in c) for c in mg.candidates(q_from, q_to)]
+    assert pk == sorted(pk)                                                    # every park detour behind the others

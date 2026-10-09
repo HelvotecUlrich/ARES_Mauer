@@ -537,7 +537,8 @@ class SimRobot:
         self._call("place_wall")
         rel = self._release_above()
         T_rel = release_pose(stone.T_wall_tcp, rel)
-        self._guard_above(T_base_wall, T_rel, stone.qnear_rad, f"place {stone.key}")
+        side = float(getattr(stone, "side_mm", 0.0) or 0.0)     # from the side (2026-10-09): down beside it first
+        self._guard_above(T_base_wall, T_rel @ g.transl(side, 0.0, 0.0), stone.qnear_rad, f"place {stone.key}")
         self._move_tcp(np.asarray(T_base_wall, float) @ T_rel, f"place {stone.key}")
         sid, T_wall_stone, T_tcp_stone = self._release()
         T_wall_stone = g.transl(0.0, 0.0, -rel) @ T_wall_stone                # the drop

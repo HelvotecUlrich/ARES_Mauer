@@ -24,8 +24,9 @@ Real implementations:
 
 Conventions: docs/ARCHITECTURE.md (T_a_b, mm, rad). Payload: [ur] payload_tool_kg / payload_cog_mm (PLACEHOLDER 0 =
 unknown -> URRobot refuses unless sim=True), stone [brick] mass_kg / half stone [half_brick] mass_kg (UNKNOWN 0) with
-the centre of gravity half a stone height below the TCP (TCP = top centre of the held stone, z into the stone, the
-same for both types).
+the centre of gravity half a stone height below the stone's top face (TCP z into the stone; the top face at the TCP
+for a full stone, [half_brick] grasp_above_top_mm below it for a half stone - held 20 mm higher, 2026-10-09). Wall
+stones with StoneTask.side_mm are set from the side (place_wall, Samuel 2026-10-09).
 """
 from __future__ import annotations
 
@@ -36,6 +37,7 @@ from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 import numpy as np
 
 from . import geometry as g
+from .config import grasp_above_top_mm, side_lift_mm
 from .camera.base import Frame
 
 log = logging.getLogger("mauer.backends")
@@ -122,10 +124,11 @@ class CameraLike(Protocol):
 
 # ── payload ───────────────────────────────────────────────────────────────────
 def stone_payload(tool_kg: float, tool_cog_mm: Sequence[float], stone_kg: float, T_flange_tcp: np.ndarray,
-                  stone_height_mm: float) -> tuple[float, list[float]]:
-    """(mass kg, CoG mm in the flange frame) of tool + held stone. Stone CoG = TCP + H/2 along TCP z (TCP = top
-    centre of the stone, z into the stone; ASSUMPTION: homogeneous stone, CoG at its geometric centre)."""
-    c_stone = g.apply(np.asarray(T_flange_tcp, float), [[0.0, 0.0, stone_height_mm / 2.0]])[0]
+                  stone_height_mm: float, grasp_mm: float = 0.0) -> tuple[float, list[float]]:
+    """(mass kg, CoG mm in the flange frame) of tool + held stone. Stone CoG = TCP + grasp_mm + H/2 along TCP z (TCP
+    z into the stone, its top face grasp_mm below the TCP - config.grasp_above_top_mm, a half stone is held 20 mm
+    higher; ASSUMPTION: homogeneous stone, CoG at its geometric centre)."""
+    c_stone = g.apply(np.asarray(T_flange_tcp, float), [[0.0, 0.0, float(grasp_mm) + stone_height_mm / 2.0]])[0]
     m = float(tool_kg) + float(stone_kg)
     if m <= 0.0:
         return 0.0, [float(v) for v in tool_cog_mm]
@@ -191,7 +194,8 @@ class URRobot:
             if half_kg <= 0.0 and not sim:
                 raise ValueError("[half_brick] mass_kg is 0 (UNKNOWN) - refusing to drive the real robot")
             self.payloads["half"] = stone_payload(self.tool_kg, self.tool_cog, half_kg, self.T_flange_tcp,
-                                                  float(hb.get("height", b["height"])))
+                                                  float(hb.get("height", b["height"])),
+                                                  grasp_above_top_mm(cfg, "half"))
         self.held_kind = "full"
         if guard is None and not sim:
             raise ValueError("the real robot needs the motion guard (mauer.motionguard.MotionGuard) - refusing")
@@ -326,13 +330,17 @@ class URRobot:
             raise
 
     def _place(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, hint, vias, name: str,
-               approach_mm: float | None = None):
+               approach_mm: float | None = None, side_mm: float = 0.0, side_low_mm: float | None = None):
+        """side_mm != 0 (a wall stone set from the side, 2026-10-09): the joint move ends above the side point
+        T_frame_tcp @ transl(side_mm, 0, 0) - the guarded descent column - and the script moves sideways at
+        side_low_mm above T_frame_tcp."""
         a = self.approach_mm if approach_mm is None else float(approach_mm)
         T_base_frame = np.asarray(T_base_frame, float)
+        T_entry = np.asarray(T_frame_tcp, float) @ g.transl(float(side_mm), 0.0, 0.0)   # = T_frame_tcp for side 0
         q = self._qnear(hint, T_base_frame @ np.asarray(T_frame_tcp, float))
-        column = T_base_frame @ np.asarray(T_frame_tcp, float)        # target TCP: the descent column
+        column = T_base_frame @ T_entry                                # target TCP: the descent column
         if self.guard is not None:                   # the script's IK near the checked joints = the checked path
-            q = self._q_above(T_base_frame, T_frame_tcp, q, name, a)
+            q = self._q_above(T_base_frame, T_entry, q, name, a)
             path = self._guarded(q, name, vias, column)
         else:
             path = self._vias(vias)
@@ -341,7 +349,8 @@ class URRobot:
                                                   self.do_open, self.pulse_s, self.wait_s, do_close=self.do_close,
                                                   contact_mm=self.contact_mm,
                                                   payload_after=(self.tool_kg, self.tool_cog),
-                                                  reg_error=self.reg_error, ik_check=self.ik_check)])
+                                                  reg_error=self.reg_error, ik_check=self.ik_check,
+                                                  side_mm=float(side_mm), side_low_mm=side_low_mm)])
         res = self._run(body, name)
         self.holding = None
         return res
@@ -352,10 +361,14 @@ class URRobot:
         return self._pick(T_base_ares, slot.T_ares_tcp, slot.qnear_rad, None, "mauer_pick_mag", kind, approach_mm)
 
     def place_wall(self, T_base_wall, stone):
-        """The jaws open [ur] release_above_mm above the place pose (wall frame z), as place_magazine."""
+        """The jaws open [ur] release_above_mm above the place pose (wall frame z), as place_magazine. A stone with
+        side_mm (a placed neighbour, Samuel 2026-10-09) comes down beside it and moves sideways at
+        config.side_lift_mm above the place pose (side_lift_mm - release_above_mm above the release pose)."""
         self.held_kind = getattr(stone, "kind", self.held_kind)
+        side = float(getattr(stone, "side_mm", 0.0) or 0.0)
+        low = side_lift_mm(self.cfg) - self.release_above_mm if side else None
         return self._place(T_base_wall, release_pose(stone.T_wall_tcp, self.release_above_mm), stone.qnear_rad,
-                           stone.via_q_rad, "mauer_place_wall")
+                           stone.via_q_rad, "mauer_place_wall", side_mm=side, side_low_mm=low)
 
     def pick_station(self, T_base_station, slot):
         return self._pick(T_base_station, slot.T_station_tcp, slot.qnear_rad, None, "mauer_pick_station",
