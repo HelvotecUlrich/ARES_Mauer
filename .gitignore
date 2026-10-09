@@ -15,3 +15,4 @@ cad/*.tool
 # camera datasets (images, robot poses) – large, not versioned
 data/
 .pytest_cache/
+final/*.mp4

@@ -208,6 +208,9 @@ of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config
   the whole C from one fill, 3 full stones left over. `results/steinliste.pdf` lists every stack (name as engraved on
   the MDF) with the number of layers to fill. Two station boards S0 / S1 (1 m baseline) stay; one would do for the
   fit, at a less precise heading. A longer station does not help: the reach ends at +-725 mm (row 1) / +-550 mm (row 2).
+- **Layout "final"** (Samuel 2026-10-09): this C with this station, frozen in `final/` (stone list, floor map, laser
+  sheets, cone, RoboDK report, pictures, video locally) with a German overview `final/README.md`; git tag
+  `layout-final`.
 - **Controller**: `[ares] controller_*` (CB3 box 462 x 418 x 268 mm, ASSUMPTION position) in the arm's collision boxes
   (motion guard, look checks, `calib_handeye orbit`), in the ARES footprint (routes, rotations; the pick-up station
   moved 600 mm farther from the C) and in the RoboDK ARES object; the ARES STEP is turned by 180 deg in RoboDK because
