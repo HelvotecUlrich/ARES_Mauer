@@ -2,6 +2,7 @@
 (closed mesh, fit in the STEP socket), the MDF pieces of the configured C (peg holes in diagonal sockets of every
 stone, V-tabs under every board plate, no overlaps in the room or on the sheets, sheet size) and the floor station
 (windows hold the plain plates, cones under every stack)."""
+import copy
 import math
 import sys
 from collections import Counter
@@ -216,6 +217,17 @@ def test_station_windows_hold_the_plates_and_blocks_sit_on_the_row(cfg, data):
         assert x1 - x0 <= p.seg_max
     dock_y = float(ps["ares_xyz"][1])
     assert float(ps["row_y"]) - dock_y == pytest.approx(cfg["wall"]["dist_nominal"])      # row at the wall distance
+
+
+def test_station_cut_never_runs_through_a_stack_of_the_other_row(cfg, data):
+    """Two rows: the cut between two half stacks of row 1 (x 740) would run through a cone of the full stack of row 2
+    at x 679 (cones at 679 +- 50.25) - no cut there, and no other cut keeps the pieces <= segment_max."""
+    c2 = copy.deepcopy(cfg)
+    ps = c2["pickup_station"]
+    ps["slots_xy"] = [[679.0, float(ps["row2_y"])]]
+    ps["half_slots_xy"] = [[680.0, float(ps["row_y"])], [800.0, float(ps["row_y"])]]
+    with pytest.raises(ValueError, match="no cut between the stacks"):
+        mg.station_pieces(c2, data["params"], mg._station_plates(c2))
 
 
 def test_cli_writes_everything(tmp_path):

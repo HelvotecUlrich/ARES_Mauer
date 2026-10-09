@@ -450,11 +450,15 @@ def station_pieces(cfg: dict, p: GuideParams, plates: list[tuple[str, Pt, tuple[
     # cut candidates: middle of the gaps between neighbouring stacks, away from the blocks
     cands = []
     reach = p.pin_along / 2.0 + cone_r(p, 0.0) + 5.0                    # the cones of a stone stay this far inside
+    zone = {"full": reach, "half": cone_r(p, 0.0) + 5.0}
     for a, b in zip(stacks, stacks[1:]):
-        lo = a[1] + (reach if a[2] == "full" else cone_r(p, 0.0) + 5.0)
-        hi = b[1] - (reach if b[2] == "full" else cone_r(p, 0.0) + 5.0)
-        if hi - lo > 2 * (p.dovetail[1] + 5.0):
-            cands.append((a[1] + a[3] / 2.0 + b[1] - b[3] / 2.0) / 2.0)
+        lo = a[1] + zone[a[2]]
+        hi = b[1] - zone[b[2]]
+        c = (a[1] + a[3] / 2.0 + b[1] - b[3] / 2.0) / 2.0
+        # a cut runs across both rows: also clear of the cones of every other stack (a wide full stack of one row
+        # next to a half stack of the other)
+        if hi - lo > 2 * (p.dovetail[1] + 5.0) and all(abs(c - s[1]) >= zone[s[2]] for s in stacks):
+            cands.append(c)
     cuts, start = [], 0.0
     while X - start > p.seg_max - p.dovetail[1]:
         ok = [c for c in cands if start + 50.0 < c <= start + p.seg_max - p.dovetail[1]]
