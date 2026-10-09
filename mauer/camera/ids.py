@@ -57,6 +57,8 @@ GENTL_ENV = "GENICAM_GENTL64_PATH" if sys.maxsize > 2**32 else "GENICAM_GENTL32_
 IDS_INSTALL_ROOTS = (r"C:\Program Files\IDS\ids_peak",)
 GEV_TL = "GEV"                  # System.TLType() of the IDS GigE Vision producer (seen 2026-10-05)
 STANDARD_PACKET_B = 1500        # Ethernet without jumbo frames; IDS peak readme recommends ~9000 B packets
+DISCOVERY_RETRIES = 4           # extra DeviceManager.Update() scans when a GigE system finds no device
+DISCOVERY_RETRY_S = 0.5         # [s] pause before each extra scan
 UNPACKED_MONO = ("Mono8", "Mono10", "Mono12", "Mono16")   # to_numpy_array gives (H, W); packed formats give 1-D
 
 MSG_NO_PACKAGE = ("Python package ids_peak not importable ({err}) - install it with "
@@ -381,6 +383,13 @@ def _device_manager(p: Any, cti_paths: Sequence[str] = (), search_install: bool 
         if add(new):
             log(f"no IDS GigE producer on {GENTL_ENV}; adding the installed ones: {new}")
             update()
+    # GigE discovery is one broadcast per Update(); on 2026-10-09 one Update() in five missed the camera at
+    # 192.168.50.10 (PoE, via the switch) while the others found it - so scan again before reporting "no camera".
+    for _ in range(DISCOVERY_RETRIES):
+        if not _has_gev(dm) or list(dm.Devices()):
+            break
+        time.sleep(DISCOVERY_RETRY_S)
+        update()
     return dm
 
 

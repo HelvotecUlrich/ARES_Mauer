@@ -1050,3 +1050,27 @@ def test_render_live(cam_check):
     assert view.dtype == np.uint8 and view.shape[2] == 3 and view.shape[1] == 1000
     zoom = cam_check.render_live(img, ["z"], max_width=800, zoom=True)
     assert zoom.shape[:2] == (600, 800)
+
+
+def test_discovery_scans_again_when_the_first_update_misses_the_camera(fake_ids, monkeypatch):
+    """GigE discovery is one broadcast per Update(); a miss (seen 2026-10-09, 1 of 5) must not end in 'no camera'."""
+    monkeypatch.setattr(ids, "DISCOVERY_RETRY_S", 0.0)
+    f = fake_ids()
+    found = list(f.devices)
+    f.devices = []
+    upd = f.mod.DeviceManager.Update
+
+    def update(self, *args):
+        upd(self, *args)
+        if len(f.calls("update")) >= 3:
+            f.devices = found
+    monkeypatch.setattr(f.mod.DeviceManager, "Update", update)
+    cam = _cam()
+    cam.open()
+    assert len(f.calls("update")) == 3
+    cam.close()
+    # still no device after every extra scan: the usual message, after 1 + DISCOVERY_RETRIES scans
+    f = fake_ids(n_devices=0)
+    with pytest.raises(CameraError, match="no camera found - check power"):
+        _cam().open()
+    assert len(f.calls("update")) == 1 + ids.DISCOVERY_RETRIES
