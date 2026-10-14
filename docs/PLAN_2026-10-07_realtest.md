@@ -186,3 +186,28 @@ NOT merged while the real test runs in main.
       [deck] / [magtest] changes; results/l_wall_sim.md), rerun `py.exe robodk/simulate.py --animate` IN MAIN for the
       RoboDK stamp (the worktree's stamp has no git commit: Windows git cannot follow the WSL worktree path), then
       the guarded sims; the 7 stale tests of the old main C (wf_05321a78-cff) are still red
+
+
+## Track G (Samuel 2026-10-14): software for the full test run (wall stones, board measurement, ARES moves)
+
+Samuel: "erledige die Software parts" of the readiness check (preflight_real on the C job: ARES moves blocked by
+`frame_x_points_to = "rear"`, ADS 48898, red route tests, station2 merge / job for 5 mm MDF). Done in `station2`
+(the merge into main was refused by the permission check - Samuel merges after looking at it).
+- [x] G1 ARES moves with the UR at the vehicle rear: `mauer.backends.AdsAres(ads, rear=config.ares_rear(cfg))` sends a
+      body-frame translation (dx, dy) as (-dx, -dy) to the PLC, rotations unchanged, and returns the outcome in this
+      repo's frame (odometry via `mauer.ares.ads.odom_in_ares_frame`: (x, y, theta) -> (-x, -y, theta)); HMI live pose
+      and Apply odometry compose the odometry the same way (`hmi.core.sources.compose_odometry(..., rear)`); the step
+      confirmation names the vehicle direction (`vehicle_words`); preflight_real no longer refuses "rear", only an
+      unknown value (tests/test_ares_frame.py)
+- [x] G2 ADS: `AresAds` skipped the connection on Windows when a direct TCP connect to 192.168.1.10:48898 failed -
+      but on Windows pyads goes through the local TwinCAT router (TcAdsDll, the route of MA amr_hmi SETUP.md 4), like
+      amr_hmi, which never probes and drove ARES on 2026-10-09. The pre-check now runs only where pyads talks to the
+      PLC directly (not on Windows; `[ares_ads] tcp_probe` overrides). NOT verified on ARES yet
+- [x] G3 stale tests of the old layouts: route leg lists (two-row station: 5 + 6 legs), last leg change A -> C (built
+      B -> A -> C), no station top-up for the straight job (56 holders), legs [5, 9, 5]
+- [x] G4 job / stone list / plan for the 5 mm MDF guides ([wall] base_z 5: course tops 125 / 246 / 367 / 488 mm);
+      guarded world sims (SimWorld guard=True, realistic, camera loop) seeds 1-3: 67/67 seated, 0 violations, max
+      2.58 / 2.20 / 2.06 mm, 50 / 52 / 51 ARES moves, 4 station trips each
+      RoboDK (`simulate.py --animate --video`, 15.5 min): 67/67 + 53/53 collision-checked, 11 routes clean, 0 top-ups;
+      final/ refreshed (stone list, plan, report, pictures, video). The RoboDK stamp of the worktree has no git commit:
+      after `git merge station2` in main rerun `py.exe robodk/simulate.py --animate` there (preflight_real asks for it)

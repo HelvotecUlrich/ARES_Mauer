@@ -61,8 +61,9 @@ Layouts, und das Layout selbst hat sich seitdem nicht geändert.
 
 ## Geprüft
 
-- RoboDK (`robodk/simulate.py --animate --video`, mit seitlichem Setzen und Halbstein-Griff): 67/67 Steine und 53/53
-  Umlagerungen Station → Magazin mit Kollisionsprüfung, 11 ARES-Fahrten ohne Kollision, 0 Mal Nachlegen.
+- RoboDK (`robodk/simulate.py --animate --video`, mit seitlichem Setzen und Halbstein-Griff; 2026-10-14 mit den
+  5-mm-Führungen, Lagenoberkanten 125 / 246 / 367 / 488 mm): 67/67 Steine und 53/53 Umlagerungen Station → Magazin
+  mit Kollisionsprüfung, 11 ARES-Fahrten ohne Kollision, 0 Mal Nachlegen.
 - Weltsimulation mit Motion Guard (wie die HMI-SIM; realistische Fahr-, Andock- und Messfehler), Seeds 1 – 3:
   je 67/67 Steine gesetzt, keine Verletzung, maximal 2,1 – 2,6 mm Abweichung, 50 – 52 ARES-Fahrten.
 
