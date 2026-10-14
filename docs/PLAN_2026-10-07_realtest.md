@@ -212,7 +212,9 @@ Samuel: "erledige die Software parts" of the readiness check (preflight_real on 
       final/ refreshed (stone list, plan, report, pictures, video). The RoboDK stamp of the worktree has no git commit:
       after `git merge station2` in main rerun `py.exe robodk/simulate.py --animate` there (preflight_real asks for it)
 - [x] G5 merged into main (Samuel 2026-10-14 "Merge selbst"): fast-forward to a11690a, main's stale
-      results/l_wall_sim.md of 2026-10-08 in stash@{0}; Samuel's estimates [ur] payload_cog_mm [0, 0, 200] and
-      [camera] settle_s 1.0 (ASSUMPTION, f5db833); RoboDK run in main: 67/67 + 53/53, stamped
-      data/jobs/nominal_C_robodk.json. preflight_real of the C job lists only [boards.ref] square_mm and the half
-      stone (mass, dimensions). Open on ARES: ADS connection from the Mauer HMI, the first small single move (direction)
+      results/l_wall_sim.md of 2026-10-08 in stash@{0}; Samuel's values: [camera] settle_s 1.0 (estimate),
+      [ur] payload_cog_mm [-32, 0, 105] (estimate, without a stone; 32 mm towards the camera = flange -x),
+      [boards.ref] square_mm 16 / marker_mm 12 CONFIRMED (the boards measure exactly nominal); RoboDK run in main
+      after the last config change, stamped data/jobs/nominal_C_robodk.json. preflight_real of the C job lists only the
+      half stone (mass, dimensions). Open on ARES: ADS connection from the Mauer HMI, the first small single move
+      (direction)
