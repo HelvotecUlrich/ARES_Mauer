@@ -746,9 +746,16 @@ def test_preflight_blocks_placeholders_outside_the_camera_loop(lcfg, ljob, tmp_p
     assert not any(key in text for key in OUTSIDE_THE_CAMERA_LOOP)
 
 
-def test_l_preflight_asks_for_the_half_stone(lcfg, ljob, tmp_path):
-    text = "\n".join(preflight_real(lcfg, ljob, intrinsics_file=tmp_path / "i", handeye_file=tmp_path / "h"))
-    assert "[half_brick] mass_kg <= 0" in text and "[half_brick] " in text and "PLACEHOLDER" in text
+def test_l_preflight_asks_for_the_half_stone(lcfg, ljob, tmp_path, monkeypatch):
+    kw = dict(intrinsics_file=tmp_path / "i", handeye_file=tmp_path / "h")
+    assert "[half_brick]" not in "\n".join(preflight_real(lcfg, ljob, **kw))     # measured by Samuel 2026-10-14
+    c = copy.deepcopy(lcfg)
+    c["half_brick"]["mass_kg"] = 0.0
+    st = mjob.config_status()
+    monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: {
+        **st, "[half_brick] height": {**st["[half_brick] height"], "status": "PLACEHOLDER"}})
+    text = "\n".join(preflight_real(c, ljob, **kw))
+    assert "[half_brick] mass_kg <= 0" in text and "[half_brick] height" in text and "PLACEHOLDER" in text
 
 
 def test_ur_robot_payload_per_stone_type(lcfg, ljob):
