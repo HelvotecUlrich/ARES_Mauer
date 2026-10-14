@@ -75,8 +75,9 @@ Lage des UR-Controllers (`[ares] controller_*`), Stationslage und -aufbau und An
 ## Offen
 
 - Standfestigkeit der 5er-Stapel (0,6 m hoch) ist nicht geprüft.
-- Echte Mauerläufe sind gesperrt, bis die ARES-Fahrten gespiegelt sind (der UR sitzt am Heck,
-  `[ares] frame_x_points_to = "rear"`).
+- ARES-Fahrten mit dem UR am Heck (`[ares] frame_x_points_to = "rear"`): seit 2026-10-14 rechnet `AdsAres` jede
+  Fahrt nach `base_link` um (x und y umgedreht, Drehung gleich), die Bestätigung im Schrittmodus nennt die
+  Fahrzeugrichtung. Am Fahrzeug noch nicht geprüft: zuerst eine kleine Einzelfahrt und die Richtung kontrollieren.
 - Der RoboDK-geprüfte Job (`data/jobs/nominal_C_robodk.json`) muss nach dem Zusammenführen in main dort neu erzeugt
   werden (`py.exe robodk/simulate.py --animate`), weil der Prüfstempel aus dem Worktree keinen Git-Commit enthält.
 

@@ -128,6 +128,16 @@ def ares_controller_box(cfg: dict) -> tuple[np.ndarray, np.ndarray] | None:
     return np.array([x0, -half_w, top - h]), np.array([x0 + d, half_w, top])
 
 
+def ares_rear(cfg: dict) -> bool:
+    """True if this repo's ARES frame is base_link turned by 180 deg about z ([ares] frame_x_points_to = "rear": the UR
+    at the vehicle rear, Samuel 2026-10-08), False for "front" or no entry (the plan until 2026-10-08). ARES moves and
+    the PLC odometry cross between the two frames in mauer.backends.AdsAres / mauer.ares.ads.odom_in_ares_frame."""
+    v = str((cfg.get("ares") or {}).get("frame_x_points_to", "front"))
+    if v not in ("front", "rear"):
+        raise ValueError(f"[ares] frame_x_points_to = {v!r}: must be \"front\" or \"rear\"")
+    return v == "rear"
+
+
 def T_ares_base(cfg: dict) -> np.ndarray:
     """UR5 base frame in the ARES frame – identical to robodk/rdk_common.ur5_base_pose()."""
     from .geometry import rotz, transl

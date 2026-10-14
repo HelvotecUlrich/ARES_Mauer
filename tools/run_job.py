@@ -281,7 +281,8 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
         from mauer.motionguard import MotionGuard
         robot = URRobot(link, cfg, job, guard=MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp,
                                                           approach_mm=job.approach_mm))
-        seq = Sequencer(job, cfg, robot, AdsAres(ads), cam, intr, X, log_dir=args.log_dir,
+        seq = Sequencer(job, cfg, robot, AdsAres(ads, rear=mconfig.ares_rear(cfg)), cam, intr, X,
+                        log_dir=args.log_dir,
                         confirm=confirm if args.step else None, save_images=args.save_images,
                         on_station_empty=station_empty)
         if args.resume_log:

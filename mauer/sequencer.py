@@ -76,8 +76,9 @@ import numpy as np
 
 from . import REPO
 from . import geometry as g
+from . import config as mconfig
 from . import floor as _floor
-from .ares.ads import MIN_MOVE_DEG, MIN_MOVE_MM, AresNotReady, MoveRefused
+from .ares.ads import MIN_MOVE_DEG, MIN_MOVE_MM, AresNotReady, MoveRefused, vehicle_words
 from .ares.ads import AresError as AdsError
 from .backends import BackendError, RobotError, ShotError
 from .job import Job, Look, SlotState, StoneTask, reload_plan, reload_short, restart_fill
@@ -298,10 +299,10 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
         p.append(f"config variant {cfg.get('_variant')!r} loaded, the job was built with {variant!r} - load the "
                  "same variant (--variant)")
     u, b, v = cfg.get("ur", {}), cfg.get("brick", {}), cfg.get("vision", {})
-    if str((cfg.get("ares") or {}).get("frame_x_points_to", "front")) != "front":
-        p.append("[ares] frame_x_points_to: this repo's +x is the vehicle REAR (UR at the rear, 2026-10-08) - the PLC "
-                 "would drive every ARES move the other way: mirror the layout into base_link first (arm-only runs: "
-                 "the magazine dry run, mauer/magtest.py)")
+    try:                                     # "rear": the backend turns every move into base_link (AdsAres)
+        mconfig.ares_rear(cfg)
+    except ValueError as e:
+        p.append(str(e))
     if not str(u.get("host", "")).strip():
         p.append("[ur] host is empty (PLACEHOLDER) - set the UR5 IP")
     tool = float(u.get("payload_tool_kg", 0.0) or 0.0)
@@ -678,7 +679,9 @@ class Sequencer:
         if self.paused:                              # a pause stops the run as "paused" (like a robot motion)
             raise SequencerPaused("run paused", self.stop_k)
         self._interlock(f"translate ({dx:+.1f}, {dy:+.1f}) mm")
-        self._confirm(f"ARES translate dx {dx:+.1f} mm, dy {dy:+.1f} mm ({why})")
+        s = -1.0 if mconfig.ares_rear(self.cfg) else 1.0          # the vehicle direction (base_link, AdsAres)
+        self._confirm(f"ARES translate dx {dx:+.1f} mm, dy {dy:+.1f} mm = vehicle {vehicle_words(s * dx, s * dy)} "
+                      f"({why})")
         self._ares_cmd("translate", dx, dy, why=why)
         self.dr = self.dr @ planar_T(dx, dy, 0.0)
         self.pose_est, self.pose_src = after_translation(self.pose_est, dx, dy), "predicted"

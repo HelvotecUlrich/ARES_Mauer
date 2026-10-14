@@ -20,7 +20,8 @@ Real implementations:
   else from the nominal UR5 kinematics (mauer.simworld.ik_near) seeded with the current joints - the controller
   solves the real IK.
   Shots: mauer.capture.capture_shot (flange pose = mean of the RTDE samples of the exposure window).
-- `AdsAres`: thin adapter around mauer.ares.AresAds (pattern A, amr_hmi owns heartbeat/MANUAL/HALT).
+- `AdsAres`: thin adapter around mauer.ares.AresAds (pattern A, amr_hmi owns heartbeat/MANUAL/HALT); turns the
+  moves into base_link when the UR sits at the vehicle rear ([ares] frame_x_points_to).
 
 Conventions: docs/ARCHITECTURE.md (T_a_b, mm, rad). Payload: [ur] payload_tool_kg / payload_cog_mm (PLACEHOLDER 0 =
 unknown -> URRobot refuses unless sim=True), stone [brick] mass_kg / half stone [half_brick] mass_kg (UNKNOWN 0) with
@@ -421,16 +422,34 @@ class URRobot:
 # ── real ARES ─────────────────────────────────────────────────────────────────
 class AdsAres:
     """Ares backend over mauer.ares.AresAds (connected). translate/rotate return the MoveOutcome; the PLC's own
-    checks (MoveRefused, AresNotReady, AresConnectionError) propagate."""
+    checks (MoveRefused, AresNotReady, AresConnectionError) propagate.
 
-    def __init__(self, ads):
+    rear ([ares] frame_x_points_to = "rear", mauer.config.ares_rear; the UR at the vehicle rear since 2026-10-08):
+    this repo's ARES frame is base_link turned by 180 deg about z, so a body-frame translation (dx, dy) goes to the PLC
+    as (-dx, -dy) and a rotation unchanged; the returned outcome is in this repo's frame again (the commanded move as
+    asked, the odometry through mauer.ares.ads.odom_in_ares_frame) - the sequencer never sees base_link. The PLC's
+    error values (final / lateral / heading error) refer to the move itself and stay as reported."""
+
+    def __init__(self, ads, rear: bool = False):
         self.ads = ads
+        self.rear = bool(rear)
 
     def translate(self, dx_mm: float, dy_mm: float):
-        return self.ads.translate(dx_mm, dy_mm)
+        if not self.rear:
+            return self.ads.translate(dx_mm, dy_mm)
+        return self._in_ares_frame(self.ads.translate(-dx_mm, -dy_mm))
 
     def rotate(self, dtheta_deg: float):
-        return self.ads.rotate(dtheta_deg)
+        out = self.ads.rotate(dtheta_deg)
+        return self._in_ares_frame(out) if self.rear else out
+
+    @staticmethod
+    def _in_ares_frame(out):
+        from dataclasses import replace
+
+        from .ares.ads import odom_in_ares_frame
+        return replace(out, dx_mm=-out.dx_mm, dy_mm=-out.dy_mm, odom_before=odom_in_ares_frame(out.odom_before, True),
+                       odom_after=odom_in_ares_frame(out.odom_after, True))
 
     def preflight(self) -> list[str]:
         return self.ads.preflight()

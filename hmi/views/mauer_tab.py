@@ -523,7 +523,7 @@ class MauerTab(QWidget):
             set_style(self.held_lbl, "color:#AAAAAA;")
         world = self._ctl.rig.world if self._ctl.rig is not None else None
         self.plan.set_snapshot(snap)
-        self.plan.set_live(ares_live(snap, self._ctx.last_ads_status, world))
+        self.plan.set_live(ares_live(snap, self._ctx.last_ads_status, world, self._ctl.ares_rear))
         self._show_pending()
         if self._ctl.state in ("paused", "aborted", "error"):
             self._update_enables()                       # recovery buttons follow held / pose status
@@ -542,7 +542,7 @@ class MauerTab(QWidget):
         """REAL: the live pose follows the HMI's odometry during an ARES command; Browse / Apply odometry enables."""
         snap = self._snap
         if snap is not None and snap.ares_cmd is not None and self._ctl.mode == "real" and self.isVisible():
-            live = ares_live(snap, d, None)
+            live = ares_live(snap, d, None, self._ctl.ares_rear)
             self.plan.set_live(live)
             self._show_pose(snap, live)
         if self._ctl.state in ("empty", "loaded", "paused", "aborted", "error"):

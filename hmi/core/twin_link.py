@@ -213,7 +213,7 @@ class TwinLink(QObject):
         snap, rig, src = ctl.snapshot, ctl.rig, self._ur_src
         world = rig.world if rig is not None and rig.mode == "sim" else None
         ur = src.snapshot() if src is not None else None
-        live = ares_live(snap, None if world is not None else self._ctx.last_ads_status, world)
+        live = ares_live(snap, None if world is not None else self._ctx.last_ads_status, world, ctl.ares_rear)
         return frame_from(snap, ur, live, s, world)
 
     # ── GUI thread ───────────────────────────────────────────────────────────

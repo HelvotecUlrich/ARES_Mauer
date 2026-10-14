@@ -41,6 +41,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 
+from mauer import config as mconfig
 from mauer.ares.ads import OdomPose
 from mauer.magtest import MagazineTest, is_magtest, pendant_check
 from mauer.reference import Pose2D
@@ -254,6 +255,13 @@ class RunController(QObject):
     @property
     def session(self) -> JobSession | None:
         return self._session
+
+    @property
+    def ares_rear(self) -> bool:
+        """The session's ARES frame is base_link turned by 180 deg (mauer.config.ares_rear): the PLC odometry is
+        composed in that frame (sources.compose_odometry / ares_live)."""
+        s = self._session
+        return s is not None and mconfig.ares_rear(s.cfg)
 
     @property
     def opts(self) -> RunOptions | None:
@@ -496,7 +504,7 @@ class RunController(QObject):
                 ares = rig.world.ares
             else:
                 from mauer.backends import AdsAres
-                ares = AdsAres(rig.ads)
+                ares = AdsAres(rig.ads, rear=mconfig.ares_rear(s.cfg))
             robot, ares = HaltGate(rig.robot, self._halt), HaltGate(ares, self._halt)
             runner = MagazineTest if self.magtest else Sequencer
             seq = runner(s.job, s.cfg, robot, ares, rig.camera, rig.intr, rig.T_flange_cam, log_dir=log_dir,
@@ -758,7 +766,8 @@ class RunController(QObject):
             seq = self._seq
             if now is None or self._odom_at_stop is None or seq.pose_est is None:
                 raise RuntimeError("no odometry or pose estimate")
-            seq.set_pose(compose_odometry(seq.pose_est, self._odom_at_stop, now), "operator: odometry since the stop")
+            seq.set_pose(compose_odometry(seq.pose_est, self._odom_at_stop, now, self.ares_rear),
+                         "operator: odometry since the stop")
             self._odom_at_stop = now
         self._submit(job, "apply odometry")
 

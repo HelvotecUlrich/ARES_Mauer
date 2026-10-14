@@ -32,10 +32,12 @@ frame_x_points_to = "rear"  # CONFIRMED: Samuel 2026-10-08 - the UR is mounted a
                             # (Move tab, feature Base): X growing -> TCP right, Y growing -> TCP forward (driving
                             # direction), the arm at base (-147, 544) mm over the magazine, left. The chassis box, the
                             # deck and the magazine are symmetric under that turn, so arm-only runs (mauer/magtest.py)
-                            # are right; ARES moves are NOT: the PLC (MA frame, base_link) would drive the other way and
-                            # the STEP model's scanners / steering sit mirrored - mauer.sequencer.preflight_real refuses
-                            # wall runs until the layout is mirrored into base_link ("front"). Until 2026-10-08 the
-                            # plan assumed "front" (UR at the vehicle front)
+                            # are right. ARES moves (2026-10-14): mauer.backends.AdsAres sends a body-frame
+                            # translation (dx, dy) of this frame as (-dx, -dy) to the PLC (base_link), rotations
+                            # unchanged, and turns the PLC odometry back (mauer.ares.ads.odom_in_ares_frame; HMI live
+                            # pose / Apply odometry the same); the step confirmation names the vehicle direction.
+                            # RoboDK turns the STEP model (robodk/build_station.py). Until 2026-10-08 the plan assumed
+                            # "front" (UR at the vehicle front)
 
 [ur5]
 robot_file = "robodk/library/UR5.robot"   # RoboDK library, UR5 (CB3), downloaded 2026-10-02

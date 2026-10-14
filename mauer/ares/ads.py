@@ -181,6 +181,24 @@ class OdomPose:
         return (math.cos(t) * dxw + math.sin(t) * dyw, -math.sin(t) * dxw + math.cos(t) * dyw, dth)
 
 
+def odom_in_ares_frame(o: OdomPose | None, rear: bool) -> OdomPose | None:
+    """PLC odometry (base_link) as the pose of this repo's ARES frame. With the UR at the vehicle rear ([ares]
+    frame_x_points_to = "rear", mauer.config.ares_rear) that frame is base_link turned by 180 deg about z: (x, y,
+    theta) -> (-x, -y, theta), i.e. in the odometry frame turned the same way, so delta_to() between two converted
+    poses is the body-frame move of this repo's frame (the PLC's translation negated, the rotation the same)."""
+    if o is None or not rear:
+        return o
+    return OdomPose(-o.x_mm, -o.y_mm, o.theta_deg)
+
+
+def vehicle_words(dx_mm: float, dy_mm: float) -> str:
+    """A base_link body-frame translation in words for the operator (+x FORWARD, +y LEFT; parts under 1 mm left out),
+    e.g. "300 mm FORWARD, 120 mm RIGHT"."""
+    parts = [f"{abs(v):.0f} mm {pos if v > 0 else neg}" for v, pos, neg in ((dx_mm, "FORWARD", "BACKWARD"),
+                                                                           (dy_mm, "LEFT", "RIGHT")) if abs(v) >= 1.0]
+    return ", ".join(parts) or "0 mm"
+
+
 # (attribute, ADS symbol, kind, scale) - one ADS sum read per status()
 _STATUS_FIELDS: tuple[tuple[str, str, str, float], ...] = (
     ("if_version", FROM + "nIfVersion", "int", 1.0),

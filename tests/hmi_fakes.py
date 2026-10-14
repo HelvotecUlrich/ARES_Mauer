@@ -354,6 +354,11 @@ class FakeRunController(QObject):
     def odom_moved(self):
         return self.odom
 
+    @property
+    def ares_rear(self) -> bool:
+        from mauer import config
+        return self.session is not None and config.ares_rear(self.session.cfg)
+
     def set_session(self, session) -> None:
         self.calls.append(("set_session", session))
         self.session = session

@@ -282,14 +282,15 @@ def test_the_pendant_check_names_the_directions_in_the_driving_direction(cfg):
     assert pendant_check(front)[0].startswith("between")
 
 
-def test_wall_runs_are_refused_while_the_frame_points_to_the_vehicle_rear(cfg, job):
-    """The sequencer's ARES moves are in this repo's frame; with +x = vehicle rear the PLC would drive the other way.
-    The dry run moves no ARES (its preflight does not care)."""
+def test_wall_runs_accept_the_frame_at_the_vehicle_rear(cfg, job):
+    """Since 2026-10-14 mauer.backends.AdsAres turns the sequencer's ARES moves into base_link
+    (tests/test_ares_frame.py): "rear" no longer blocks a wall run, an unknown value does. The dry run moves no ARES
+    (its preflight does not care)."""
     from mauer.sequencer import preflight_real
-    assert any("vehicle REAR" in p for p in preflight_real(cfg, job))
-    front = copy.deepcopy(cfg)
-    front["ares"]["frame_x_points_to"] = "front"
-    assert not any("vehicle REAR" in p for p in preflight_real(front, job))
+    assert not any("frame_x_points_to" in p for p in preflight_real(cfg, job))
+    odd = copy.deepcopy(cfg)
+    odd["ares"]["frame_x_points_to"] = "left"
+    assert any("frame_x_points_to" in p for p in preflight_real(odd, job))
     from mauer import magtest
     assert magtest.preflight(cfg, job) == []
 

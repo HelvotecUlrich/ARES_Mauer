@@ -14,7 +14,7 @@ from typing import Mapping
 
 import numpy as np
 
-from mauer.ares.ads import OdomPose
+from mauer.ares.ads import OdomPose, odom_in_ares_frame
 from mauer.job import Job
 from mauer.reference import Pose2D, planar_T
 
@@ -134,16 +134,18 @@ def odom_from_status(ads_status: Mapping | None) -> OdomPose | None:
                     float(ads_status.get("fPosTheta_deg", 0.0)))
 
 
-def compose_odometry(pose: Pose2D, before: OdomPose, after: OdomPose) -> Pose2D:
+def compose_odometry(pose: Pose2D, before: OdomPose, after: OdomPose, rear: bool = False) -> Pose2D:
     """pose moved by the odometry displacement before -> after (body frame of `before`, as
-    Sequencer._from_odometry): pose (+) delta."""
-    dx, dy, dth = before.delta_to(after)
+    Sequencer._from_odometry): pose (+) delta. before / after: the PLC's odometry (base_link); rear: this repo's ARES
+    frame is base_link turned by 180 deg (mauer.config.ares_rear) - the delta of that frame is used."""
+    dx, dy, dth = odom_in_ares_frame(before, rear).delta_to(odom_in_ares_frame(after, rear))
     return Pose2D.from_T(pose.T @ planar_T(dx, dy, math.radians(dth)))
 
 
-def ares_live(snap, ads_status: Mapping | None, world=None) -> AresLive:
-    """REAL during an ARES command (snap.ares_cmd with odometry): the command's start pose (+) the odometry since;
-    otherwise the sequencer's estimate. SIM: also the true pose and the simulated odometry."""
+def ares_live(snap, ads_status: Mapping | None, world=None, rear: bool = False) -> AresLive:
+    """REAL during an ARES command (snap.ares_cmd with odometry): the command's start pose (+) the odometry since
+    (rear: compose_odometry); otherwise the sequencer's estimate. SIM: also the true pose and the simulated
+    odometry (already in this repo's frame)."""
     true_pose = getattr(world, "ares_true", None) if world is not None else None
     odom = world.ares.odom if world is not None else odom_from_status(ads_status)
     if snap is None:
@@ -152,7 +154,7 @@ def ares_live(snap, ads_status: Mapping | None, world=None) -> AresLive:
         return AresLive(None, "none", "unknown", None, odom)
     cmd = snap.ares_cmd
     if world is None and cmd and cmd.get("odom") is not None and cmd.get("pose") is not None and odom is not None:
-        return AresLive(compose_odometry(cmd["pose"], cmd["odom"], odom), "estimate+odometry", snap.pose_status,
+        return AresLive(compose_odometry(cmd["pose"], cmd["odom"], odom, rear), "estimate+odometry", snap.pose_status,
                         None, odom)
     src = "start mark" if str(snap.pose_src).startswith(("assumed", "start mark")) else "estimate"
     return AresLive(snap.pose_est, src, snap.pose_status, true_pose, odom)
