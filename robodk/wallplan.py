@@ -316,8 +316,10 @@ def layout_leg(cfg: Mapping, leg: Leg, half_stones: bool = True) -> list[Stone]:
     hb = cfg.get("half_brick", {})
     Lh = half_length(cfg)
     shift = float(w["bond_offset"]) * p
-    if abs(Lh + hj - shift) > EPS:
-        raise ValueError(f"half stone length {Lh:g} + head joint {hj:g} != bond offset {shift:g} mm: no rectangle")
+    if not Lh + hj / 2.0 - EPS <= shift <= Lh + hj + EPS:      # 2026-10-14: 100 + 1 vs 100.5 - the joints next to
+        raise ValueError(f"half stone length {Lh:g} + head joint {hj:g} does not fit the bond offset {shift:g} mm: "
+                         "no rectangle")                       # a half stone are 0.5 mm, the half stone flush with the
+    d_end = shift - hj - Lh                                    # end of its piece (leg end, jamb): shifted d_end
     if abs(float(hb.get("height", b["height"])) - float(b["height"])) > EPS:
         raise ValueError("half stone height differs from the full stone height: courses would not line up")
     stones = []
@@ -339,7 +341,8 @@ def layout_leg(cfg: Mapping, leg: Leg, half_stones: bool = True) -> list[Stone]:
             i = a
             while i < b_:
                 if i % 2 != parity or b_ - i == 1:          # off the full-stone grid, or one unit left: a half stone
-                    row.append((i * shift + Lh / 2, HALF, Lh))
+                    end = b_ - i == 1 and i != a              # (at the END of a piece: flush with it, d_end)
+                    row.append((i * shift + Lh / 2 + (d_end if end else 0.0), HALF, Lh))
                     i += 1
                 else:
                     row.append((i * shift + L / 2, FULL, L))

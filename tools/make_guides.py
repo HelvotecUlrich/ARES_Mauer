@@ -10,8 +10,10 @@ carpet tape, V-tabs for the existing board plates, station on the floor in one r
   u = 0 to n0 x pitch. Every first-course stone stands directly on the strip ([wall] base_z = mdf_t); two peg holes
   per stone take the pegs of two locating cones in diagonally opposite sockets of its underside (a half stone: one
   cone in each of its two sockets).
-  The ARES-side edge (leg v = +strip_width/2, the face the existing wall plates were cut for) carries a V-tab at every
-  inner stone joint u = pitch k (k = 1 .. n0-1); one tab in a plate's V-notch plus the edge fixes a plate completely.
+  The ARES-side edge (leg v = +strip_width/2, the face the existing wall plates were cut for) carries ONE V-tab per
+  board plate, under one of its two V-notches (notches [plates] block_length 200 apart, the blocks at the pitch
+  [brick] length + head_joint 201 since 2026-10-14 - a tab at every joint would sit 1 mm off the second notch); one tab
+  in a plate's V-notch plus the edge fixes a plate completely.
 - Pieces: a strip is cut [guides] cut_offset after a stone joint (the tab stays whole) into pieces of at most
   segment_max; consecutive pieces join with a dovetail on the centre line (tail on the downstream piece, socket on the
   upstream one, wall order A -> B -> C). The last corner_arm_stones stones of a leg and the first of the next form
@@ -62,7 +64,7 @@ N_SEG = 72                                  # facets of a cone / peg in the STL
 # ── parameters ────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class GuideParams:
-    pitch: float                # stone length = first-course pitch [mm]
+    pitch: float                # first-course pitch = [brick] length + head_joint [mm] (201 since 2026-10-14)
     strip_w: float
     mdf_t: float
     stone_l: float
@@ -99,7 +101,8 @@ def params(cfg: dict) -> GuideParams:
     mdf = float(gd.get("mdf_t", pl["mdf_t"]))       # guides 5 mm since 2026-10-09; the board plates stay [plates] mdf_t
     hb = cfg.get("half_brick") or b
     p = GuideParams(
-        pitch=float(b["length"]), strip_w=float(gd["strip_width"]), mdf_t=mdf, stone_l=float(b["length"]),
+        pitch=float(b["length"]) + float(b.get("head_joint", 0.0)), strip_w=float(gd["strip_width"]), mdf_t=mdf,
+        stone_l=float(b["length"]),
         stone_w=float(b["width"]), half_l=float(hb.get("length", b["length"] / 2)), pin_along=float(gd["pin_along"]),
         pin_across=float(gd["pin_across"]), r_mouth=float(gd["socket_r_mouth"]), r_bottom=float(gd["socket_r_bottom"]),
         socket_depth=float(gd["socket_depth"]), locator_h=float(gd["locator_h"]),
@@ -118,8 +121,8 @@ def params(cfg: dict) -> GuideParams:
         raise ValueError("[guides]: locator_h must be inside the socket and the peg shorter than the MDF is thick")
     if 2 * cone_r(p, p.locator_h) <= p.peg_d + 4.0:
         raise ValueError("[guides]: the locating cone's top is too narrow around its peg")
-    if abs(float(pl["block_length"]) - p.pitch) > 1e-9:
-        raise ValueError("[plates] block_length must equal the stone pitch (the plates' notches sit on its joints)")
+    if abs(float(pl["block_length"]) - p.stone_l) > 1e-9:
+        raise ValueError("[plates] block_length (the plates' notch spacing) must equal the stone length")
     return p
 
 
@@ -297,14 +300,14 @@ def blocks0(p: GuideParams, lg, spare_to: int | None = None) -> list[tuple[float
     """The strip's block grid of a leg (cuts, V-tabs for the board plates): (u0, u1, kind) - floor(n0) blocks of a
     pitch from u = 0, for a leg of x.5 stones a half block at the end; spare_to = k: blocks up to k beyond the free
     end (the plate of a board on a spare block, 2026-10-08), kind "spare"."""
-    P = p.pitch
+    P, S = p.pitch, p.stone_l                      # block k = u k * P .. k * P + S (the head joint between)
     nf = int(math.floor(lg.n0 + 1e-9))
-    out = [(k * P, (k + 1) * P, "full") for k in range(nf)]
+    out = [(k * P, k * P + S, "full") for k in range(nf)]
     if lg.n0 - nf > 1e-9:
-        out.append((nf * P, lg.n0 * P, "half"))
+        out.append((nf * P, nf * P + S / 2.0, "half"))
     end = out[-1][1]
     for k in range(int(math.ceil(end / P - 1e-9)), (spare_to + 1) if spare_to is not None else 0):
-        out.append((k * P, (k + 1) * P, "spare"))
+        out.append((k * P, k * P + S, "spare"))
     return out
 
 
@@ -314,8 +317,9 @@ def course0(p: GuideParams, lg) -> list[tuple[float, float, str]]:
     no stone in a door (an opening in course 0, 2026-10-08)."""
     import make_job as mj
     wp = mj.load_wallplan()
-    cfg = {"brick": {"length": p.pitch, "head_joint": 0.0, "width": 120.0, "height": 120.0, "bed_joint": 0.0},
-           "half_brick": {"length": p.pitch / 2.0, "height": 120.0},
+    cfg = {"brick": {"length": p.stone_l, "head_joint": p.pitch - p.stone_l, "width": 120.0, "height": 120.0,
+                     "bed_joint": 0.0},
+           "half_brick": {"length": p.stone_l / 2.0, "height": 120.0},
            "wall": {"courses": max([1] + [o.c_to + 1 for o in getattr(lg, "openings", ())]), "bond_offset": 0.5,
                     "base_z": 0.0}}
     st = sorted((s for s in wp.layout_leg(cfg, lg) if s.course == 0), key=lambda s: s.u)
@@ -333,6 +337,20 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
     plate_at = {}
     for s in sites:
         plate_at[(s.leg, s.k)] = s.board
+    bl = float(cfg["plates"]["block_length"])
+
+    def tabs_of(lg, st: list, L: float) -> list[float]:
+        """u of the V-tabs of leg lg: one per board plate on its blocks (st = blocks0), under the plate's notch at
+        u_c + block_length / 2, or u_c - block_length / 2 when that one is off the strip."""
+        out = []
+        for s in sites:
+            if s.leg != lg.name or s.k >= len(st):
+                continue
+            u_c = (st[s.k][0] + st[s.k][1]) / 2.0
+            t = u_c + bl / 2.0
+            out.append(t if t < L - p.vtab[0] else u_c - bl / 2.0)
+        return sorted(out)
+
     pieces: list[Piece] = []
     nl = len(legs)
     for i, lg in enumerate(legs):
@@ -343,8 +361,9 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
         st = blocks0(p, lg, max(spare) if spare else None)
         real = course0(p, lg)
         n = len(st)
-        J = [u0 for u0, _, _ in st] + [st[-1][1]]          # course-0 joints, J[0] = 0, J[n] = leg length
+        J = [u0 for u0, _, _ in st] + [st[-1][1]]          # course-0 block starts, J[0] = 0, J[n] = leg length
         L = J[-1]
+        T = tabs_of(lg, st, L)
         first = p.arm if i > 0 else 0
         last = p.arm if i < nl - 1 else 0
         if first + last > n:
@@ -354,7 +373,7 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
             u0 = 0.0 if a == 0 else J[a] + off
             u1 = L if b == n else J[b] + off
             poly = [(u0, -h), (u1, -h), (u1, h), (u0, h)]
-            feats: dict[int, list] = {2: [(u1 - J[k], "tab") for k in range(1, n) if u0 < J[k] < u1]}
+            feats: dict[int, list] = {2: [(u1 - t, "tab") for t in T if u0 < t < u1]}
             if not (i == 0 and a == 0):
                 feats[3] = [(h, "tail")]
             if not (i == nl - 1 and b == n):
@@ -368,6 +387,7 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
             realb = course0(p, nb)
             Jb = [u0 for u0, _, _ in stb] + [stb[-1][1]]
             nbn = len(stb)
+            Tb = tabs_of(nb, stb, Jb[-1])
             kind, c0 = corner_geometry(lg, nb, h, L)
             u_cut = J[n - p.arm] + off
             arm_end = Jb[-1] if (i + 1 == nl - 1 and p.arm == nbn) else Jb[p.arm] + off
@@ -376,9 +396,8 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
                 v_end = v0 + arm_end
                 poly = [(u_cut, -h), (L, -h), (L, v_end), (L - 2 * h, v_end), (L - 2 * h, h), (u_cut, h)]
                 feats = {5: [(h, "tail")],
-                         4: [((L - 2 * h) - J[k], "tab") for k in range(1, n)
-                             if u_cut < J[k] < L - 2 * h - p.vtab[0]],
-                         3: [(v_end - (v0 + Jb[k]), "tab") for k in range(1, nbn) if 0 < Jb[k] < arm_end - off / 2]}
+                         4: [((L - 2 * h) - t, "tab") for t in T if u_cut < t < L - 2 * h - p.vtab[0]],
+                         3: [(v_end - (v0 + t), "tab") for t in Tb if 0 < t < arm_end - off / 2]}
 
                 def to_a(q: Pt, L=L, v0=v0) -> Pt:             # leg nb frame -> leg lg frame
                     return L - h - q[1], v0 + q[0]
@@ -387,9 +406,8 @@ def leg_pieces(cfg: dict, p: GuideParams, legs: list, sites: list) -> list[Piece
                 v_end = -h + arm_end
                 poly = [(u_cut, -h), (u0 + h, -h), (u0 + h, v_end), (u0 - h, v_end), (u0 - h, h), (u_cut, h)]
                 feats = {5: [(h, "tail")],
-                         4: [((u0 - h) - J[k], "tab") for k in range(1, n) if u_cut < J[k] < L],
-                         3: [(arm_end - Jb[k], "tab") for k in range(1, nbn)
-                             if 2 * h + p.vtab[0] < Jb[k] < arm_end - off / 2]}
+                         4: [((u0 - h) - t, "tab") for t in T if u_cut < t < L],
+                         3: [(arm_end - t, "tab") for t in Tb if 2 * h + p.vtab[0] < t < arm_end - off / 2]}
 
                 def to_a(q: Pt, u0=u0) -> Pt:                  # leg nb frame -> leg lg frame
                     return u0 - q[1], -h + q[0]
@@ -744,8 +762,8 @@ def floor_model(cfg: dict, p: GuideParams, legs: list, sites: list, st_pieces: l
             m.stones.append((f"{lg.name}{k}", [lg.to_wall(u, v) for u, v in ((u0, -wr), (u1, -wr), (u1, wr), (u0, wr))]))
         m.marks += [(f"{lg.name} start, outer corner", lg.to_wall(0.0, -p.h)),
                     (f"{lg.name} start, ARES-side corner", lg.to_wall(0.0, p.h)),
-                    (f"{lg.name} end, outer corner", lg.to_wall(lg.n0 * p.pitch, -p.h)),
-                    (f"{lg.name} end, ARES-side corner", lg.to_wall(lg.n0 * p.pitch, p.h))]
+                    (f"{lg.name} end, outer corner", lg.to_wall(lg.n0 * p.pitch - (p.pitch - p.stone_l), -p.h)),
+                    (f"{lg.name} end, ARES-side corner", lg.to_wall(lg.n0 * p.pitch - (p.pitch - p.stone_l), p.h))]
     for s in sites:
         m.plates.append((s.board, list(s.plate)))
     ps = cfg["pickup_station"]

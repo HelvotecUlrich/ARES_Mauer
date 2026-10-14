@@ -78,7 +78,9 @@ length = 200.0
 width = 120.0
 height = 120.0              # CONFIRMED (CAD) stone height; course pitch = height + bed_joint
 pin_length = 23.5
-head_joint = 0.0            # dry-stacked, interlocking
+head_joint = 1.0            # CONFIRMED: Samuel 2026-10-14 - butt to butt (0) the course above jams on the pins: the pins
+                            # are 100.5 apart and 49.75 from each end, so only a 1 mm head joint (pitch 201) gives the
+                            # uniform 100.5 mm pin grid (like the 1 mm bed joint). Was 0.0 (untagged)
 bed_joint = 1.0             # CONFIRMED Samuel 2026-10-06: the pins (23.5 mm) are 1 mm longer than the sockets are deep
                             # (22.5 mm, STEP) on purpose - a 1 mm gap for mortar later -> course pitch 121 mm
 rib_mm = 1.69               # CONFIRMED (CAD): horizontal ribs on both long faces, full length, 1.6858 mm high (mesh bbox
@@ -168,14 +170,15 @@ xyz_in_wall = [0.0, 0.0, 0.0]          # ASSUMPTION: leg A frame = wall frame (d
 rpy_in_wall_deg = [0.0, 0.0, 0.0]
 side = "right"              # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: ARES side 110 mm from the board plates (170 mm from the leg centreline)
-openings = [{ name = "window", u_from = 300.0, u_to = 700.0, courses = [2, 3] }]   # CONFIRMED: photos 2026-10-08
+openings = [{ name = "window", u_from = 301.5, u_to = 703.5, courses = [2, 3] }]   # CONFIRMED: photos 2026-10-08
+# (half-stone units 3 .. 7 of 100.5 mm since head_joint 1, 2026-10-14; were 300 .. 700 mm)
                             # (courses 3 + 4, 400 mm wide, 300 mm of wall on both sides)
 [[wall.legs]]
 name = "B"
 n0 = 9                      # CONFIRMED: Samuel's photos 2026-10-08 (9 full stones in course 1, through both corners)
 runs_through = true         # CONFIRMED: photos 2026-10-08 - B runs through its corner with A (butt_corner through="next")
                             # and through the one with C (C butts: the default)
-xyz_in_wall = [1062.69, -60.0, 0.0]    # ASSUMPTION (corner_gap_mm): beyond A's far end, flush with A's outer face:
+xyz_in_wall = [1066.69, -60.0, 0.0]    # ASSUMPTION (corner_gap_mm; +4 mm: A 5 x 201 - 1 since head_joint 1): beyond A's far end, flush with A's outer face:
                             # A + (200 * 5 + 60 + 1.69 + 1.0, -60)
 rpy_in_wall_deg = [0.0, 0.0, 90.0]
 side = "front"              # CONFIRMED: Samuel 2026-10-06 (B straight ahead of ARES driving into the C)
@@ -183,13 +186,13 @@ dist = 840.0                # CONFIRMED: Samuel 2026-10-06 (front wall 840 mm, s
 [[wall.legs]]
 name = "C"
 n0 = 5                      # CONFIRMED: Samuel's photos 2026-10-08 (5 stones from B's inside face, door included)
-xyz_in_wall = [1000.0, 1680.0, 0.0]    # ASSUMPTION (corner_gap_mm): butt corner at B's far end towards ARES (B runs
+xyz_in_wall = [1004.0, 1688.0, 0.0]    # ASSUMPTION (corner_gap_mm; B 9 x 201 - 1 since head_joint 1): butt corner at B's far end towards ARES (B runs
                             # through): B + (-(60 + 1.69 + 1.0), 200 * 9 - 60); free end at x = 0 like A's start
 rpy_in_wall_deg = [0.0, 0.0, 180.0]
 side = "left"               # CONFIRMED: Samuel 2026-10-06 (wall on the side of ARES inside the C)
 dist = 580.0                # ASSUMPTION: as leg A
 start_half = true           # CONFIRMED: photos 2026-10-08 (the piece at the free end: course 1 half + full + half)
-openings = [{ name = "door", u_from = 0.0, u_to = 600.0, courses = [0, 3] }]   # CONFIRMED: photos 2026-10-08 (600 mm
+openings = [{ name = "door", u_from = 0.0, u_to = 603.0, courses = [0, 3] }]   # CONFIRMED: photos 2026-10-08 (600 mm
                             # wide at B, all courses)
 
 [deck]
@@ -395,51 +398,51 @@ rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W1"
 parent = "wall"
-leg = "A"           # block k = 3 (u 700)
+leg = "A"           # block k = 3 (u 703: 100 + 201 k since head_joint 1, 2026-10-14)
 first_id = 40
-xyz = [660.0, 147.0, 4.1]
+xyz = [663.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W2"
 parent = "wall"
-leg = "B"           # block k = 1 of leg B (u 300)
+leg = "B"           # block k = 1 of leg B (u 301)
 first_id = 50
-xyz = [260.0, 147.0, 4.1]
+xyz = [261.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W3"
 parent = "wall"
-leg = "B"           # block k = 3 (u 700)
+leg = "B"           # block k = 3 (u 703)
 first_id = 60
-xyz = [660.0, 147.0, 4.1]
+xyz = [663.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W4"
 parent = "wall"
-leg = "B"           # block k = 5 (u 1100)
+leg = "B"           # block k = 5 (u 1105)
 first_id = 70
-xyz = [1060.0, 147.0, 4.1]
+xyz = [1065.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W5"
 parent = "wall"
-leg = "B"           # block k = 7 (u 1500)
+leg = "B"           # block k = 7 (u 1507)
 first_id = 80
-xyz = [1460.0, 147.0, 4.1]
+xyz = [1467.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W6"
 parent = "wall"
-leg = "C"           # block k = 3 of leg C (u 700, the piece beside the door)
+leg = "C"           # block k = 3 of leg C (u 703, the piece beside the door)
 first_id = 90
-xyz = [660.0, 147.0, 4.1]
+xyz = [663.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "W7"
 parent = "wall"
-leg = "C"           # SPARE block k = 6 beyond C's free end (u 1300)
+leg = "C"           # SPARE block k = 6 beyond C's free end (u 1306)
 first_id = 100
-xyz = [1260.0, 147.0, 4.1]
+xyz = [1266.0, 147.0, 4.1]
 rpy_deg = [180.0, 0.0, 0.0]
 [[targets]]
 name = "S0"

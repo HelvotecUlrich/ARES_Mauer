@@ -575,13 +575,21 @@ class PlateSite:
         return f"{self.leg}k{self.k}"
 
 
+def block_pitch(cfg: Mapping) -> float:
+    """Pitch of the course-0 base blocks along a leg: [brick] length + head_joint (201 mm since 2026-10-14; the blocks
+    are [plates] block_length = 200 long, the plates' notches 200 mm apart)."""
+    b = cfg["brick"]
+    return float(b["length"]) + float(b.get("head_joint", 0.0))
+
+
 def plate_site(cfg: Mapping, leg: Any, k: int, board_size_mm: tuple[float, float]) -> PlateSite:
     """Plate on block k of `leg` (any object with name, n0, to_wall(u, v)); board_size_mm = BoardSpec.size_mm.
     Board origin (top-left corner, face up: rpy (180, 0, 0)) = (u - board_w/2, v_c + board_h/2, mdf_t + paper_t)."""
     pc = cfg["plates"]
     bl, bw = float(pc["block_length"]), float(pc["block_width"])
     L, D = float(pc["plate_length"]), float(pc["plate_depth"])
-    u = bl / 2.0 + k * bl
+    pitch = block_pitch(cfg)
+    u = bl / 2.0 + k * pitch
     v0 = bw / 2.0
     vc = v0 + D / 2.0
     w_b, h_b = board_size_mm
@@ -601,7 +609,7 @@ def site_from_target(cfg: Mapping, leg: Any, t: Mapping, board_size_mm: tuple[fl
     pc = cfg["plates"]
     bl = float(pc["block_length"])
     u = float(t["xyz"][0]) + board_size_mm[0] / 2.0
-    k = round((u - bl / 2.0) / bl)
+    k = round((u - bl / 2.0) / block_pitch(cfg))
     s = plate_site(cfg, leg, k, board_size_mm)
     if (max(abs(a - b) for a, b in zip(s.xyz, t["xyz"])) > 1e-6
             or max(abs(a - b) for a, b in zip(s.rpy_deg, t.get("rpy_deg", (0, 0, 0)))) > 1e-6):
