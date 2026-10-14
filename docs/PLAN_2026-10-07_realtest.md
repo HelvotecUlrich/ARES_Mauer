@@ -218,3 +218,8 @@ Samuel: "erledige die Software parts" of the readiness check (preflight_real on 
       after the last config change, stamped data/jobs/nominal_C_robodk.json. preflight_real of the C job lists only the
       half stone (mass, dimensions). Open on ARES: ADS connection from the Mauer HMI, the first small single move
       (direction)
+- [x] G6 on ARES 2026-10-14 (Samuel, HMI `--ares` from main): ADS connects after the HMI's own TCP pre-check was
+      dropped too (fad699c; ping ok, 48898 timed out); AMR tab relative moves: Back 100 mm -> towards the UR end, Left
+      100 mm -> left in the driving direction (the base_link convention the AdsAres rear flip relies on); HALT
+      (space) stops a running move. The scanners are not connected for the wall runs (Samuel). No wall run yet (no
+      run log of 2026-10-14) - next: ARES at stop 0, run stops 0..3 in step mode
