@@ -2,8 +2,9 @@
 MANUAL, HALT, jog, GO, odometry reset - created ONLY by hmi/main.py with --ares (D-H5). Without --ares the window
 gets a NullAdsWorker that never connects.
 
-probing_factory(): a TCP probe of the AMS router port first (pyads blocks ~20 s per connect to an unreachable
-target, mauer/ares/ads.py TCP_PROBE_MAX_S), then pyads.Connection (imported here, lazily).
+probing_factory(): a TCP probe of the AMS router port first where pyads talks to the PLC directly (pyads blocks ~20 s
+per connect to an unreachable target, mauer/ares/ads.py TCP_PROBE_MAX_S; not on Windows: there pyads goes through the
+local TwinCAT router, mauer.ares.ads.direct_tcp), then pyads.Connection (imported here, lazily).
 """
 from __future__ import annotations
 
@@ -19,11 +20,13 @@ ADS_OFF = "ADS off: start the HMI with --ares"
 
 
 def probing_factory(ads_cfg: Mapping) -> Callable[[], Any]:
-    """Connection factory for AdsWorker (amr cfg['ads']): TCP probe of host:48898, then pyads.Connection. Raises
-    OSError with the reason -> AdsWorker.connect_now reports 'connect failed: ...' and retries."""
+    """Connection factory for AdsWorker (amr cfg['ads']): TCP probe of host:48898 (only where pyads talks to the PLC
+    directly, mauer.ares.ads.direct_tcp - 2026-10-14 on the laptop: ping ok, 48898 timed out, the TwinCAT route
+    works), then pyads.Connection. Raises OSError with the reason -> AdsWorker.connect_now reports
+    'connect failed: ...' and retries."""
     def make() -> Any:
         host = mads.target_host(str(ads_cfg["ams_net_id"]), str(ads_cfg.get("host_ip") or "") or None)
-        reason = mads.tcp_reachable(host, mads.ADS_TCP_PORT, mads.TCP_PROBE_MAX_S)
+        reason = mads.tcp_reachable(host, mads.ADS_TCP_PORT, mads.TCP_PROBE_MAX_S) if mads.direct_tcp(ads_cfg) else None
         if reason is not None:
             raise OSError(f"ARES PLC not reachable: TCP {host}:{mads.ADS_TCP_PORT} ({reason})")
         import pyads                     # lazy: tests and SIM never import it

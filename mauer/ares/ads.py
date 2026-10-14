@@ -456,7 +456,7 @@ def tcp_reachable(host: str, port: int, timeout_s: float) -> str | None:
         return str(exc) or exc.__class__.__name__
 
 
-def _direct_tcp(cfg_ares_ads: Mapping[str, Any]) -> bool:
+def direct_tcp(cfg_ares_ads: Mapping[str, Any]) -> bool:
     """Does pyads open its own TCP connection to the PLC's port 48898 (then the TCP pre-check applies)? Not on
     Windows: there pyads goes through TcAdsDll and the local TwinCAT router, which holds the connection over the
     route set up in TwinCAT (MA amr_hmi SETUP.md section 4) - like amr_hmi, which never probes. On 2026-10-09 a direct
@@ -515,7 +515,7 @@ class AresAds:
     accel_mms2, min_if_version; optional rot_speed_degs, min_plc_build, ack_timeout_s, deadline_margin_s).
     connection_factory: zero-argument callable returning an unopened pyads-like connection (default: pyads.Connection,
     imported lazily). tcp_probe: reachability check (host, port, timeout_s) -> reason | None run before opening;
-    default = TCP connect to port 48898 when the pyads factory talks to the PLC directly (_direct_tcp: not on Windows),
+    default = TCP connect to port 48898 when the pyads factory talks to the PLC directly (direct_tcp: not on Windows),
     none with a custom factory. clock / sleep: injectable for simulated time.
     """
 
@@ -538,7 +538,7 @@ class AresAds:
             raise ValueError(f"[ares_ads] min_plc_build {c.get('min_plc_build')!r} is not like '2.1'")
         self.min_plc_build = mb
         self._factory = connection_factory or self._pyads_factory
-        if tcp_probe is None and connection_factory is None and _direct_tcp(c):
+        if tcp_probe is None and connection_factory is None and direct_tcp(c):
             tcp_probe = tcp_reachable
         self._probe = tcp_probe
         self._clock = clock
