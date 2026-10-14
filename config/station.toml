@@ -99,8 +99,8 @@ mass_kg = 3.0               # ASSUMPTION: "about 3 kg" (Samuel 2026-10-06) - wei
 # 2026-10-06; the earlier ~53 mm came from the faceted STL and was wrong): 4 pins and 4 sockets on the same centres,
 # x 34.286 / 85.714 (51.428 mm across), y -49.75 / -150.25 (100.5 mm along); pin cone r 18.0 -> 7.042 over 23.5 mm,
 # socket the same cone r 18.0 -> 7.508 over 22.5 mm.
-length = 100.0              # CONFIRMED: Samuel 2026-10-14 (measured 100 x 120 x 120) = half of [brick] length = bond
-                            # offset (a rectangle needs exactly this)
+length = 99.5               # CONFIRMED: Samuel 2026-10-14 ("99.5, dort muss 1 mm Fuge"; first given as 100 x 120 x 120):
+                            # + [brick] head_joint 1 = bond offset 100.5 (a rectangle needs exactly this)
 width = 120.0               # CONFIRMED: Samuel 2026-10-14 = [brick] width
 height = 120.0              # CONFIRMED: Samuel 2026-10-14 ("natuerlich 120 mm hoch") = [brick] height (course pitch)
 pin_across = 51.428         # CONFIRMED: Samuel 2026-10-14 ("Pin-Abstand identisch zu den ganzen"): ONE pin pair centred

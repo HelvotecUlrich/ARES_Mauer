@@ -86,12 +86,12 @@
 <rect x="0" y="2480.0" width="800" height="600" stroke="green"/>
 <text x="4" y="2492.0" font-size="10" fill="green">sheet 5</text>
 <polygon stroke="red" points="22.00,3070.00 625.00,3070.00 625.00,3022.05 612.95,3028.05 612.95,2991.95 625.00,2997.95 625.00,2950.00 405.80,2950.00 403.00,2946.20 400.20,2950.00 22.00,2950.00 22.00,2998.00 10.00,2992.00 10.00,3028.00 22.00,3022.00"/>
-<circle cx="253.00" cy="3035.71" r="3.91" stroke="red"/>
-<circle cx="253.00" cy="2984.29" r="3.91" stroke="red"/>
+<circle cx="252.75" cy="3035.71" r="3.91" stroke="red"/>
+<circle cx="252.75" cy="2984.29" r="3.91" stroke="red"/>
 <circle cx="353.25" cy="3035.71" r="3.91" stroke="red"/>
 <circle cx="453.75" cy="2984.29" r="3.91" stroke="red"/>
-<circle cx="554.00" cy="3035.71" r="3.91" stroke="red"/>
-<circle cx="554.00" cy="2984.29" r="3.91" stroke="red"/>
+<circle cx="554.25" cy="3035.71" r="3.91" stroke="red"/>
+<circle cx="554.25" cy="2984.29" r="3.91" stroke="red"/>
 <text x="16.0" y="3064.0" font-size="9" fill="blue">C2-C4</text>
 <rect x="0" y="3100.0" width="800" height="600" stroke="green"/>
 <text x="4" y="3112.0" font-size="10" fill="green">sheet 6</text>

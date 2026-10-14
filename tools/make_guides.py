@@ -304,7 +304,7 @@ def blocks0(p: GuideParams, lg, spare_to: int | None = None) -> list[tuple[float
     nf = int(math.floor(lg.n0 + 1e-9))
     out = [(k * P, k * P + S, "full") for k in range(nf)]
     if lg.n0 - nf > 1e-9:
-        out.append((nf * P, nf * P + S / 2.0, "half"))
+        out.append((nf * P, nf * P + p.half_l, "half"))
     end = out[-1][1]
     for k in range(int(math.ceil(end / P - 1e-9)), (spare_to + 1) if spare_to is not None else 0):
         out.append((k * P, k * P + S, "spare"))
@@ -319,7 +319,7 @@ def course0(p: GuideParams, lg) -> list[tuple[float, float, str]]:
     wp = mj.load_wallplan()
     cfg = {"brick": {"length": p.stone_l, "head_joint": p.pitch - p.stone_l, "width": 120.0, "height": 120.0,
                      "bed_joint": 0.0},
-           "half_brick": {"length": p.stone_l / 2.0, "height": 120.0},
+           "half_brick": {"length": p.half_l, "height": 120.0},
            "wall": {"courses": max([1] + [o.c_to + 1 for o in getattr(lg, "openings", ())]), "bond_offset": 0.5,
                     "base_z": 0.0}}
     st = sorted((s for s in wp.layout_leg(cfg, lg) if s.course == 0), key=lambda s: s.u)
