@@ -182,7 +182,7 @@ NOT merged while the real test runs in main.
       56 = 44 full + 12 half, the whole C from one fill; the stone list gives the layers per stack (e465091).
       Guarded world sims seeds 1-3 67/67, no violation, max 2.1-2.6 mm; RoboDK 67/67 + 53/53, 0 top-ups, 11 routes
       clean, WITH video results/l_wall_sim.mp4 (15.2 min)
-- [ ] F6 after the real test: `git merge station2` in main (config/station.toml: [pickup_station] vs the test's
+- [x] F6 (done 2026-10-14, track G5) after the real test: `git merge station2` in main (config/station.toml: [pickup_station] vs the test's
       [deck] / [magtest] changes; results/l_wall_sim.md), rerun `py.exe robodk/simulate.py --animate` IN MAIN for the
       RoboDK stamp (the worktree's stamp has no git commit: Windows git cannot follow the WSL worktree path), then
       the guarded sims; the 7 stale tests of the old main C (wf_05321a78-cff) are still red
@@ -211,3 +211,8 @@ Samuel: "erledige die Software parts" of the readiness check (preflight_real on 
       RoboDK (`simulate.py --animate --video`, 15.5 min): 67/67 + 53/53 collision-checked, 11 routes clean, 0 top-ups;
       final/ refreshed (stone list, plan, report, pictures, video). The RoboDK stamp of the worktree has no git commit:
       after `git merge station2` in main rerun `py.exe robodk/simulate.py --animate` there (preflight_real asks for it)
+- [x] G5 merged into main (Samuel 2026-10-14 "Merge selbst"): fast-forward to a11690a, main's stale
+      results/l_wall_sim.md of 2026-10-08 in stash@{0}; Samuel's estimates [ur] payload_cog_mm [0, 0, 200] and
+      [camera] settle_s 1.0 (ASSUMPTION, f5db833); RoboDK run in main: 67/67 + 53/53, stamped
+      data/jobs/nominal_C_robodk.json. preflight_real of the C job lists only [boards.ref] square_mm and the half
+      stone (mass, dimensions). Open on ARES: ADS connection from the Mauer HMI, the first small single move (direction)
