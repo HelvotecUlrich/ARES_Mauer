@@ -39,6 +39,7 @@ from __future__ import annotations
 import math
 import re
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass, field, fields
@@ -455,6 +456,16 @@ def tcp_reachable(host: str, port: int, timeout_s: float) -> str | None:
         return str(exc) or exc.__class__.__name__
 
 
+def _direct_tcp(cfg_ares_ads: Mapping[str, Any]) -> bool:
+    """Does pyads open its own TCP connection to the PLC's port 48898 (then the TCP pre-check applies)? Not on
+    Windows: there pyads goes through TcAdsDll and the local TwinCAT router, which holds the connection over the
+    route set up in TwinCAT (MA amr_hmi SETUP.md section 4) - like amr_hmi, which never probes. On 2026-10-09 a direct
+    TCP connect from the laptop to 192.168.1.10:48898 failed while amr_hmi drove ARES over the router. [ares_ads]
+    tcp_probe = true / false overrides."""
+    v = cfg_ares_ads.get("tcp_probe")
+    return bool(v) if v is not None else sys.platform != "win32"
+
+
 def target_host(ams_net_id: str, host_ip: str | None) -> str:
     """IP of the PLC: host_ip if set, else the first four octets of the AMS NetID (MA transport.py:69-71)."""
     return host_ip or ".".join(str(ams_net_id).split(".")[:4])
@@ -504,8 +515,8 @@ class AresAds:
     accel_mms2, min_if_version; optional rot_speed_degs, min_plc_build, ack_timeout_s, deadline_margin_s).
     connection_factory: zero-argument callable returning an unopened pyads-like connection (default: pyads.Connection,
     imported lazily). tcp_probe: reachability check (host, port, timeout_s) -> reason | None run before opening;
-    default = TCP connect to port 48898 when the pyads factory is used, none with a custom factory. clock / sleep:
-    injectable for simulated time.
+    default = TCP connect to port 48898 when the pyads factory talks to the PLC directly (_direct_tcp: not on Windows),
+    none with a custom factory. clock / sleep: injectable for simulated time.
     """
 
     def __init__(self, cfg_ares_ads: Mapping[str, Any], connection_factory: Callable[[], Any] | None = None,
@@ -527,7 +538,9 @@ class AresAds:
             raise ValueError(f"[ares_ads] min_plc_build {c.get('min_plc_build')!r} is not like '2.1'")
         self.min_plc_build = mb
         self._factory = connection_factory or self._pyads_factory
-        self._probe = tcp_probe if tcp_probe is not None else (tcp_reachable if connection_factory is None else None)
+        if tcp_probe is None and connection_factory is None and _direct_tcp(c):
+            tcp_probe = tcp_reachable
+        self._probe = tcp_probe
         self._clock = clock
         self._sleep = sleep
         self._lock = threading.RLock()

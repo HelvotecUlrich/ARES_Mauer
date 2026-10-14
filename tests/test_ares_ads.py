@@ -118,6 +118,19 @@ def test_tcp_reachable_fast():
     assert tcp_reachable("127.0.0.1", port, 0.5) is not None
 
 
+def test_tcp_precheck_only_where_pyads_talks_to_the_plc_directly(monkeypatch):
+    """Windows: pyads goes through the local TwinCAT router (TcAdsDll) - no direct TCP probe, like amr_hmi
+    (2026-10-09: the probe failed on the laptop while amr_hmi drove ARES). Linux: pyads' own router, probe first."""
+    from mauer.ares import ads as ads_mod
+    monkeypatch.setattr(ads_mod.sys, "platform", "win32")
+    assert AresAds(CFG)._probe is None
+    assert AresAds({**CFG, "tcp_probe": True})._probe is tcp_reachable
+    monkeypatch.setattr(ads_mod.sys, "platform", "linux")
+    assert AresAds(CFG)._probe is tcp_reachable
+    assert AresAds({**CFG, "tcp_probe": False})._probe is None
+    assert AresAds(CFG, connection_factory=lambda: None)._probe is None
+
+
 # ── connect ───────────────────────────────────────────────────────────────────
 def test_connect_fails_fast_on_tcp_precheck():
     calls = []
