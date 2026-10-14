@@ -97,14 +97,16 @@ mass_kg = 3.0               # ASSUMPTION: "about 3 kg" (Samuel 2026-10-06) - wei
 # 2026-10-06; the earlier ~53 mm came from the faceted STL and was wrong): 4 pins and 4 sockets on the same centres,
 # x 34.286 / 85.714 (51.428 mm across), y -49.75 / -150.25 (100.5 mm along); pin cone r 18.0 -> 7.042 over 23.5 mm,
 # socket the same cone r 18.0 -> 7.508 over 22.5 mm.
-length = 100.0              # PLACEHOLDER: half of [brick] length = bond offset (a rectangle needs exactly this)
-width = 120.0               # PLACEHOLDER: = [brick] width
+length = 100.0              # CONFIRMED: Samuel 2026-10-14 (measured 100 x 120 x 112) = half of [brick] length = bond
+                            # offset (a rectangle needs exactly this)
+width = 120.0               # CONFIRMED: Samuel 2026-10-14 = [brick] width
 height = 120.0              # PLACEHOLDER: = [brick] height (course pitch)
-pin_across = 51.428         # PLACEHOLDER: ONE pin pair centred along the length, 51.43 mm apart across (x 34.286 / 85.714
+pin_across = 51.428         # CONFIRMED: Samuel 2026-10-14 ("Pin-Abstand identisch zu den ganzen"): ONE pin pair centred
+                            # along the length, 51.43 mm apart across (x 34.286 / 85.714
                             # of the width, same cones as the full stone), ONE socket pair at the same place. On the
                             # end of a full stone its pins meet the full stone's end socket pair 0.25 mm off (50 vs
                             # 100 - 50.25 = 49.75 mm from the end), inside the ~10 mm capture range
-pin_length = 23.5           # PLACEHOLDER: = [brick] pin_length
+pin_length = 23.5           # CONFIRMED: Samuel 2026-10-14 = [brick] pin_length
 mass_kg = 0.0               # UNKNOWN: like the full stone (CAD volume of the current half stone unknown)
 grasp_above_top_mm = 20.0   # ASSUMPTION (Samuel 2026-10-09: "bei halben Steinen nicht allzuweit runter, da oben die Pins
                             # rausstehen", 20 mm chosen; "wir haben viele Rillen im Greifer"): the gripper takes a half
