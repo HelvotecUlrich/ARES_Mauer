@@ -16,6 +16,7 @@ from hmi_fakes import StubLink, wait_until
 from mauer import REPO, config
 from mauer import job as mjob
 from mauer.magtest import MagazineTest
+from test_magtest import cog_placeholder
 
 pytestmark = pytest.mark.usefixtures("no_lab_network")
 
@@ -45,7 +46,8 @@ def test_the_dry_place_is_a_motion_behind_halt_and_real_needs_no_ares():
     assert not enables("loaded", "real", ares_enabled=False)["prepare"][0]          # a wall job still needs --ares
 
 
-def test_sim_magazine_dry_run_through_the_controller(qapp, tmp_path, mt_session):
+def test_sim_magazine_dry_run_through_the_controller(qapp, tmp_path, mt_session, monkeypatch):
+    cog_placeholder(monkeypatch)                        # the non-blocking warning shows in the preflight list
     c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs")
     snaps = []
     c.snapshot_changed.connect(snaps.append)
@@ -66,7 +68,8 @@ def test_sim_magazine_dry_run_through_the_controller(qapp, tmp_path, mt_session)
         assert c.shutdown(15.0)
 
 
-def test_real_magazine_dry_run_opens_the_ur_only(qapp, tmp_path, mt_session):
+def test_real_magazine_dry_run_opens_the_ur_only(qapp, tmp_path, mt_session, monkeypatch):
+    cog_placeholder(monkeypatch)                        # the non-blocking warning shows in the preflight list
     calls: list = []
     f = RealFactories(link=lambda cfg: StubLink(order=calls), ads=lambda cfg: calls.append("ads"),
                       camera=lambda cfg: calls.append("camera"), intrinsics=lambda cfg: calls.append("intrinsics"),

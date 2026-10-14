@@ -230,9 +230,20 @@ def test_a_robot_error_at_the_front_needs_jaws_empty_and_repeats_the_move(cfg, j
 
 
 # ── real-run preflight ────────────────────────────────────────────────────────
-def test_preflight_needs_the_ur_values_but_not_the_camera_or_ares(cfg, job):
+def cog_placeholder(monkeypatch):
+    """[ur] payload_cog_mm as PLACEHOLDER (station.toml: Samuel's estimate since 2026-10-14, ASSUMPTION) - for the
+    tests of the non-blocking warning (mauer.magtest WARN_IF_PLACEHOLDER)."""
+    from mauer import magtest
+    st = mjob.config_status()
+    st = {**st, "[ur] payload_cog_mm": {**st["[ur] payload_cog_mm"], "status": "PLACEHOLDER"}}
+    monkeypatch.setattr(magtest, "_status", lambda path, variant: st)
+
+
+def test_preflight_needs_the_ur_values_but_not_the_camera_or_ares(cfg, job, monkeypatch):
     from mauer import magtest
     assert magtest.preflight(cfg, job) == []                     # camera, hand-eye, RoboDK stamp: not needed
+    assert not any("payload_cog_mm" in x for x in magtest.warnings(cfg, job))  # ASSUMPTION (estimate 2026-10-14)
+    cog_placeholder(monkeypatch)
     assert any("payload_cog_mm" in x for x in magtest.warnings(cfg, job))      # PLACEHOLDER: shown, not blocking
     stale = copy.deepcopy(job)
     stale.config_sha256 = "0" * 64

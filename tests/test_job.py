@@ -248,7 +248,8 @@ def test_config_status_parser():
     assert st["[ares] steer_axis_x"]["status"] == "CONFIRMED"
     assert st["[ur] host"]["status"] == "CONFIRMED"                         # lab UR5, 2026-10-06
     assert st["[ur] payload_tool_kg"]["status"] == "CONFIRMED"              # weighed 2026-10-06
-    assert st["[ur] payload_cog_mm"]["status"] == "PLACEHOLDER"
+    assert st["[ur] payload_cog_mm"]["status"] == "ASSUMPTION"              # Samuel's estimate 2026-10-14
+    assert st["[boards.ref] square_mm"]["status"] == "PLACEHOLDER"
     assert st["[camera.mount] xyz"]["status"] == "ASSUMPTION"               # inline tag (design value 2026-10-05)
     assert st["[[targets]] W3.xyz"]["status"] == "PLACEHOLDER"              # from the [[targets]] block comment
     assert st["[[targets]] S0.xyz"]["status"] == "ASSUMPTION"               # own inline tag (floor station)

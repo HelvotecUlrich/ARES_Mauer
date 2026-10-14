@@ -289,7 +289,7 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch
     text = "\n".join(problems)
     for frag in ("[ur] host is empty", "[ur] payload_tool_kg <= 0", "[brick] mass_kg <= 0", "camera intrinsics missing",
                  "hand-eye calibration missing", "nominal look poses",
-                 "[ur] payload_cog_mm PLACEHOLDER - measure it"):     # [ur5] mount_z / rz CONFIRMED since 2026-10-08
+                 "[boards.ref] square_mm PLACEHOLDER - measure it"):  # [ur5] mount_z / rz CONFIRMED since 2026-10-08
         assert frag in text, frag
     st = mjob.config_status()                                            # the values measured before the real test
     monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: {
@@ -374,8 +374,8 @@ def test_ur_robot_programs(cfg, job10):
     look, pick, place, park = (b for _, b in link.blocks)
     assert look.startswith("set_tcp(") and "get_inverse_kin(look" in look
     kg, cog = stone_payload(1.5, c["ur"]["payload_cog_mm"], 3.0, job10.T_flange_tcp, 120.0)
-    tcp_z = c["tool"]["tcp_z"]
-    assert kg == 4.5 and cog == pytest.approx([0.0, 0.0, (1.5 * 60.0 + 3.0 * (tcp_z + 60.0)) / 4.5])
+    tcp_z, z_tool = c["tool"]["tcp_z"], c["ur"]["payload_cog_mm"][2]       # tool COG on the flange axis (config)
+    assert kg == 4.5 and cog == pytest.approx([0.0, 0.0, (1.5 * z_tool + 3.0 * (tcp_z + 60.0)) / 4.5])
     assert "set_payload(1.5," in pick.splitlines()[1] and "set_payload(4.5," in pick      # stone after closing
     assert "set_payload(4.5," in place.splitlines()[1] and "set_payload(1.5," in place    # empty after opening
     assert f"set_standard_digital_out({c['ur']['do_grip_close']}, True)" in pick
@@ -733,7 +733,8 @@ def test_preflight_blocks_placeholders_outside_the_camera_loop(lcfg, ljob, tmp_p
     st = mjob.config_status()
     for key in OUTSIDE_THE_CAMERA_LOOP:
         assert (key in text) == (st[key]["status"] in ("PLACEHOLDER", "UNKNOWN")), key
-    assert "[ur] payload_cog_mm" in text and "[ur5] mount_z" not in text    # station.toml today (mount 2026-10-08)
+    assert "[boards.ref] square_mm" in text and "[ur5] mount_z" not in text     # station.toml today (mount 2026-10-08;
+    assert "[ur] payload_cog_mm" not in text and "[camera] settle_s" not in text  # estimates 2026-10-14: ASSUMPTION)
     measured = {k: ({**v, "status": "CONFIRMED"} if k in OUTSIDE_THE_CAMERA_LOOP else v) for k, v in st.items()}
     monkeypatch.setattr(mjob, "config_status", lambda path=None, variant=None: measured)
     text = "\n".join(preflight_real(lcfg, ljob, **kw))

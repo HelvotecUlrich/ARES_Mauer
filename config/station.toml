@@ -287,8 +287,9 @@ exposure_us = 60000.0       # CONFIRMED 2026-10-06 (exposure sweep, F5.6, lab li
                             # that day) saturated 19 % after the light changed. Images only with the arm still; the
                             # light on ARES will differ. Exposure does not change the calibration (focus/iris do)
 gain = 1.0                  # PLACEHOLDER
-settle_s = 2.0              # PLACEHOLDER: wait after the arm stops before the image – Heini thesis needed 2 s for a
-                            # vibrating mount; ARES sway on the sprung casters not measured yet
+settle_s = 1.0              # ASSUMPTION: Samuel 2026-10-14 estimate ("auf 1 s schaetzen") - wait after the arm stops
+                            # before the image; was 2.0 PLACEHOLDER (Heini thesis needed 2 s for a vibrating mount).
+                            # ARES sway on the sprung casters not measured yet
 
 [camera.mount]
 # T_flange_cam: camera frame (OpenCV: z = optical axis, x = image right, y = image down, origin = projection centre) in
@@ -656,7 +657,10 @@ grip_wait_s = 0.5           # ASSUMPTION: the jaws take ~0.5 s (Samuel by eye, o
                             # pulse + wait = 1.0 s after the edge = 2x the stroke. Closing on a stone not timed yet
 payload_tool_kg = 1.68      # CONFIRMED 2026-10-06 (Samuel, table test): gripper + camera as mounted, also set as the
                             # pendant payload
-payload_cog_mm = [0.0, 0.0, 60.0]  # PLACEHOLDER: centre of gravity in the flange frame
+payload_cog_mm = [0.0, 0.0, 200.0]  # ASSUMPTION: Samuel 2026-10-14 estimate ("rund 20 cm in z vom Roboterflansch"),
+                            # centre of gravity of gripper + camera in the flange frame; x, y = 0 not stated (on the
+                            # flange axis). Lies beyond the TCP ([tool] tcp_z 147, the stone's top face) - check
+                            # with the pendant's payload estimate / by weighing. Was [0, 0, 60] PLACEHOLDER
 v_joint = 0.5               # ASSUMPTION: rad/s, conservative first-run value
 a_joint = 0.5               # ASSUMPTION: rad/s²
 v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
