@@ -342,7 +342,7 @@ def test_goto_look_payload_and_body(cfg, T_ft, caplog):
         goto_look(link, cfg, T_base_flange=T_LOOK, sim=True)
     assert r.ok and caplog.text.count("SIMULATION payload fallback") == 1          # logged once, not per block
     body = link.blocks[-1]
-    assert script.set_tcp(T_ft) in body and "set_payload(1.0, [0.0, 0.0, 0.06])" in body
+    assert script.set_tcp(T_ft) in body and script.set_payload(1.0, cfg["ur"]["payload_cog_mm"]) in body
     assert f"look = {script.pose(T_LOOK @ T_ft)}" in body                         # flange target -> TCP pose
     assert f"qnear={script.q_list(ch.Q_REF)}" in body                           # default qnear = current joints
     assert cfg["ur"]["ik_check"] == "get_inverse_kin"                            # PolyScope 3.3 (station.toml)

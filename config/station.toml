@@ -361,8 +361,8 @@ rpy_deg = [180.0, 0.0, 0.0] # centre at ARES x = -150, y = 0, on a 3 mm plate on
 # (targets.first_id). Research 2026-10-05 (synthetic): lateral ~0.03 mm, tilt <= 0.06°, yaw <= 0.003°.
 squares_x = 5
 squares_y = 4
-square_mm = 16.0            # PLACEHOLDER: nominal, replace with the measured print size
-marker_mm = 12.0            # PLACEHOLDER: nominal
+square_mm = 16.0            # CONFIRMED: Samuel 2026-10-14 - the printed boards measure exactly the nominal size
+marker_mm = 12.0            # CONFIRMED: Samuel 2026-10-14 - nominal, same print scale as square_mm
 dictionary = "DICT_APRILTAG_36h11"
 
 # Reference board placements: board origin and orientation in the parent frame. parent = "wall" (wall frame,
@@ -657,10 +657,10 @@ grip_wait_s = 0.5           # ASSUMPTION: the jaws take ~0.5 s (Samuel by eye, o
                             # pulse + wait = 1.0 s after the edge = 2x the stroke. Closing on a stone not timed yet
 payload_tool_kg = 1.68      # CONFIRMED 2026-10-06 (Samuel, table test): gripper + camera as mounted, also set as the
                             # pendant payload
-payload_cog_mm = [0.0, 0.0, 200.0]  # ASSUMPTION: Samuel 2026-10-14 estimate ("rund 20 cm in z vom Roboterflansch"),
-                            # centre of gravity of gripper + camera in the flange frame; x, y = 0 not stated (on the
-                            # flange axis). Lies beyond the TCP ([tool] tcp_z 147, the stone's top face) - check
-                            # with the pendant's payload estimate / by weighing. Was [0, 0, 60] PLACEHOLDER
+payload_cog_mm = [-32.0, 0.0, 105.0]  # ASSUMPTION: Samuel 2026-10-14 estimate, gripper + camera without a stone:
+                            # 105 mm in z from the flange, 32 mm towards the camera (flange -x: calib/handeye.json
+                            # 2026-10-09 has the camera at x -149.6, y 1.7 mm). The stone is added per pick
+                            # (mauer.backends.stone_payload). Was [0, 0, 60] PLACEHOLDER
 v_joint = 0.5               # ASSUMPTION: rad/s, conservative first-run value
 a_joint = 0.5               # ASSUMPTION: rad/s²
 v_lin = 0.10                # ASSUMPTION: m/s, free Cartesian moves
