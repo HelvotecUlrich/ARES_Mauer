@@ -25,7 +25,7 @@ def test_variant_c_acb_overrides_the_legs_only():
     main, var = config.load(), config.load(variant="c_acb")
     assert config.variant_of(main) is None and config.suffix(main) == ""
     assert config.variant_of(var) == "c_acb" and config.suffix(var) == "_c_acb"
-    assert [lg["n0"] for lg in main["wall"]["legs"]] == [5.5, 7, 5]
+    assert [lg["n0"] for lg in main["wall"]["legs"]] == [5, 9, 5]      # the C with a door and a window (2026-10-08)
     assert [lg["n0"] for lg in var["wall"]["legs"]] == [5, 7, 5] and var["wall"]["legs"][2]["runs_through"] is True
     for sec in ("ur", "brick", "deck", "pickup_station", "camera"):
         assert main[sec] == var[sec], sec

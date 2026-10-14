@@ -547,8 +547,9 @@ def _decline_once(match):
 LEG_CHANGE_LEGS = ["stop 0 -> stop 1 leg 0", "stop 0 -> stop 1 leg 1", "stop 0 -> stop 1 leg 2",
                    "stop 0 -> stop 1 last leg"]                                # L at 840 mm, floor station (2026-10-06)
 STATION_LEGS = ["stop 1 -> station leg 0", "stop 1 -> station leg 1", "stop 1 -> station leg 2",
-                "stop 1 -> station last leg", "station -> stop 1 leg 0", "station -> stop 1 leg 1",
-                "station -> stop 1 leg 2", "station -> stop 1 last leg"]
+                "stop 1 -> station leg 3", "stop 1 -> station last leg", "station -> stop 1 leg 0",
+                "station -> stop 1 leg 1", "station -> stop 1 leg 2", "station -> stop 1 leg 3",
+                "station -> stop 1 leg 4", "station -> stop 1 last leg"]       # two-row station, dock 2026-10-09
 
 
 def _leg_names(why: str, route) -> list[str]:
@@ -797,13 +798,14 @@ def cjob(ccfg):
 
 
 def test_c_last_leg_change_and_station_trip(ccfg, cjob, tmp_path):
-    """The last leg change of the C (main config A -> B -> C: B to C; variant c_acb, built A, C, B: C to B) and a
+    """The last leg change of the C (main config built B -> A -> C since 2026-10-09: A to C; variant c_acb, built A, C,
+    B: C to B) and a
     station trip from the leg after it, with realistic errors - every stone seated, the true ARES path clear of legs,
     plates and table (840 mm: 110 mm between the ARES front and the plates at a stop)."""
     j = copy.deepcopy(cjob)
     k = max(i for i in range(1, len(j.stops)) if j.stops[i].leg != j.stops[i - 1].leg)
     c, b = j.stops[k - 1], j.stops[k]
-    assert (c.leg, b.leg) == {None: ("B", "C"), "c_acb": ("C", "B")}[ccfg.get("_variant")]
+    assert (c.leg, b.leg) == {None: ("A", "C"), "c_acb": ("C", "B")}[ccfg.get("_variant")]
     c.stones, b.stones = c.stones[:2], b.stones[:4]
     n = len(c.stones) + len(b.stones)
     c.index, b.index = 0, 1

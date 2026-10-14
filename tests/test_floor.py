@@ -201,15 +201,15 @@ def test_routes_end_with_an_approach_of_at_least_min_approach():
     mj = make_job
     job_ = mj.build_l(c)
     dock = job_.station.dock_in_wall
-    st = job_.stops[1]
     obst, _ = mj.floor_model(c, legs, mj.target_sites(c, legs), [(f"stop {s.index}", s.ares) for s in job_.stops])
     ares, clr = floor.AresShape.from_config(c), c["routes"]["clearance_mm"]
-    free = floor.plan_route(dock, st.ares, obst, ares, clr, c["routes"]["backoff_mm"], min_approach_mm=0.0)
-    assert floor.segments(free.waypoints)[0][-1].kind == "rotate"           # the old behaviour (reproduced)
-    r = floor.plan_route(dock, st.ares, obst, ares, clr, c["routes"]["backoff_mm"], min_approach_mm=60.0)
-    last = floor.segments(r.waypoints)[0][-1]
-    assert last.kind == "translate" and last.length_mm >= 60.0 - 1e-6
-    assert floor.validate_route(r.waypoints, obst, ares, clr) == []
+    for start, goal in [(dock, s.ares) for s in job_.stops] + [(s.ares, dock) for s in job_.stops]:
+        r = floor.plan_route(start, goal, obst, ares, clr, c["routes"]["backoff_mm"], min_approach_mm=60.0)
+        last = floor.segments(r.waypoints)[0][-1]
+        assert last.kind == "translate" and last.length_mm >= 60.0 - 1e-6
+        assert floor.validate_route(r.waypoints, obst, ares, clr) == []
+    # the old behaviour (a free dock -> stop 1 route ending with a rotation on the stop) is geometry-dependent: the
+    # two-row station at the dock of 2026-10-09 gives a free route that already ends with a translation
     for s in job_.stops:                                                    # the job uses [routes] min_approach_mm
         for route in (s.route, s.route_from_station, s.route_to_station):
             if route:

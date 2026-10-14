@@ -264,7 +264,8 @@ def test_status_strip_without_ads(qapp, tmp_path):
 # ── run feedback ──────────────────────────────────────────────────────────────
 def test_planned_trips_equal_the_job_plan():
     _cfg, job10 = straight_job10()
-    assert planned_trips(job10) == (job10.meta["planned_reloads"], job10.meta["planned_station_refills"]) == (2, 1)
+    # (2, 0): the two-row station of 2026-10-09 holds the whole straight wall (was 1 top-up with 16 holders)
+    assert planned_trips(job10) == (job10.meta["planned_reloads"], job10.meta["planned_station_refills"]) == (2, 0)
     trip = short_job(job10, n0=2, n1=1, fill=2)            # 2 stones in the magazine, 3 to place
     assert planned_trips(trip) == (1, 0) and planned_trips(trip, start_stop=1) == (0, 0)
     assert planned_trips(trip, stop_after=0) == (0, 0)

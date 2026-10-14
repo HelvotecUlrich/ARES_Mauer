@@ -20,8 +20,9 @@ def test_committed_cache_has_the_l_and_the_configured_distance():
     from mauer import config
     tables = reach_cache.read()
     dists = sorted(v["dist"] for v in tables.values())
-    assert 740.0 in dists and config.load()["wall"]["dist_nominal"] in dists
-    assert reach_cache.get(l_config(), 740.0) is not None
+    assert config.load()["wall"]["dist_nominal"] in dists
+    assert reach_cache.get(l_config(), l_config()["wall"]["dist_nominal"]) is not None     # the L at 840 mm (740
+    # until 2026-10-06; the table of that distance has the key of base_z 4, before the 5 mm MDF guides)
     t = reach_cache.get(config.load(), config.load()["wall"]["dist_nominal"])
     assert sorted(t) == list(range(config.load()["wall"]["courses"])) and all(len(d) == 101 for d in t.values())
 

@@ -114,7 +114,8 @@ def test_apply_ops_creates_missing_sources_and_drops_removed_objects():
 def test_initial_state_and_snapshot_agree():
     s = short_sim_session()
     a, b = SS.initial(s.job), SS.from_snapshot(RunSnapshot.initial(s))
-    assert a == b and a.counts() == {"mag": len(s.job.magazine.initial_fill), "station": len(s.job.station.slots),
+    assert a == b and a.counts() == {"mag": len(s.job.magazine.initial_fill),          # the usable holders (slots
+                                     "station": len(s.job.station.take_order),       # without IK dropped, 2026-10-09)
                                      "wall": 0, "tool": 0}
     assert tm.plan_ops(a, b) == []
     assert all(o.kind == "add" for o in tm.plan_ops(st(), a)) and len(tm.plan_ops(st(), a)) == sum(a.counts().values())

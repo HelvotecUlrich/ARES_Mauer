@@ -68,7 +68,8 @@ def test_place_pose_convention(job):
         assert not t.flip
         assert np.allclose(t.T_wall_tcp, g.transl(t.u_mm, 0.0, t.z_top_mm) @ g.rotx(math.pi), atol=1e-12)
     tops = sorted({t.z_top_mm for t in job.stones()})
-    assert tops == pytest.approx([124.0, 245.0, 366.0, 487.0])     # base 4 + k * (120 + 1) + 120 ([wall], [brick])
+    assert tops == pytest.approx([125.0, 246.0, 367.0, 488.0])     # base 5 + k * (120 + 1) + 120 ([wall], [brick];
+    #                                                                base_z 5 = the 5 mm MDF guides since 2026-10-09)
     assert all(t.kind == "full" and t.leg is None and t.key == (t.course, t.index) for t in job.stones())
 
 
@@ -565,15 +566,16 @@ def test_make_job_cli_builds_the_configured_legs(tmp_path, capsys):
 
 
 # ── the C of the config (Samuel 2026-10-06: A 2 m, B 1.5 m across, C 1 m back; wall distance 840 mm) ──────────────
-# Two layouts since 2026-10-07: the main config (A 5 1/2 -> B -> C, the earlier leg runs through every corner) and the
-# variant c_acb (A and C run through, the ends lined up, B closes between them, built A, C, B).
+# Two layouts: the main config (the C with a door and a window of 2026-10-08: A 5, B 9, C 5, B runs through both
+# corners, built B -> A -> C) and the variant c_acb (A and C run through, the ends lined up, B closes between them,
+# built A, C, B).
 C_EXP = {
-    None: dict(n0=(5.5, 7, 5), through=("prev", "prev"), stops=["A", "B", "B", "C"], build=["A", "B", "C"], n=76,
-               ends_dx=-22.69, lim_b=[460.0, 820.0], changes=("stop 0 -> stop 1", "stop 2 -> stop 3"), d01=200.0,
-               closes=False),
+    None: dict(n0=(5, 9, 5), through=("next", "prev"), stops=["B", "B", "A", "C"], build=["B", "A", "C"], n=67,
+               half=14, ends_dx=0.0, lim_b=[580.0, 1220.0], changes=("stop 1 -> stop 2", "stop 2 -> stop 3"),
+               d01=600.0, closes=False),
     "c_acb": dict(n0=(5, 7, 5), through=("prev", "next"), stops=["A", "C", "B", "B"], build=["A", "C", "B"], n=74,
-                  ends_dx=0.0, lim_b=[460.0, 940.0], changes=("stop 0 -> stop 1", "stop 1 -> stop 2"), d01=400.0,
-                  closes=True),
+                  half=12, ends_dx=0.0, lim_b=[460.0, 940.0], changes=("stop 0 -> stop 1", "stop 1 -> stop 2"),
+                  d01=400.0, closes=True),
 }
 
 
@@ -610,7 +612,7 @@ def test_c_legs_corners_and_stops(ccfg, cjob):
     assert any("closes between" in w for w in cjob.meta["warnings"]) == e["closes"]
     n_layout = len(wp.layout_legs(ccfg, legs))
     assert cjob.n_stones == n_layout == e["n"]
-    assert sum(t.kind == "half" for t in cjob.stones()) == 12 and cjob.meta["shape"] == "C"
+    assert sum(t.kind == "half" for t in cjob.stones()) == e["half"] and cjob.meta["shape"] == "C"
     assert [s.leg for s in cjob.stops] == e["stops"] and cjob.meta["build_order"] == e["build"]
     assert min(len(s.stones) for s in cjob.stops) > 1                      # balanced stops (2026-10-07): no stop
     by = {lg.name: lg for lg in legs}                                        # for a single stone
@@ -670,7 +672,7 @@ def test_c_routes_and_floor(ccfg, cjob):
                             st.ares.theta_rad, abs_tol=1e-9)
     assert math.hypot(cjob.stops[1].ares.x_mm - cjob.stops[0].ares.x_mm,
                       cjob.stops[1].ares.y_mm - cjob.stops[0].ares.y_mm) < e["d01"]  # the first move is short (main:
-    # A -> B at the corner; c_acb: A -> C sideways across the inside, both stops at x = 120 mm)
+    # along B, 560 mm; c_acb: A -> C sideways across the inside, both stops at x = 120 mm)
     p = ccfg["plates"]
     band = p["block_width"] / 2 + p["plate_depth"]
     for lg in make_job.load_wallplan().legs(ccfg):
