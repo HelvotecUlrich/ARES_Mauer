@@ -494,9 +494,11 @@ sheet_margin = 10.0         # ASSUMPTION
 dovetail = [24.0, 12.0, 6.0]  # ASSUMPTION: dovetail joint neck width, depth, flare per side [mm]
 joint_clearance = 0.05      # ASSUMPTION: per side in the dovetail (2026-10-07: 0.1 + uncompensated kerf gave ~0.8 mm
                             # play, Samuel's first test cut -> tighter, and the kerf compensated below)
-kerf_mm = 0.3               # ASSUMPTION: Trotec kerf in 4 mm MDF, from that play: 0.8 / 2 - 0.1 = 0.3 mm. The DXF cut
-                            # lines are compensated (outlines kerf/2 outside, holes / windows kerf/2 inside the nominal
-                            # geometry). The board plates of 2026-10-05 (tools/make_plates.py) were cut uncompensated
+kerf_mm = 0.1               # CONFIRMED: Samuel 2026-10-14, NEW laser: peg_fit_test hole cut 7.2 -> measured 7.3 mm (the
+                            # hole grows 0.1). Was 0.3 for the old Trotec (from the 2026-10-07 dovetail play 0.8 / 2 -
+                            # 0.1). The DXF cut lines are compensated (outlines kerf/2 outside, holes / windows kerf/2
+                            # inside the nominal geometry). The board plates of 2026-10-05 (tools/make_plates.py) were
+                            # cut uncompensated
 cut_offset = 20.0           # ASSUMPTION: piece joints 20 mm after a stone joint (the V-tab at the joint stays whole)
 corner_arm_stones = 2       # ASSUMPTION: stones per arm of a corner L-piece (2 + 2 fit 800 x 600)
 pin_along = 100.5           # CONFIRMED: STEP, socket (= pin) centres 100.5 mm apart along the stone (y -49.75 / -150.25)
@@ -510,9 +512,9 @@ locator_h = 21.5            # ASSUMPTION (design, Samuel 2026-10-06): socket dep
 socket_clearance = 0.25     # ASSUMPTION: radial clearance of the printed cone in the socket - print the test first
 peg_d = 8.0                 # ASSUMPTION: peg under every locating cone (printed: 7.94 mm, Samuel 2026-10-08)
 peg_len = 4.0               # ASSUMPTION: 1 mm shorter than the MDF is thick ([guides] mdf_t 5; 3.0 for the 4 mm MDF)
-peg_hole_d = 8.0            # CONFIRMED: Samuel 2026-10-08 peg_fit_test.dxf (tools/make_peg_test.py): the hole labelled
-                            # 8.0 (cut circle 7.7 = 8.0 - kerf_mm) measured ~7.82 mm, printed peg 7.94 -> press fit.
-                            # Keep kerf_mm as is: this value is tied to the 0.3 mm compensation (real hole kerf ~0.12)
+peg_hole_d = 7.82           # CONFIRMED: finished hole of the press fit, Samuel 2026-10-08 peg_fit_test.dxf (old laser:
+                            # cut circle 7.7 measured ~7.82 mm, printed peg 7.94). New laser (kerf_mm 0.1, 2026-10-14):
+                            # cut circle 7.72 -> 7.82 again for the already printed cones. Was 8.0 with kerf_mm 0.3
 vtab = [5.6, 3.8]           # ASSUMPTION: V-tab width at the edge x height, 0.4 / 0.2 mm under the plates' notches
                             # ([plates] notch_width 6 x notch_depth 4)
 window_clearance = 0.3      # ASSUMPTION: per side around the plain station plates in their windows

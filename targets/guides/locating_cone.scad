@@ -6,7 +6,7 @@ H = 21.500;          // [guides] locator_h
 R_BASE = 17.750;    // socket cone at the stone's underside - clearance
 R_TOP = 7.724;     // the same cone at H
 PEG_D = 8.000;
-PEG_LEN = 3.000;
+PEG_LEN = 4.000;
 
 cylinder(h = H, r1 = R_BASE, r2 = R_TOP);
 translate([0, 0, -PEG_LEN]) cylinder(h = PEG_LEN + 0.5, d = PEG_D);

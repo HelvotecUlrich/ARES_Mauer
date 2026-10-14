@@ -40,7 +40,7 @@ Diagonals (tape measure, mm):
 
 Guides + station: 3562 x 2012 mm; including every ARES position, route and rotation circle: 3688 x 2334 mm (x -2564..1124, y -324..2010 in the map frame).
 
-Parts: 5 MDF sheets 800 x 600 x 4 mm (7 guide pieces, 2 station pieces), 64 locating cones (2 per stone on the guides; print a few spares), carpet tape.
+Parts: 5 MDF sheets 800 x 600 x 5 mm (7 guide pieces, 2 station pieces), 64 locating cones (2 per stone on the guides; print a few spares), carpet tape.
 ```
 
 Laser sheets: 1: station1; 2: station2; 3: A3-B1, A0-A2, B5-B6, C5-C6; 4: B7-C1, B2-B4; 5: C2-C4
