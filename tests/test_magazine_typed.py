@@ -97,15 +97,16 @@ def test_make_job_puts_two_half_stones_per_layer_into_a_half_position(nominal):
     x0 = config.T_ares_base(cfg)[0, 3]
     half = [s for s in job.magazine.slots if s.kind == "half"]
     assert len(half) == len(dk["half_positions"]) * 2 * dk["magazine_layers"] and all(s.ik_ok for s in half)
-    off = cfg["half_brick"]["length"] / 2
-    for s in half:
+    off = cfg["guides"]["pin_along"] / 2              # on the holder's cones (2026-10-14: 50.25, the 99.5 mm halves
+    for s in half:                                    # 1 mm apart)
         pos = s.stack[:-1]                                                   # r<row>y<column> + a / b
         ri, yi = int(pos[1:pos.index("y")]), int(pos[pos.index("y") + 1:])
         assert pos in dk["half_positions"] and s.stack[-1] in "ab"
         dy = -off if s.stack[-1] == "a" else off
         assert np.allclose(s.T_ares_tcp[:2, 3], [x0 + dk["magazine_rows_dx"][ri], dk["magazine_y"][yi] + dy])
         assert np.allclose(abs(s.T_ares_tcp[:3, 0]), [0, 1, 0], atol=1e-9)   # long axis across ARES (along y)
-        assert off + cfg["half_brick"]["length"] / 2 == cfg["brick"]["length"] / 2      # on a full stone's footprint
+        assert off + cfg["half_brick"]["length"] / 2 == pytest.approx(cfg["brick"]["length"] / 2)   # a full
+        # stone's footprint: 50.25 + 49.75 = 100
     full_stacks = {s.stack for s in job.magazine.slots if s.kind == "full"}
     assert not any(st.startswith(tuple(dk["half_positions"])) for st in full_stacks)
     kinds = {x.id: x.kind for x in job.magazine.slots}
