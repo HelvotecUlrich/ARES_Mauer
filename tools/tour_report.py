@@ -76,8 +76,10 @@ def report(run_dir: str | Path) -> str:
                    "after reload": "wall after the return from the station",
                    "arrival": "wall at the start / a direct stop move"}.get(e.get("why"), f"wall ({e.get('why')})")
         groups.setdefault(key, []).append(e)
-    out += ["", "## Drive error by situation", "", "| situation | jump mm | jump ° | nominal mm after |",
-            "|---|---|---|---|"]
+    out += ["", "## Drive error by situation", "",
+            "A route (leg change, return from the station) ends [sequencer] arrival_standoff_mm before its stop on "
+            "purpose: its 'nominal' includes that standoff; the correction moves close it.", "",
+            "| situation | jump mm | jump ° | nominal mm after |", "|---|---|---|---|"]
     for key, es in groups.items():
         out.append(f"| {key} | {_stats([e.get('jump_mm', 0.0) for e in es])} "
                    f"| {_stats([e.get('jump_deg', 0.0) for e in es])} "
