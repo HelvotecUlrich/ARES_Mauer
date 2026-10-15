@@ -758,6 +758,8 @@ Ergebnis: B = bestanden, NB = nicht bestanden, A = abgebrochen. Vorschlag für d
 
 ## Anhang A – Daten des aktuellen Jobs
 
+**Veraltet seit 2026-10-08** (76 Steine, UR vorne, alte Station). Die Daten des C mit 1-mm-Fuge (67 Steine, gestempelt 2026-10-15) stehen in `docs/ABLAUF_2026-10-15_DE.md`.
+
 Quelle: `data/jobs/nominal_C_robodk.json` (RoboDK 6.0.0.26652, 2026-10-08 02:53: 76/76 Steine, 62 Umladungen, 13 Routen; gestempelt bei 7a98fab, seit `main` 8894751 veraltet) und sein Dry-run. Die Bestätigungstexte stammen aus einem SIM-Lauf dieses Jobs mit `main` 7ab0be8. **Nach dem Freeze neu ablesen.**
 
 ### A.1 Eckdaten
