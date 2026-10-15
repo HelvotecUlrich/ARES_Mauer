@@ -29,9 +29,11 @@ def test_parse_legs():
 def test_with_legs_c_is_two_butt_corners():
     """Corners away from ARES's side (ARES outside the C) - the configured C has ARES inside (next test)."""
     cfg = copy.deepcopy(config.load())
+    cfg["brick"]["head_joint"], cfg["half_brick"]["length"] = 0.0, 100.0     # butt joints, the 200 mm grid of 2026-10-06
     cfg["wall"]["ares_inside"] = False
     for lg in cfg["wall"]["legs"]:                        # the earlier leg runs through every corner (C's
-        lg.pop("runs_through", None)                      # runs_through of 2026-10-07 left out)
+        lg.pop("runs_through", None)                      # runs_through of 2026-10-07 left out; the openings of
+        lg.pop("openings", None)                          # 2026-10-08 sit on the 100.5 mm grid)
     c = pl.with_legs(cfg, (10, 7, 5))
     legs = c["wall"]["legs"]
     assert [lg["name"] for lg in legs] == ["A", "B", "C"]

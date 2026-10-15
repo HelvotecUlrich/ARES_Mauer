@@ -57,6 +57,7 @@ def straight_config():
 
     from mauer import config
     cfg = copy.deepcopy(config.load())
+    _butt_joints(cfg)
     cfg["wall"].pop("legs", None)
     cfg["wall"]["shape"] = "straight"
     cfg["wall"]["dist_nominal"] = 840.0                   # 740 (reach study 2026-10-02) until 2026-10-06: with the
@@ -65,6 +66,14 @@ def straight_config():
     _wall_boards(cfg, {f"W{i}": (None, 60.0 + 800.0 * i) for i in range(8)})
     cfg["deck"].pop("half_positions", None)               # no half stones in a straight wall: untyped magazine as
     return cfg                                            # simulated (robodk/simulate.py), not the C's half position
+
+
+def _butt_joints(cfg: dict) -> None:
+    """The frozen test layouts (straight wall, the L, the C of 2026-10-06) keep the stones butt to butt as they were
+    drawn: [brick] head_joint 0 and the half stone 100 mm (station.toml since 2026-10-14: head joint 1, half 99.5 -
+    the 201 mm module of the current C)."""
+    cfg["brick"]["head_joint"] = 0.0
+    cfg["half_brick"]["length"] = 100.0
 
 
 def _wall_boards(cfg: dict, layout: dict) -> None:
@@ -97,6 +106,7 @@ def l_config():
 
     from mauer import config
     cfg = copy.deepcopy(config.load())
+    _butt_joints(cfg)
     cfg["wall"]["shape"] = "L"
     cfg["wall"]["ares_inside"] = False                    # ARES worked outside the L's corner
     cfg["wall"]["dist_nominal"] = 840.0                   # the L's wall distance (was 740, see straight_config)
@@ -125,6 +135,7 @@ def c10_config():
 
     from mauer import config
     cfg = copy.deepcopy(config.load())
+    _butt_joints(cfg)
     cfg["wall"]["legs"] = copy.deepcopy(C10_LEGS)
     _wall_boards(cfg, C10_BOARDS)
     return cfg

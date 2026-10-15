@@ -121,14 +121,12 @@ def test_every_board_plate_finds_a_v_tab_in_one_of_its_notches(data):
     p = data["params"]
     apex = _tab_apexes(data)
     assert data["sites"], "no wall board plates in the config"
-    for s in data["sites"]:
-        lg = _leg(data, s.leg)
-        notches = [lg.to_wall(k * p.pitch, p.h + p.vtab[1]) for k in (s.k, s.k + 1)]
-        assert any(math.dist(n, a) < 1e-6 for n in notches for a in apex), s.board
-    for a in apex:                                                           # tabs only on the ARES side, at joints
-        assert any(abs(lg.from_wall(*a)[1] - (p.h + p.vtab[1])) < 1e-6
-                   and abs((lg.from_wall(*a)[0] / p.pitch) - round(lg.from_wall(*a)[0] / p.pitch)) < 1e-9
-                   for lg in data["legs"])
+    bl = float(config.load()["plates"]["block_length"])                      # the plates' notches, 200 mm apart
+    for s in data["sites"]:                       # exactly ONE notch of every plate on a tab (2026-10-14: the blocks
+        lg = _leg(data, s.leg)                    # at 201 mm, a tab at every joint would sit 1 mm off the other one)
+        notches = [lg.to_wall(s.u + d * bl / 2.0, p.h + p.vtab[1]) for d in (-1, 1)]
+        assert sum(any(math.dist(n, a) < 1e-6 for a in apex) for n in notches) == 1, s.board
+    assert len(apex) == len(data["sites"])                                   # no other tab
 
 
 def _inside(q, P):
@@ -325,9 +323,9 @@ def test_the_strip_runs_through_the_door_and_beyond_the_free_end_to_the_spare_bl
     and on beyond C's free end to the spare block of board W7 (k = 6), whose plate finds its V-tab."""
     p = data["params"]
     C = _leg(data, "C")
-    assert mg.course0(p, C) == [(600.0, 700.0, "half"), (700.0, 900.0, "full"), (900.0, 1000.0, "half")]
-    holes = _holes_in_leg(data)["C"]
-    assert len(holes) == 6 and all(u > 600.0 for u, _ in holes)
+    assert mg.course0(p, C) == [(603.0, 702.5, "half"), (703.5, 903.5, "full"), (904.5, 1004.0, "half")]   # 1 mm
+    holes = _holes_in_leg(data)["C"]                                                   # joints (2026-10-14)
+    assert len(holes) == 6 and all(u > 603.0 for u, _ in holes)
     for u in (100.0, 300.0, 500.0, 800.0, 1100.0, 1300.0):                    # door, the piece, the spare block
         assert _covered(data, C.to_wall(u, 0.0)), u
     assert not _covered(data, C.to_wall(1500.0, 0.0))

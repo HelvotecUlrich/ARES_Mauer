@@ -563,7 +563,8 @@ def _magazine(ctx: _Ctx) -> mjob.Magazine:
     if unknown:
         raise ValueError(f"[deck] half_positions {unknown}: no such magazine position ({positions})")
     typed = bool(half_pos)
-    off = float(cfg["half_brick"]["length"]) / 2.0
+    off = float(cfg["guides"]["pin_along"]) / 2.0     # the two halves sit on the holder's cones (the full stone's
+    # sockets, 100.5 mm apart): +-50.25, a 1 mm joint between the 99.5 mm halves (2026-10-14; was +-length / 2)
     slots: list[mjob.MagazineSlot] = []
     clear: dict[str, float] = {}
 

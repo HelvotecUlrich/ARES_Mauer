@@ -27,8 +27,13 @@ def test_variant_c_acb_overrides_the_legs_only():
     assert config.variant_of(var) == "c_acb" and config.suffix(var) == "_c_acb"
     assert [lg["n0"] for lg in main["wall"]["legs"]] == [5, 9, 5]      # the C with a door and a window (2026-10-08)
     assert [lg["n0"] for lg in var["wall"]["legs"]] == [5, 7, 5] and var["wall"]["legs"][2]["runs_through"] is True
-    for sec in ("ur", "brick", "deck", "pickup_station", "camera"):
+    for sec in ("ur", "deck", "pickup_station", "camera"):
         assert main[sec] == var[sec], sec
+    # the variant keeps its butt joints (cut on the 200 mm grid); main: 1 mm head joint, half stone 99.5 (2026-10-14)
+    assert {k: v for k, v in main["brick"].items() if k != "head_joint"} == \
+        {k: v for k, v in var["brick"].items() if k != "head_joint"}
+    assert (main["brick"]["head_joint"], var["brick"]["head_joint"]) == (1.0, 0.0)
+    assert (main["half_brick"]["length"], var["half_brick"]["length"]) == (99.5, 100.0)
     assert main["wall"]["shape"] == var["wall"]["shape"] == "C"
     with pytest.raises(FileNotFoundError, match="known: .*c_acb"):
         config.load(variant="no_such_variant")

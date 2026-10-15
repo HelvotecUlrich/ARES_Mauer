@@ -22,6 +22,13 @@
 # ARES stops only where it keeps [routes] clearance_mm from the other legs and their plates (tools/make_job.py
 # stop_limits: on B 460..820 mm). Status: lengths, inside and the sides CONFIRMED (Samuel), corner design and the
 # distances ASSUMPTION.
+[brick]
+head_joint = 0.0            # ASSUMPTION: the variant of 2026-10-07 stays as drawn and cut (targets/guides_c_acb on the
+                            # 200 mm grid, butt joints) - the main config has the 1 mm head joint since 2026-10-14
+
+[half_brick]
+length = 100.0              # ASSUMPTION: as drawn on 2026-10-07 (main config: 99.5 mm, measured 2026-10-14)
+
 [[wall.legs]]
 name = "A"
 n0 = 5                      # CONFIRMED: Samuel 2026-10-07 (the C's legs A and C the same length as the shorter one,
