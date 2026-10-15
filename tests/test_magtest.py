@@ -329,10 +329,11 @@ def test_speed_factor_scales_every_following_move_and_the_timeout(cfg, job):
 # ── put-down height and separation (real dry run 2026-10-09) ──────────────────
 def test_put_down_lets_go_above_the_slot_and_comes_from_above_the_neighbours(cfg, job):
     """Samuel 2026-10-09: the put-down pressed the stone onto the cones (protective stop) - the jaws open [ur]
-    release_above_mm above the slot pose; the approach is high enough for the held stone to clear the neighbours."""
+    release_above_mm above the slot pose (20 mm since 2026-10-15: with 10 the stone touched down before the jaws
+    opened); the approach is high enough for the held stone to clear the neighbours."""
     from mauer.magtest import magazine_approach_mm
     rel = float(cfg["ur"]["release_above_mm"])
-    assert rel == 10.0
+    assert rel == 20.0
     link = _FakeLink(job.park_q_rad)
     r = URRobot(link, cfg, job, guard=_guard(cfg, job))
     T_base_ares = g.inv(np.asarray(job.T_ares_base))
