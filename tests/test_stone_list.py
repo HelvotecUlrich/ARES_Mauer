@@ -43,3 +43,8 @@ def test_station_stacks_tell_the_operator_how_high_to_fill():
         assert sum(s["layers"] for s in stacks if s["kind"] == k) == full.count(k)
     assert {s["row"] for s in stacks} == {1, 2}
     assert max(s["layers"] for s in stacks) == 5 and min(s["layers"] for s in stacks) == 2
+
+
+def test_numbers_keep_their_decimals():
+    """2026-10-15: :.0f / :.1f printed the 99.5 mm half stone as 100 and 1.25 kg as 1,2 on the operator's list."""
+    assert [msl._num(x) for x in (99.5, 120.0, 1.25, 3.0, 0.0)] == ["99,5", "120", "1,25", "3", "0"]

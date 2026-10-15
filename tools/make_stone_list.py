@@ -95,6 +95,12 @@ def _de(x: float, nd: int = 1) -> str:
     return f"{x:.{nd}f}".replace(".", ",")
 
 
+def _num(x: float, nd: int = 2) -> str:
+    """Up to nd decimals, trailing zeros dropped: 99.5 -> '99,5', 120.0 -> '120', 1.25 -> '1,25' (a fixed :.0f / :.1f
+    showed the 99.5 mm half stone as 100 and 1.25 kg as 1,2)."""
+    return _de(float(x), nd).rstrip("0").rstrip(",")
+
+
 def _n(d: dict) -> str:
     """'12 (10 Voll, 2 Halb)' from {kind: n}."""
     parts = [f"{d[k]} {KIND_DE[k]}" for k in KINDS if d.get(k)]
@@ -156,13 +162,13 @@ def write_pdf(path: Path, job: mjob.Job, cfg: dict, job_path: Path, cfg_path: Pa
     story += [table(rows, (35, 30, 30, 30), total_row), Spacer(1, 3 * mm)]
     mass_f = float(b.get("mass_kg", 0.0) or 0.0)
     mass_h = float(hb.get("mass_kg", 0.0) or 0.0)
-    m_line = (f"Masse: Vollstein {_de(mass_f)} kg ({tag('[brick] mass_kg')}) → {n_kind['full']} Vollsteine ≈ "
+    m_line = (f"Masse: Vollstein {_num(mass_f)} kg ({tag('[brick] mass_kg')}) → {n_kind['full']} Vollsteine ≈ "
               f"{_de(n_kind['full'] * mass_f, 0)} kg; " if mass_f else "Masse Vollstein: unbekannt; ")
-    m_line += (f"Halbstein {_de(mass_h)} kg ({tag('[half_brick] mass_kg')})." if mass_h else
+    m_line += (f"Halbstein {_num(mass_h)} kg ({tag('[half_brick] mass_kg')})." if mass_h else
                f"Halbstein: Masse {tag('[half_brick] mass_kg').lower()} (nicht mitgerechnet).")
-    story += [Paragraph(f"Maße (L × B × H): Vollstein {b['length']:.0f} × {b['width']:.0f} × {b['height']:.0f} mm "
-                        f"({tag('[brick] length')}); Halbstein {hb['length']:.0f} × {hb['width']:.0f} × "
-                        f"{hb['height']:.0f} mm (Länge {tag('[half_brick] length')}). {m_line}", P),
+    story += [Paragraph(f"Maße (L × B × H): Vollstein {_num(b['length'])} × {_num(b['width'])} × {_num(b['height'])} mm "
+                        f"({tag('[brick] length')}); Halbstein {_num(hb['length'])} × {_num(hb['width'])} × "
+                        f"{_num(hb['height'])} mm (Länge {tag('[half_brick] length')}). {m_line}", P),
               Spacer(1, 3 * mm), Paragraph("2. Je Lage (Lage 1 = unterste, steht auf den Bodenführungen)", H2)]
     rows = [["Lage"] + [f"{lg or 'Wand'} {KIND_DE[k]}" for lg in legs for k in KINDS] + ["Summe"]]
     for k_ in courses:
