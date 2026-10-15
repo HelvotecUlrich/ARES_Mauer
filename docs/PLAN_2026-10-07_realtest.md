@@ -223,3 +223,11 @@ Samuel: "erledige die Software parts" of the readiness check (preflight_real on 
       100 mm -> left in the driving direction (the base_link convention the AdsAres rear flip relies on); HALT
       (space) stops a running move. The scanners are not connected for the wall runs (Samuel). No wall run yet (no
       run log of 2026-10-14) - next: ARES at stop 0, run stops 0..3 in step mode
+- [x] G7 1 mm head joint (Samuel 2026-10-14: butt to butt the course above jams; pins 100.5 apart, 49.75 from the ends):
+      [brick] head_joint 1, half stone 99.5 (measured), leg frames / board targets / openings on the 201 / 100.5 grid,
+      one V-tab per board plate (the cut plates' notches stay 200 apart), new wall strips (sheets 3-5; station and
+      plates kept), half stones on the magazine holder's cones (+-50.25). Reach tables, job, plan, stone list, floor
+      map rebuilt (e273de7); guarded world sims seeds 1-3: 67/67, 0 violations, max 2.58 / 2.20 / 2.05 mm. The
+      variants c_acb / c_a55 and the frozen test layouts keep butt joints
+      RoboDK (13.9 min, video): 67/67 + 53/53 collision-checked, 11 routes clean, stamped; preflight_real of the C
+      job empty; final/ refreshed (stone list, plan, report, floor map with the stops, pictures, video local)

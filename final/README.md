@@ -8,12 +8,14 @@ Ordner aber nicht.
 ## Das Layout
 
 **Mauer** (`[[wall.legs]]`, Fotos `input/`): 4 Lagen, 67 Steine (53 Voll, 14 Halb), gebaut B → A → C in 4 Halten.
+**Seit 2026-10-14 mit 1 mm Stoßfuge** (Stoß an Stoß klemmte die Lage darüber): Vollstein 200 + 1 mm = 201-mm-Raster,
+Halbstein 99,5 + 1 mm = 100,5 mm (gemessen); so sitzt jeder Pin genau unter dem Loch darüber.
 
 | Schenkel | Länge | Lage zu ARES | Besonderheit |
 |---|---|---|---|
-| B | 9 Steine (1,8 m) | vorne, 840 mm | läuft durch beide Ecken, wird zuerst gebaut |
-| A | 5 Steine (1,0 m) | rechts, 580 mm | Fenster in Lage 3 + 4, 400 mm breit, 300 mm von beiden Enden; von der Ecke zu B aus gebaut |
-| C | 5 Steine (1,0 m) | links, 580 mm | nur 400 mm am freien Ende, daneben 600 mm Tür an B |
+| B | 9 Steine (1,808 m) | vorne, 840 mm | läuft durch beide Ecken, wird zuerst gebaut |
+| A | 5 Steine (1,004 m) | rechts, 580 mm | Fenster in Lage 3 + 4, 400 mm breit, 300 mm von beiden Enden; von der Ecke zu B aus gebaut |
+| C | 5 Steine (1,004 m) | links, 580 mm | nur 400 mm am freien Ende, daneben 600 mm Tür an B |
 
 **Abholstation** (`[pickup_station]`): auf dem Boden, eine MDF-Platte mit zwei Reihen im Abstand von 200 mm. Die Codes
 S0 / S1 liegen im vorderen Streifen (an ARES) bei ±500 mm. Stapelhöhen so, dass der UR jeden Stein auch bei
@@ -35,7 +37,7 @@ der Tabelle füllen.** Ein Stein darüber ist der Software unbekannt und liegt d
 | `steinliste.pdf` | Steine je Schenkel / Lage, Beladeplan, **Stapelhöhen der Station**, Setzreihenfolge |
 | `floor_map.pdf` | Bodenplan 1:20 auf A3 (in 100 % drucken, 1-m-Balken prüfen), Seite 2: Messpunkte, Diagonalen, Teile |
 | `floor_plan.md` | dieselben Koordinaten und Diagonalen als Text |
-| `laser/laser_sheet_1..5.dxf` | MDF **5 mm** 800 × 600 (seit 2026-10-09, vorher 4 mm): Blatt 1 + 2 Station, 3 – 5 Bodenführungen (Ebenen CUT / ENGRAVE / SHEET) |
+| `laser/laser_sheet_1..5.dxf` | MDF **5 mm** 800 × 600 (seit 2026-10-09, vorher 4 mm): Blatt 1 + 2 Station, 3 – 5 Bodenführungen (Ebenen CUT / ENGRAVE / SHEET). **Blatt 3 – 5 neu für die 1-mm-Fuge (2026-10-14)**; die Station (Blatt 1 + 2) und die Board-Platten bleiben - jede Platte hat jetzt genau eine V-Nase unter einer ihrer Kerben |
 | `laser/peg_fit_test.dxf`, `laser/laser_test.dxf` | **zuerst** im 5-mm-MDF lasern und prüfen (Schnittbreite und Zapfenloch wurden in 4 mm eingemessen) (Ablauf: `targets/guides/README.md`) |
 | `laser/locating_cone.stl` | Zentrierkegel, 64 Stück + Reserve (Bambu X1E, liegt schon in Druckrichtung) |
 | `laser/laser_sheets.png` / `.svg` | Vorschau der Blätter |
