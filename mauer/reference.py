@@ -30,6 +30,7 @@ import numpy as np
 
 from . import config as _config
 from . import geometry as g
+from .laid import LaidShifts
 from .vision.targets import BoardSpec, corners_obj
 
 PARENTS = ("wall", "station", "deck")      # "deck" = the ARES frame (base_link), see module docstring
@@ -59,6 +60,7 @@ def placements(cfg: Mapping) -> list[Placement]:
     if "xyz" in c:
         out.append(Placement("calib", "deck", _config.pose(c)))
     legs = _config.leg_frames(dict(cfg))
+    laid = LaidShifts(cfg)                       # as-laid guide pieces ([laid] piece_gap_mm, 2026-10-15)
     for t in cfg.get("targets", []):
         parent = str(t["parent"])
         if parent not in PARENTS:
@@ -70,6 +72,7 @@ def placements(cfg: Mapping) -> list[Placement]:
             if str(t["leg"]) not in legs:
                 raise ValueError(f"target {t.get('name')!r}: unknown leg {t['leg']!r} (legs {sorted(legs)})")
             T = legs[str(t["leg"])] @ T
+            T[:2, 3] += laid.board(t)
         out.append(Placement(str(t["name"]), parent, T))
     names = [p.name for p in out]
     dup = sorted({n for n in names if names.count(n) > 1})

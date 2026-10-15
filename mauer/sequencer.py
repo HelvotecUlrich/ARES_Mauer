@@ -82,6 +82,8 @@ from .ares.ads import MIN_MOVE_DEG, MIN_MOVE_MM, AresNotReady, MoveRefused, vehi
 from .ares.ads import AresError as AdsError
 from .backends import BackendError, RobotError, ShotError
 from .job import Job, Look, SlotState, StoneTask, reload_plan, reload_short, restart_fill
+from .laid import shift_job
+from .laid import summary as _laid_summary
 from .reference import (FrameFit, Pose2D, T_base_parent_from, T_parent_ares, after_rotation, after_translation,
                         fit_frame, placements, planar_T, relative_move, tilt_deg, wrap_angle)
 from .vision.detect import coarse_poses, measure
@@ -347,7 +349,7 @@ def preflight_real(cfg: Mapping, job: Job, *, intrinsics_file: str | Path | None
     m = job.meta
     if m.get("reach_check") == "robodk":             # stamped by robodk/simulate.py: still the code it verified?
         from .job import stamp_problems
-        p += stamp_problems(job)
+        p += stamp_problems(job, cfg=cfg)
     if m.get("look_source", "nominal") == "nominal" and m.get("reach_check", "none") != "robodk":
         p.append(f"job built from nominal look poses with reach check {m.get('reach_check', 'none')!r} only - no "
                  "collision/occlusion check (export the job from the RoboDK planner)")
@@ -413,7 +415,7 @@ class Sequencer:
                  now: Callable[[], float] = time.time, *, camera_loop: bool = True, save_images: bool = False,
                  on_station_empty: Callable[[], Any] | None = None, params: SequencerParams | None = None,
                  on_shot: Callable[[np.ndarray, dict], None] | None = None):
-        self.job, self.cfg = job, cfg
+        self.job, self.cfg = shift_job(job, cfg), cfg     # wall place poses on the as-laid guide pieces ([laid])
         self.robot, self.ares, self.camera = robot, ares, camera
         self.intr = intr
         self.T_flange_cam = np.asarray(T_flange_cam, float)
@@ -1170,7 +1172,8 @@ class Sequencer:
         self.result.error = None
         self.log.write("run_start", start_stop=start_stop, last_stop=last, camera_loop=self.camera_loop,
                        params=asdict(self.p), job_source=self.job.source, config_sha256=self.job.config_sha256,
-                       n_stones=self.job.n_stones, magazine=len(self.magazine))
+                       n_stones=self.job.n_stones, magazine=len(self.magazine), laid=_laid_summary(self.cfg),
+                       robodk_accept=dict(self.cfg.get("robodk_accept") or {}))
         resumed = self.pose_est is not None and self.stop_k == start_stop
         if not resumed:
             earlier = {t.key for st in self.job.stops[:start_stop] for t in st.stones}

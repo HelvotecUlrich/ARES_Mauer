@@ -863,10 +863,14 @@ def git_state(paths: Sequence[str] = STAMP_PATHS) -> dict:
     return {"git_commit": commit, "git_dirty": dirty}
 
 
-def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS, repo: str | Path | None = None) -> list[str]:
+def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS, repo: str | Path | None = None,
+                   cfg: Mapping | None = None) -> list[str]:
     """Why a RoboDK-verified job (meta reach_check "robodk") no longer matches the code: stamped from a dirty tree, or
     the planning code / CAD / config changed since its commit; [] if it matches or git is not available. The config
-    files count without their [hmi*] tables (planning_bytes): HMI display settings do not change what was verified."""
+    files count without their [hmi*] tables (planning_bytes): HMI display settings do not change what was verified.
+    cfg [robodk_accept] (Samuel 2026-10-15: no new RoboDK run for a small change): robodk_commit = the verification
+    accepted (a prefix of its commit), code_commit = the code accepted with it - the planning code may differ from the
+    verified commit as long as it is exactly that of code_commit; any later code change counts again."""
     import subprocess
     from . import REPO
     repo = str(repo or REPO)
@@ -894,6 +898,8 @@ def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS, repo: str | P
     except (OSError, subprocess.SubprocessError):
         return []
     out = []
+    if r.returncode != 0 and _code_accepted(cfg, commit, code, repo):
+        r = subprocess.CompletedProcess(r.args, 0)
     if r.returncode != 0:
         out.append(f"the planning code / CAD changed since the RoboDK verification ({commit[:8]}) - rerun "
                    "robodk/simulate.py")
@@ -903,9 +909,25 @@ def stamp_problems(job: "Job", paths: Sequence[str] = STAMP_PATHS, repo: str | P
     return out
 
 
+def _code_accepted(cfg: Mapping | None, commit: str, code: Sequence[str], repo: str) -> bool:
+    """[robodk_accept] (stamp_problems): the verification `commit` is the accepted one and the planning code now is
+    exactly that of the accepted code_commit."""
+    import subprocess
+    acc = (cfg or {}).get("robodk_accept") or {}
+    rk, ck = str(acc.get("robodk_commit", "") or ""), str(acc.get("code_commit", "") or "")
+    if len(rk) < 7 or len(ck) < 7 or not commit.startswith(rk):
+        return False
+    try:
+        r = subprocess.run(["git", "-C", repo, "diff", "--quiet", ck, "--", *code], timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0
+
+
 # ── config provenance ─────────────────────────────────────────────────────────
 _TABLE = re.compile(rb"^\[\[?[A-Za-z_][A-Za-z0-9_.]*\]\]?\s*(#.*)?$")    # a table header in column 0
-_NOT_PLANNING = re.compile(rb"^\[\[?(hmi|magtest)[\].]")   # tables that are no planning input of the wall jobs
+_NOT_PLANNING = re.compile(rb"^\[\[?(hmi|magtest|laid|robodk_accept)[\].]")   # tables that are no planning input of
+# the wall jobs: [laid] (as-laid floor, a runtime correction - mauer.laid) and [robodk_accept] (stamp_problems)
 
 
 def planning_bytes(data: bytes) -> bytes:

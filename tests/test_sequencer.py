@@ -302,7 +302,7 @@ def test_real_preflight_lists_the_placeholders(cfg, job10, tmp_path, monkeypatch
     assert good["ares"]["frame_x_points_to"] == "rear"   # UR at the vehicle rear: AdsAres turns the moves (2026-10-14)
     j = copy.deepcopy(job10)
     j.meta.update(look_source="planner", reach_check="robodk")
-    monkeypatch.setattr(mjob, "stamp_problems", lambda job: [])          # code provenance: test_stamp_problems
+    monkeypatch.setattr(mjob, "stamp_problems", lambda job, **kw: [])          # code provenance: test_stamp_problems
     for f in ("i.json", "h.json"):
         (tmp_path / f).write_text("{}")
     assert preflight_real(good, j, intrinsics_file=tmp_path / "i.json", handeye_file=tmp_path / "h.json") == []

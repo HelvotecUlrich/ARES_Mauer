@@ -527,6 +527,15 @@ vtab = [5.6, 3.8]           # ASSUMPTION: V-tab width at the edge x height, 0.4 
                             # ([plates] notch_width 6 x notch_depth 4)
 window_clearance = 0.3      # ASSUMPTION: per side around the plain station plates in their windows
 
+[laid]
+# As-laid floor guides (mauer/laid.py): a runtime correction, no planning input (planning_bytes skips this table, so a
+# change here needs neither a job rebuild nor a RoboDK run). The sequencer moves the wall boards and the wall place
+# poses with the piece they lie on; piece A0-A2 (map origin O) stays put, every joint pushes the later pieces along
+# their leg in wall order A -> B -> C.
+piece_gap_mm = 1.0          # CONFIRMED: Samuel 2026-10-15 ("on every dovetail intersection there is now a 1 mm gap so the
+                            # stones fit"; wall pieces only, the station's joint has none). Measured the same day: W2 ->
+                            # W5 1209.0 mm instead of 1206 (3 joints; run 2026-10-15_155402_hmi_real, fit RMS 1.50 mm)
+
 [pickup_station]
 # Pick-up station ON THE FLOOR (Samuel 2026-10-06: "it's gonna be on the ground"; layout chosen 2026-10-06: one row in
 # front of ARES like a short wall leg). Stones (pins up) on one laser-cut MDF piece, located by printed cones

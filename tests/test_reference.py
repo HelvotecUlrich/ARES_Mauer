@@ -10,6 +10,7 @@ import pytest
 
 from mauer import config
 from mauer import geometry as g
+from mauer.laid import LaidShifts
 from mauer.reference import (PARENTS, Pose2D, after_rotation, after_translation, ares_pose, board_centre, fit_frame,
                              placements, relative_move, T_base_parent_from, T_wall_ares, tilt_deg, wrap_angle)
 from mauer.vision.targets import board_specs, corners_obj
@@ -168,12 +169,15 @@ def test_relative_move_conventions():
 
 
 def test_leg_placements(cfg, pl):
-    """Wall boards with `leg`: xyz/rpy in the leg frame, composed with [[wall.legs]] (T_wall_leg @ pose)."""
+    """Wall boards with `leg`: xyz/rpy in the leg frame, composed with [[wall.legs]] (T_wall_leg @ pose), moved by
+    the as-laid shift of their guide piece ([laid], mauer.laid)."""
     T_legs = config.leg_frames(cfg)
+    ls = LaidShifts(cfg)
     for t in cfg["targets"]:
         if "leg" in t:
-            assert np.allclose(_pl(pl, t["name"]).T_parent_board,
-                               T_legs[t["leg"]] @ g.pose_xyz_rpy(t["xyz"], t["rpy_deg"]))
+            T = T_legs[t["leg"]] @ g.pose_xyz_rpy(t["xyz"], t["rpy_deg"])
+            T[:2, 3] += ls.board(t)
+            assert np.allclose(_pl(pl, t["name"]).T_parent_board, T)
     bad = dict(cfg)
     bad["targets"] = [dict(cfg["targets"][0], leg="Z")]
     with pytest.raises(ValueError, match="unknown leg"):
