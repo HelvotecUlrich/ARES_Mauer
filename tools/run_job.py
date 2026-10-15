@@ -147,7 +147,7 @@ def sim_once(cfg: dict, job: mjob.Job, args, camera_loop: bool, log_dir: Path | 
                      len(job.stops))[0], supersample=args.supersample, grasp_check=not args.lenient_grasp)
     seq = Sequencer(job, cfg, world.robot, world.ares, world.camera, world.intr, world.T_flange_cam,
                     log_dir=log_dir, camera_loop=camera_loop, save_images=args.save_images,
-                    on_station_empty=world.refill_station)
+                    on_station_empty=world.refill_station, tour=args.tour)
     a, b = parse_stops(args.stops, len(job.stops))
     t0 = time.time()
     err = None
@@ -284,7 +284,7 @@ def run_real(cfg: dict, job: mjob.Job, args) -> int:
         seq = Sequencer(job, cfg, robot, AdsAres(ads, rear=mconfig.ares_rear(cfg)), cam, intr, X,
                         log_dir=args.log_dir,
                         confirm=confirm if args.step else None, save_images=args.save_images,
-                        on_station_empty=station_empty)
+                        on_station_empty=station_empty, tour=args.tour)
         if args.resume_log:
             from mauer.sequencer import standing_in_log
             placed = sorted(standing_in_log(args.resume_log))
@@ -322,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--log-dir", default=None, help="run log folder (default data/runs/<timestamp>/)")
     ap.add_argument("--save-images", action="store_true", help="store every image in the run log folder")
     ap.add_argument("--step", action="store_true", help="--real: confirm every motion")
+    ap.add_argument("--tour", action="store_true", help="ARES tour: every ARES move, look and correction of the job, "
+                    "no stone picked or put down (report: tools/tour_report.py <run folder>)")
     ap.add_argument("--resume-log", default=None,
                     help="--real: run folder / run.jsonl of an interrupted run - its placed stones stand (motion guard)")
     ap.add_argument("--stop-untouched", action="store_true",

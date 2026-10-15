@@ -521,6 +521,9 @@ def test_tour_drives_the_same_ares_moves_without_handling_a_stone(lcfg, ljob, tm
     assert standing_in_log(s1.log.path) == set()
     assert any(e["event"] == "reload_transfer" and e["tour"] for e in ev1)
     assert any(e["event"] == "station_frame" and e.get("source") == "camera" for e in ev1)
+    rep = _tool("tour_report").report(s1.log.folder)
+    assert "tour (no stones): True" in rep and "| stop 1 station |" in rep
+    assert rep.count("| translate (") + rep.count("| rotate (") == len(moves(ev1))
 
 
 def test_l_route_drives_the_waypoints_without_errors(lcfg, ljob, tmp_path):

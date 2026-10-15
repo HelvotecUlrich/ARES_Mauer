@@ -161,6 +161,7 @@ class MauerTab(QWidget):
         self.guard = QCheckBox("SIM motion guard (every joint move planned as on the real robot)")
         self.guard.setChecked(True)
         self.untouched = QCheckBox("start stop untouched (no stone of it placed yet)")
+        self.tour = QCheckBox("ARES tour: drive, look and correct only - no stone picked or put down")
         self.resume_log = QLabel("")                    # run log of an interrupted run (set by the dialog only)
         self.resume_log.setWordWrap(True)
         self.resume_btn_log = self._button("Run log...", "#333333", self._browse_log, 90)
@@ -176,7 +177,7 @@ class MauerTab(QWidget):
         stops.addWidget(lbl("to"))
         stops.addWidget(self.stop_to)
         for w in (self.scenario, self.seed, self.lenient, self.stop_from, self.stop_to, self.camera_loop,
-                  self.save_images, self.step, self.sim_speed, self.guard, self.untouched):
+                  self.save_images, self.step, self.sim_speed, self.guard, self.untouched, self.tour):
             w.setFocusPolicy(Qt.NoFocus)
         later = QHBoxLayout()
         later.addWidget(self.resume_log, 1)
@@ -188,6 +189,7 @@ class MauerTab(QWidget):
         f.addRow("stops", stops)
         f.addRow("earlier run", later)
         f.addRow(self.untouched)
+        f.addRow(self.tour)
         f.addRow(self.guard)
         f.addRow(self.camera_loop)
         f.addRow(self.save_images)
@@ -196,7 +198,7 @@ class MauerTab(QWidget):
         f.addRow("REAL speed", speed_row)
         self._option_widgets = (self.sim_rb, self.real_rb, self.scenario, self.seed, self.lenient, self.stop_from,
                                 self.stop_to, self.camera_loop, self.save_images, self.guard, self.untouched,
-                                self.resume_btn_log, self.resume_clear)
+                                self.tour, self.resume_btn_log, self.resume_clear)
         return box
 
     def _speed_row(self) -> QWidget:
@@ -411,7 +413,7 @@ class MauerTab(QWidget):
                           seed=self.seed.value(), lenient_grasp=self.lenient.isChecked(),
                           sim_step_s=self.sim_speed.value(), guard=self.guard.isChecked(),
                           resume_log=self._resume_log, stop_untouched=self.untouched.isChecked(),
-                          speed_pct=float(self.real_speed.value()))
+                          speed_pct=float(self.real_speed.value()), tour=self.tour.isChecked())
 
     def _set_resume_log(self, path) -> None:
         """The run log of an interrupted run: its stones stand (placed / declared), the run starts after them."""

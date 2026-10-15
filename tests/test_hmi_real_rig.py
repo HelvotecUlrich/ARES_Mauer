@@ -430,3 +430,29 @@ def test_real_start_checklist_and_a_later_start(qapp, tmp_path, plc, monkeypatch
         assert "run_start" not in [r["event"] for r in read_log(c.log_dir)]   # nothing ran (StubLink: no program)
     finally:
         assert c.shutdown(10.0)
+
+
+def test_real_tour_reaches_the_sequencer_and_its_checklist_needs_no_stones(qapp, tmp_path, plc, monkeypatch):
+    """ARES tour (Samuel 2026-10-15): RunOptions(tour=True) makes a touring Sequencer, the REAL start checklist asks
+    for empty jaws and lists no magazine fill; a decline starts nothing."""
+    s = short_sim_session(n0=2, n1=2)
+    monkeypatch.setattr(rc, "real_preflight", _ok_report)
+    c = RunController(config.load()["hmi"], runs_dir=tmp_path / "runs", ares_enabled=True,
+                      ads_status_fn=lambda: dict(MANUAL_STATUS), ads_connected_fn=lambda: True,
+                      real_factories=factories(plc, []))
+    asks = []
+    c.confirm_requested.connect(asks.append)
+    try:
+        c.set_session(s)
+        c.prepare(RunOptions("real", tour=True))
+        assert wait_until(lambda: c.state == "ready", 30.0, qapp)
+        assert c.sequencer.tour
+        c.start()
+        assert wait_until(lambda: asks, 10.0, qapp)
+        req = asks[-1]
+        assert req.kind == "start" and req.text.startswith("ARES TOUR") and "jaws EMPTY" in req.text
+        assert not any(f"{sid}: {kind}" in req.text for sid, kind in c.start_fill())
+        c.answer_confirm(req.id, False)
+        assert wait_until(lambda: c.state == "ready", 10.0, qapp)
+    finally:
+        assert c.shutdown(10.0)

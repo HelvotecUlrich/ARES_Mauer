@@ -85,6 +85,8 @@ class RunOptions:
     resume_log: Path | None = None    # run log of an interrupted run: its stones stand (Sequencer.declare_placed)
     stop_untouched: bool = False      # start at stop k > 0 without a run log: no stone of stop k is placed yet
     speed_pct: float = 100.0          # REAL: % of the [ur] speeds/accelerations (changeable live: set_speed_pct)
+    tour: bool = False                # ARES tour: every ARES move, look and correction of the job, no stone handled
+                                      # (Sequencer tour, Samuel 2026-10-15; report: tools/tour_report.py)
 
 
 @dataclass(frozen=True)
@@ -509,7 +511,8 @@ class RunController(QObject):
             runner = MagazineTest if self.magtest else Sequencer
             seq = runner(s.job, s.cfg, robot, ares, rig.camera, rig.intr, rig.T_flange_cam, log_dir=log_dir,
                          confirm=self._confirm_cb, camera_loop=o.camera_loop, save_images=o.save_images,
-                         on_station_empty=self._station_empty_cb, on_shot=self._on_shot)
+                         on_station_empty=self._station_empty_cb, on_shot=self._on_shot,
+                         **({} if self.magtest else {"tour": o.tour}))
             self._tracker = SnapshotTracker(s, lambda: odom_from_status(self._ads_status_fn()))
             seq.log.add_listener(self._on_record)
             if self._log_standing:                  # stones of the interrupted run: skipped, part of the guard's wall
@@ -613,6 +616,11 @@ class RunController(QObject):
                     f"{m['front']['leg']}, {m['front']['dist_mm']:g} mm from the ARES centre, up to {u:g} mm to the "
                     "sides); ARES stands still; pendant Move tab, feature Base (seen in the ARES driving direction): "
                     f"X growing moves the TCP {px}, Y growing {py}; E-stop in hand")
+        if o.tour:
+            return (f"ARES TOUR from stop {o.start_stop}: NO stone is picked or put down - gripper jaws EMPTY, magazine "
+                    "and station may stay empty; the arm only goes to the looks and the park pose; ARES drives every "
+                    "route, station trip and correction of the job - nothing and nobody in the C or on the routes; "
+                    "E-stop in hand")
         fill = ", ".join(f"{sid}: {kind}" for sid, kind in self.start_fill())
         late = f"{len(self._log_standing)} stones of {Path(o.resume_log).name} stand; " if self._log_standing else ""
         return (f"REAL start at stop {o.start_stop}: {late}gripper jaws EMPTY, pick-up station FULL, magazine loaded "
