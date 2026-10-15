@@ -536,6 +536,12 @@ piece_gap_mm = 1.0          # CONFIRMED: Samuel 2026-10-15 ("on every dovetail i
                             # stones fit"; wall pieces only, the station's joint has none). Measured the same day: W2 ->
                             # W5 1209.0 mm instead of 1206 (3 joints; run 2026-10-15_155402_hmi_real, fit RMS 1.50 mm)
 
+[robodk_accept]
+# Accepted without a new RoboDK run (mauer.job.stamp_problems; no planning input): the verification robodk_commit
+# stays valid for exactly the code of code_commit. Any later planning-code change needs RoboDK again.
+robodk_commit = "e273de70"  # CONFIRMED: stamp of data/jobs/nominal_C_robodk.json (2026-10-15 06:28, 67/67, 53/53)
+code_commit = "be7f5c6"     # CONFIRMED: Samuel 2026-10-15, as-laid piece gaps (mauer/laid.py), shifts <= 3.2 mm
+
 [pickup_station]
 # Pick-up station ON THE FLOOR (Samuel 2026-10-06: "it's gonna be on the ground"; layout chosen 2026-10-06: one row in
 # front of ARES like a short wall leg). Stones (pins up) on one laser-cut MDF piece, located by printed cones
