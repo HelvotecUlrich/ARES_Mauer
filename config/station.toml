@@ -652,7 +652,9 @@ ik_check = "get_inverse_kin" # CONFIRMED 2026-10-06 (probe on the UR5, see host)
                             # "has_solution" for URSim 3.15. ASSUMPTION: the qnear keyword works on 3.3 - check with
                             # tools/calib_handeye.py plan --check (blocks that do not move) before the first look
 contact_mm = 60.0           # ASSUMPTION: last/first mm at the stone moved at v_contact (= robodk/motion.py engage)
-release_above_mm = 10.0     # CONFIRMED: Samuel 2026-10-09 ("immer 10 mm drueber loslassen"): EVERY place (magazine and
+release_above_mm = 20.0     # CONFIRMED: Samuel 2026-10-15 (with stones the jaws only opened after the stone touched the
+                            # ground: "we need to open 1 cm higher"); was 10 (2026-10-09, "immer 10 mm drueber
+                            # loslassen"). EVERY place (magazine and
                             # wall) opens the jaws this far above the place pose, along the frame z, and the stone
                             # settles on the cones / pins below. Going down to the place pose pressed the stone onto
                             # the magazine cones: protective stop (run 2026-10-09_103903, first real dry run).

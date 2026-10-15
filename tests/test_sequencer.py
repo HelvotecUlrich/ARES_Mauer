@@ -496,6 +496,33 @@ def test_l_leg_change_and_station_trip_with_half_stones(lcfg, ljob, tmp_path):
     assert st and all(e["jump_mm"] < seq.p.station_max_jump_mm for e in st)
 
 
+def test_tour_drives_the_same_ares_moves_without_handling_a_stone(lcfg, ljob, tmp_path):
+    """ARES tour (Samuel 2026-10-15): the same ARES moves, looks and station trips as the real run of the job, no pick
+    or put-down; the log declares no stone standing (never usable as a resume log for a real run)."""
+    from mauer.sequencer import standing_in_log
+    job = short_l_job(ljob)
+    runs = {}
+    for tour in (False, True):
+        w = SimWorld(lcfg, job, scenario("none"), seed=1)
+        seq = Sequencer(job, lcfg, w.robot, w.ares, w.camera, w.intr, w.T_flange_cam, log_dir=tmp_path / str(tour),
+                        on_station_empty=w.refill_station, tour=tour)
+        res = seq.run()
+        assert res.state == "done", res.error
+        runs[tour] = (res, _events(seq), seq)
+    (r0, ev0, _), (r1, ev1, s1) = runs[False], runs[True]
+    moves = lambda ev: [(e["kind"], e["why"]) for e in ev if e["event"] == "ares_move"]
+    assert moves(ev1) == moves(ev0) and r1.reloads == r0.reloads >= 1
+    looks = lambda ev: [e["what"] for e in ev if e["event"] == "robot" and e["action"] == "goto_look"]
+    assert looks(ev1) == looks(ev0)
+    acts = {e["action"] for e in ev1 if e["event"] == "robot"}
+    assert not acts & {"pick_magazine", "place_wall", "pick_station", "place_magazine"}
+    assert r1.placed == [] and not any(e["event"] == "placed" for e in ev1)
+    assert sum(e["event"] == "tour_skip" for e in ev1) == len(job.stones())
+    assert standing_in_log(s1.log.path) == set()
+    assert any(e["event"] == "reload_transfer" and e["tour"] for e in ev1)
+    assert any(e["event"] == "station_frame" and e.get("source") == "camera" for e in ev1)
+
+
 def test_l_route_drives_the_waypoints_without_errors(lcfg, ljob, tmp_path):
     """No drive errors: the commanded moves of the leg change are the route legs (steered from the camera-measured
     start, so up to the image noise) - the last one ends arrival_standoff_mm before the stop - and one closed-loop

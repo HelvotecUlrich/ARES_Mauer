@@ -414,8 +414,13 @@ class Sequencer:
                  log_dir: str | Path | None = None, confirm: Callable[[str], bool] | None = None,
                  now: Callable[[], float] = time.time, *, camera_loop: bool = True, save_images: bool = False,
                  on_station_empty: Callable[[], Any] | None = None, params: SequencerParams | None = None,
-                 on_shot: Callable[[np.ndarray, dict], None] | None = None):
+                 on_shot: Callable[[np.ndarray, dict], None] | None = None, tour: bool = False):
         self.job, self.cfg = shift_job(job, cfg), cfg     # wall place poses on the as-laid guide pieces ([laid])
+        # ARES tour (Samuel 2026-10-15): every ARES move, look, correction and station measurement of the job, but no
+        # stone is picked or put down - the magazine / station counts run on, so the station trips come where they
+        # would; the skipped stones stand for the motion guard (same arm paths) but are logged "tour_skip", never
+        # "placed" (a tour log declares nothing standing: standing_in_log)
+        self.tour = bool(tour)
         self.robot, self.ares, self.camera = robot, ares, camera
         self.intr = intr
         self.T_flange_cam = np.asarray(T_flange_cam, float)
@@ -1066,6 +1071,11 @@ class Sequencer:
         self.T_base_station = T_base_station
         n = 0
         for sid, mid, kind in plan:
+            if self.tour:                            # counts only (no arm move)
+                self.station.take(sid)
+                self.magazine.fill(mid, kind)
+                n += 1
+                continue
             self._robot("pick_station", f"pick station slot {sid} ({kind})", T_base_station, st.slot(sid))
             self.station.take(sid)
             self._set_held({"from": "station", "slot": sid, "kind": kind, "stone": None, "unknown": False})
@@ -1076,7 +1086,7 @@ class Sequencer:
             n += 1
         self._park()
         self.log.write("reload_transfer", moved=n, wanted=n_need, magazine=len(self.magazine),
-                       station=len(self.station))
+                       station=len(self.station), tour=self.tour)
         self._return_from_station(k)
         self._measure_wall(k, "after reload")
         self.log.write("reload_done", stop=k)
@@ -1142,6 +1152,11 @@ class Sequencer:
                                  "by stones of the other type)", k, t.key)
         if t.slot is not None and mid != t.slot:
             self.log.write("slot_changed", stone=t.key, planned=t.slot, used=mid)
+        if self.tour:
+            self.magazine.take(mid)
+            self.placed.add(t.key)
+            self.log.write("tour_skip", stop=k, stone=t.key, slot=mid)
+            return
         self._robot("pick_magazine", f"pick magazine slot {mid} ({t.kind})", self.job.magazine.slot(mid),
                     self.T_base_ares, t.kind)
         self.magazine.take(mid)
@@ -1172,7 +1187,8 @@ class Sequencer:
         self.result.error = None
         self.log.write("run_start", start_stop=start_stop, last_stop=last, camera_loop=self.camera_loop,
                        params=asdict(self.p), job_source=self.job.source, config_sha256=self.job.config_sha256,
-                       n_stones=self.job.n_stones, magazine=len(self.magazine), laid=_laid_summary(self.cfg),
+                       n_stones=self.job.n_stones, magazine=len(self.magazine), tour=self.tour,
+                       laid=_laid_summary(self.cfg),
                        robodk_accept=dict(self.cfg.get("robodk_accept") or {}))
         resumed = self.pose_est is not None and self.stop_k == start_stop
         if not resumed:

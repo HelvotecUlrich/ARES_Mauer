@@ -1649,8 +1649,9 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     initial, events = magazine_events(job)
     if args.plan_only:
         return 0
-    sim = LSim(RDK, cfg, it, job, args)
-    sim.setup()
+    from mauer.laid import shift_job
+    sim = LSim(RDK, cfg, it, shift_job(job, cfg), args)   # the stones on the as-laid guide pieces ([laid]); the stamp
+    sim.setup()                                              # keeps the design job (the sequencer shifts it at run time)
     RDK.Render(False)
     sim.planner.z_safe = sim.safe_z(full=True)
     # the real park pose of the job ([ur] park_q_deg, the sequencer parks there) if RoboDK finds it free, else a compact
@@ -1838,6 +1839,7 @@ def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | No
             path.unlink()
             print(f"removed the older stamped job {path}", flush=True)
         return None
+    from mauer.laid import summary as laid_summary
     stamped = copy.deepcopy(job)
     stamped.meta["reach_check"] = "robodk"
     rep = Path(args.report).resolve()
@@ -1845,6 +1847,7 @@ def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | No
         "date": time.strftime("%Y-%m-%d %H:%M"), "robodk": info.get("robodk"),
         "report": rep.relative_to(REPO).as_posix() if rep.resolve().is_relative_to(REPO) else rep.name,
         "stones": len(sim.stone_log), "transfers": len(sim.transfer_log), "routes": len(sim.route_log),
+        "laid": laid_summary(cfg),
         **(git or {}),
         "checked": "every place / pick / station transfer / look / park and every ARES route with RoboDK collision "
                    "checks (robodk/simulate.py, motion.Planner incl. the tool-vs-arm model); the real robot plans "
