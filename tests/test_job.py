@@ -411,8 +411,10 @@ def test_l_routes_are_valid(ljob, lcfg):
     assert floor.validate_route(r, obst, ares, clr) == []
     rot = next(sg for sg in segs if sg.kind == "rotate")
     assert math.degrees(abs(rot.angle_rad)) == pytest.approx(90.0)
-    for o in obst:                                                          # the rotation circle keeps its clearance
-        assert floor.circle_dist((rot.start.x_mm, rot.start.y_mm), ares.radius, o.poly) >= clr - 1e-6
+    rc = lcfg["routes"].get("rotation_clearance_mm", 0.0)                  # the swept area keeps its clearance
+    near = floor.rotation_distances(ares, rot.start, rot.angle_rad, obst, [floor._bbox(o.poly) for o in obst],
+                                    [1e9] * len(obst), math.radians(lcfg["routes"].get("rotation_margin_deg", 0.0)))
+    assert all(d >= max(clr, rc) - 1e-6 for _, d, _ in near)
     assert segs[-1].kind == "translate" and segs[-1].length_mm < 300.0     # rotate right before the approach
     # the approach of every route to a stop is longer than the arrival standoff (the sequencer stops that far before)
     so = lcfg["sequencer"]["arrival_standoff_mm"]

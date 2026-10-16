@@ -20,6 +20,11 @@ controller_out_mm = 250.0   # CONFIRMED (by eye, not measured to the mm): Samuel
                             # chassis edge. Part of the arm's collision boxes (mauer.armcheck
                             # ares_boxes -> motion guard, look checks) and of the ARES footprint (mauer.floor.AresShape:
                             # routes, rotations, floor checks) - config.ares_controller_box
+footprint_back_mm = 400.0   # CONFIRMED (by eye, incl. tolerance): Samuel 2026-10-16 "der Kontroller mit Panel ragt mit
+                            # Toleranz rund 40 cm hinten bei ARES raus" - floor footprint beyond the -x chassis edge
+                            # (box + pendant panel) for routes, rotations and floor checks (mauer.floor.AresShape uses
+                            # the larger of this and controller_out_mm). Not part of the arm's collision boxes
+                            # (controller_out_mm stays the box; the reach tables key on it)
 controller_top_mm = 200.0   # CONFIRMED (by eye): Samuel "etwa 20 cm ueber die Flaeche von ARES", checked on ARES
                             # 2026-10-09 - top above deck_top_z
 controller_size_mm = [268.0, 462.0, 418.0]  # CONFIRMED: UR5 manual "Control Box Size (W x H x D) 462 mm x 418 mm x
@@ -604,10 +609,11 @@ dock_tol_deg = 1.5          # ASSUMPTION: ARES heading error at the dock every s
 [routes]
 # ARES routes of the L (mauer/floor.py, tools/make_job.py): leg change and station trips as explicit waypoint lists in
 # the wall frame, one translation OR one rotation per PLC command. Checked against the full legs, floor plates, spare
-# blocks and the station table with the chassis footprint [ares] length x width; a rotation sweeps the circle of the
-# half diagonal (635 mm). Floor plates count as obstacles although they are only 4 mm high (wheels must not run over
-# them).
-clearance_mm = 50.0         # ASSUMPTION: minimum clearance of routes and rotation circles to every obstacle
+# blocks, the station table and the room walls with the footprint [ares] length x width plus the control box end
+# (footprint_back_mm); a rotation is checked with the area the footprint really sweeps (since 2026-10-16; before: the
+# circle of the farthest corner in every direction). Floor plates count as obstacles although they are only 4 mm
+# high (wheels must not run over them).
+clearance_mm = 50.0         # ASSUMPTION: minimum clearance of routes and rotations to every obstacle (a room wall: its own)
 min_approach_mm = 60.0      # ASSUMPTION: every route ends with a straight approach (body +x) of at least this length
                             # = [sequencer] arrival_standoff_mm 40 + 20 (2026-10-06: a dock -> stop route of the L
                             # ended with a rotation on the stop; mauer.floor.plan_route min_approach_mm)
@@ -619,6 +625,23 @@ after_rotation_weight = 5.0 # ASSUMPTION: cost weight of translations after the 
                             # only corrected at its end) -> rotate close to the goal
 grid_mm = 100.0             # ASSUMPTION: search grid for rotation points
 search_mm = 2500.0          # ASSUMPTION: search area around start and goal
+rotation_margin_deg = 3.0   # ASSUMPTION: a rotation is checked this far beyond both ends (overshoot; the sequencer
+                            # turns ~+1.4..1.9 deg more in the closed loop after a 90 deg turn, run sheet 2026-10-15)
+rotation_clearance_mm = 150.0  # ASSUMPTION: a rotation keeps at least this from every obstacle (Samuel 2026-10-16
+                            # "wir brauchen mehr Luft"): with the swept area the planner went to 55 mm from the
+                            # station table and 59 mm from leg A after a ~2 m dead-reckoning drive; 150 keeps
+                            # >= 155 mm to table / plates / legs and 184 mm to the room wall on the C job
+
+[[routes.room_walls]]
+# Samuel 2026-10-16: the room wall behind leg A is 450 mm from the floor map origin O in -y (map y -450). The map
+# frame (tools/make_guides.py) is the wall frame shifted by O = (0, -60) (outer edge of the A guide strip, strip_width
+# 120 / 2), so the wall face lies at wall y -510. The return turn after the station of 2026-10-16 (rotation at
+# (-900, 480), control box with panel 400 mm out) would have swung into it. ASSUMPTION: parallel to leg A over the
+# whole floor area (x -4000..2000; measured at one place).
+name = "room wall behind leg A"
+box_mm = [-4000.0, -1010.0, 2000.0, -510.0]
+clearance_mm = 150.0        # ASSUMPTION: more air than the 50 mm of the other obstacles (Samuel 2026-10-16 "das macht
+                            # es sehr knapp und wir brauchen mehr Luft"); with footprint_back_mm 400 (incl. tolerance)
 
 [ur]
 # UR5 CB3 link from the laptop (research 2026-10-05, tested against URSim CB3 3.15.8): RTDE (official UR client,

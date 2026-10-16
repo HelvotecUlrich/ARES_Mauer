@@ -749,7 +749,9 @@ def route_params(cfg: dict) -> dict:
             "arrival_standoff_mm": arrival_standoff(cfg),
             "min_approach_mm": float(r.get("min_approach_mm", 0.0)),
             "after_rotation_weight": float(r.get("after_rotation_weight", 5.0)),
-            "grid_mm": float(r.get("grid_mm", 100.0)), "search_mm": float(r.get("search_mm", 2500.0))}
+            "grid_mm": float(r.get("grid_mm", 100.0)), "search_mm": float(r.get("search_mm", 2500.0)),
+            "rotation_margin_deg": float(r.get("rotation_margin_deg", 0.0)),
+            "rotation_clearance_mm": float(r.get("rotation_clearance_mm", 0.0))}
 
 
 def T_wall_station(cfg: dict) -> np.ndarray:
@@ -789,7 +791,7 @@ def floor_model(cfg: dict, legs_: list, sites: list, stop_poses: list[tuple[str,
                 problems.append(f"ARES at {lab} overlaps leg {name}")
         if floor.overlaps(fp, table):
             problems.append(f"ARES at {lab} overlaps the station table")
-    return floor.obstacles(leg_polys, sites, table), problems
+    return floor.obstacles(leg_polys, sites, table, cfg), problems
 
 
 def plan_l_routes(cfg: dict, stops: list[mjob.Stop], obstacles: list, dock: Pose2D) -> dict:
@@ -800,7 +802,8 @@ def plan_l_routes(cfg: dict, stops: list[mjob.Stop], obstacles: list, dock: Pose
     rp = route_params(cfg)
     ares = floor.AresShape.from_config(cfg)
     kw = dict(after_rotation_weight=rp["after_rotation_weight"], grid_mm=rp["grid_mm"], search_mm=rp["search_mm"],
-              min_approach_mm=rp["min_approach_mm"])
+              min_approach_mm=rp["min_approach_mm"], rot_margin_deg=rp["rotation_margin_deg"],
+              rot_clearance_mm=rp["rotation_clearance_mm"])
     problems: list[str] = []
     info: dict = {}
 
@@ -810,7 +813,9 @@ def plan_l_routes(cfg: dict, stops: list[mjob.Stop], obstacles: list, dock: Pose
         except floor.RouteError as e:
             problems.append(f"{name}: {e}")
             return []
-        problems.extend(floor.validate_route(r.waypoints, obstacles, ares, rp["clearance_mm"], name=name))
+        problems.extend(floor.validate_route(r.waypoints, obstacles, ares, rp["clearance_mm"], name=name,
+                                             rot_margin_deg=rp["rotation_margin_deg"],
+                                             rot_clearance_mm=rp["rotation_clearance_mm"]))
         info[name] = {**r.stats, "waypoints": len(r.waypoints), "cost": r.cost}
         return r.waypoints
 

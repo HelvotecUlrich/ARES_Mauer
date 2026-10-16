@@ -97,9 +97,9 @@ def test_bad_routes_fail(model):
     # 1. straight across the corner: translation AND rotation in one leg, through the legs
     p = "\n".join(floor.validate_route([s, g_], obst, ares, clr))
     assert "translates" in p and "AND rotates" in p
-    # 2. rotate right at the stop: the swept circle hits leg A and the plates
+    # 2. rotate right at the stop: the swept area hits leg A and the plates
     p = "\n".join(floor.validate_route([s, Pose2D(s.x_mm, s.y_mm, th - 90 * DEG)], obst, ares, clr))
-    assert "swept circle" in p and "leg A" in p and "plate" in p
+    assert "swept area" in p and "leg A" in p and "plate" in p
     # 3. from the B stop forward (towards leg B) by 1 m: the swept rectangle runs through plates and leg B, and
     #    a route that ends there with the footprint over leg B
     into = Pose2D(g_.x_mm - 1000.0, g_.y_mm, g_.theta_rad)
@@ -234,3 +234,88 @@ def test_a_plate_in_a_door_needs_a_spare_block():
     size = (80.0, 64.0)
     assert [floor.plate_site(cfg, door, k, size).spare for k in range(5)] == [True, True, True, False, False]
     assert not any(floor.plate_site(cfg, window, k, size).spare for k in range(5))       # course 0 is complete
+
+
+# ── rotations: swept area, room walls, clearances (2026-10-16) ───────────────
+def _turn(obst, rot_clearance_mm=0.0, margin_deg=3.0):
+    """A -90 deg turn on the spot at the origin from heading +90 deg (as after the station), ARES with a 400 mm
+    control box end: problems of validate_route (clearance 50)."""
+    ares = floor.AresShape(1120.0, 600.0, 400.0)
+    a, b = Pose2D(0.0, 0.0, 90 * DEG), Pose2D(0.0, 0.0, 0.0)
+    return floor.validate_route([a, b], obst, ares, 50.0, rot_margin_deg=margin_deg, rot_clearance_mm=rot_clearance_mm)
+
+
+def test_rotation_checks_the_swept_area_not_the_circle():
+    ares = floor.AresShape(1120.0, 600.0, 400.0)
+    assert ares.radius == pytest.approx(math.hypot(960.0, 300.0))            # ~1006 mm: the box end corner
+    # the chassis end turns towards +y and reaches only its half diagonal (635 mm, corner (560, 300) at 61.8 deg):
+    # a box 60 mm beyond that is clear, although it lies well inside the 1006 mm circle
+    above = floor.Obstacle("above", "table", floor.box_poly(-200.0, 695.0, 200.0, 800.0))
+    assert _turn([above]) == []
+    # the control box end sweeps -y: the same box mirrored is hit
+    below = floor.Obstacle("below", "table", floor.box_poly(-200.0, -800.0, 200.0, -695.0))
+    p = "\n".join(_turn([below]))
+    assert "swept area overlaps below" in p
+    # ... and clear only beyond the full radius + clearance
+    far = floor.Obstacle("far", "table", floor.box_poly(-200.0, -1200.0, 200.0, -1006.0 - 51.0))
+    assert _turn([far]) == []
+
+
+def test_rotation_clearance_and_an_obstacles_own_clearance():
+    above = floor.Obstacle("above", "table", floor.box_poly(-200.0, 695.0, 200.0, 800.0))     # 60 mm from the sweep
+    p = "\n".join(_turn([above], rot_clearance_mm=100.0))
+    assert "is 60 mm from above (< clearance 100 mm)" in p
+    own = floor.Obstacle("above", "room", floor.box_poly(-200.0, 695.0, 200.0, 800.0), clearance_mm=80.0)
+    assert "(< clearance 80 mm)" in "\n".join(_turn([own]))
+    assert "(< clearance 100 mm)" in "\n".join(_turn([own], rot_clearance_mm=100.0))   # the larger one wins
+
+
+def test_rotation_margin_extends_the_turn():
+    # a box under the chassis end at the end heading 0 (corner (560, -300)): 58.7 mm from the exact -90 deg turn, but an
+    # overshoot of 3 deg swings that corner ~28 mm further down
+    box = floor.Obstacle("east", "table", floor.box_poly(450.0, -560.0, 550.0, -360.0))
+    assert _turn([box], margin_deg=0.0) == []
+    p = "\n".join(_turn([box], margin_deg=3.0))
+    assert "is 31 mm from east (< clearance 50 mm)" in p
+
+
+def test_room_walls_from_the_config_with_their_own_clearance():
+    cfg = {"routes": {"clearance_mm": 50.0,
+                      "room_walls": [{"name": "wall", "box_mm": [-3000.0, -1500.0, 3000.0, -1000.0],
+                                      "clearance_mm": 150.0}]}}
+    (w,) = floor.room_walls(cfg)
+    assert w.kind == "room" and w.clearance_mm == 150.0 and w.name == "wall"
+    assert floor.obstacles({}, [], None, cfg) == [w] and floor.obstacles({}, [], None) == []
+    ares = floor.AresShape(1120.0, 600.0, 0.0)
+    # an intermediate waypoint 100 mm from the wall (footprint y -900 .. -300 at heading 0): fine for 50, not for 150
+    s, m, e = Pose2D(-1000.0, 0.0, 0.0), Pose2D(0.0, -600.0, 0.0), Pose2D(1000.0, 0.0, 0.0)
+    route = [s, Pose2D(-1000.0, -600.0, 0.0), m, Pose2D(1000.0, -600.0, 0.0), e]
+    p = "\n".join(floor.validate_route(route, [w], ares, 50.0))
+    assert "100 mm from wall (< clearance 150 mm)" in p
+    assert floor.validate_route(route, [floor.Obstacle("wall", "room", w.poly)], ares, 50.0) == []
+    with pytest.raises(ValueError):
+        floor.room_walls({"routes": {"room_walls": [{"box_mm": [0.0, 0.0, -1.0, 1.0]}]}})
+
+
+def test_footprint_back_is_the_larger_of_box_and_panel():
+    a = {"length": 1120.0, "width": 600.0, "controller_out_mm": 250.0}
+    assert floor.AresShape.from_config({"ares": a}).back_mm == 250.0
+    assert floor.AresShape.from_config({"ares": {**a, "footprint_back_mm": 400.0}}).back_mm == 400.0
+    assert floor.AresShape.from_config({"ares": {**a, "footprint_back_mm": 100.0}}).back_mm == 250.0
+
+
+def test_planner_rotates_clear_of_a_room_wall():
+    # a dock-like start facing +y with a table 70 mm beyond the chassis end, a room wall behind: the turn to heading 0
+    # must keep the rotation clearance to the table AND the wall's own clearance behind
+    ares = floor.AresShape(1120.0, 600.0, 400.0)
+    start, goal = Pose2D(0.0, 0.0, 90 * DEG), Pose2D(2000.0, -100.0, 0.0)
+    table = floor.Obstacle("table", "table", floor.box_poly(-700.0, 630.0, 700.0, 1100.0))
+    wall = floor.Obstacle("wall", "room", floor.box_poly(-4000.0, -2000.0, 4000.0, -1500.0), clearance_mm=150.0)
+    plan = floor.plan_route(start, goal, [table, wall], ares, 50.0, 100.0, rot_margin_deg=3.0, rot_clearance_mm=150.0)
+    rot = [a for a, b in zip(plan.waypoints, plan.waypoints[1:]) if abs(b.theta_rad - a.theta_rad) > 1e-6]
+    assert len(rot) == 1
+    for o, clr in ((table, 150.0), (wall, 150.0)):
+        d = floor.rotation_distances(ares, rot[0], -90 * DEG, [o], [floor._bbox(o.poly)], [1e9], math.radians(3.0))
+        assert d and d[0][1] >= clr - 1e-6
+    assert floor.validate_route(plan.waypoints, [table, wall], ares, 50.0, rot_margin_deg=3.0,
+                                rot_clearance_mm=150.0) == []

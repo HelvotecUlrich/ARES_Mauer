@@ -382,19 +382,22 @@ def route_problems(cfg: Mapping, job: Job) -> list[str]:
     except (KeyError, ValueError, TypeError) as e:
         return [f"floor model of the job not available ({e}) - routes not checkable"]
     clr = float((cfg.get("routes", {}) or {}).get("clearance_mm", 50.0))
+    margin = float((cfg.get("routes", {}) or {}).get("rotation_margin_deg", 0.0))
+    rclr = float((cfg.get("routes", {}) or {}).get("rotation_clearance_mm", 0.0))
     p = []
     dock = job.station.dock_in_wall
     for k, st in enumerate(job.stops):
         if k > 0:
             if st.route:
-                p += _floor.validate_route(st.route, obst, ares, clr, name=f"stop {k} route")
+                p += _floor.validate_route(st.route, obst, ares, clr, name=f"stop {k} route", rot_margin_deg=margin,
+                                           rot_clearance_mm=rclr)
             else:
                 p += _floor.validate_route([job.stops[k - 1].ares, st.ares], obst, ares, 0.0, min_mm=0.0, min_deg=0.0,
                                            name=f"stop {k - 1} -> stop {k} (direct)")
         for r, nm in ((st.route_to_station, f"stop {k} route_to_station"),
                       (st.route_from_station, f"stop {k} route_from_station")):
             if r:
-                p += _floor.validate_route(r, obst, ares, clr, name=nm)
+                p += _floor.validate_route(r, obst, ares, clr, name=nm, rot_margin_deg=margin, rot_clearance_mm=rclr)
         if not st.route_to_station or not st.route_from_station:
             p.append(f"stop {k}: no station route (an L job needs route_to_station / route_from_station)")
         for o in obst:

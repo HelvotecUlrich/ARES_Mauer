@@ -71,10 +71,12 @@ def straight_config():
 def _butt_joints(cfg: dict) -> None:
     """The frozen test layouts (straight wall, the L, the C of 2026-10-06) keep the stones butt to butt as they were
     drawn: [brick] head_joint 0 and the half stone 100 mm (station.toml since 2026-10-14: head joint 1, half 99.5 -
-    the 201 mm module of the current C) and their guide pieces butt as drawn (no [laid] gap, 2026-10-15)."""
+    the 201 mm module of the current C) and their guide pieces butt as drawn (no [laid] gap, 2026-10-15) - and in no
+    room: [[routes.room_walls]] is the wall behind the current C (2026-10-16), not a wall of these layouts."""
     cfg["brick"]["head_joint"] = 0.0
     cfg["half_brick"]["length"] = 100.0
     cfg.pop("laid", None)
+    cfg.get("routes", {}).pop("room_walls", None)
 
 
 def _wall_boards(cfg: dict, layout: dict) -> None:

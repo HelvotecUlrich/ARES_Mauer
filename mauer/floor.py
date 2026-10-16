@@ -5,7 +5,7 @@ Pure Python (math only). Frames and units: docs/ARCHITECTURE.md - wall frame, mm
 poses (mauer.reference.Pose2D: base_link position, heading of the ARES x axis).
 
 ARES footprint: the chassis rectangle [ares] length x width (CONFIRMED, chassis mesh x +-560, y +-300) centred on
-base_link. A rotation on the spot sweeps the circle of the half diagonal about base_link.
+base_link, plus the control box end beyond -x ([ares] controller_out_mm / footprint_back_mm with the pendant panel).
 
 Routes (PLC v2.9 relative move: ONE translation (body frame) OR ONE rotation per command, >= 2 mm / 0.2 deg,
 mauer/ares/ads.py check_move): every pair of consecutive waypoints must be a pure translation (same heading) or a
@@ -16,10 +16,14 @@ pure rotation (same position). `validate_route` checks a route against the obsta
 - a translation sweeps the convex hull of its start and end footprints (exact for a translated convex shape); it
   must keep >= min(clearance, distance at its start, distance at its end) to every obstacle - it never comes closer
   than the clearance except while leaving / approaching a stop or the dock;
-- a rotation sweeps the circle of the half diagonal; it must keep >= clearance to every obstacle.
+- a rotation sweeps the area of the footprint turning about base_link (rotation_distances: footprints 1 deg apart,
+  the turn extended by [routes] rotation_margin_deg at both ends); it must keep >= the larger of [routes]
+  rotation_clearance_mm and the obstacle's clearance (2026-10-16: before, the circle of the farthest corner in every
+  direction - the chassis end needs only 635 mm, the control box end ~1000 mm).
+- an obstacle may carry its own clearance (Obstacle.clearance_mm: the room walls, [[routes.room_walls]]).
 
 `plan_route` builds routes of the form: back off from the start (body -x) -> one to three axis-parallel translations
--> one rotation (if the heading changes) at a point whose circle is clear -> one to three translations -> back-off
+-> one rotation (if the heading changes) at a point whose swept area is clear -> one to three translations -> back-off
 point of the goal -> approach (body +x). Translations after the rotation are weighted (after_rotation_weight, ASSUMPTION 5):
 a heading error from the rotation (E003: 0.14 deg scatter, 1.2 deg after reversing the direction) grows into a lateral
 error along every later translation and the route is only corrected at its end (sequencer closed loop), so the rotation
@@ -179,11 +183,13 @@ class AresShape:
     length: float = 1120.0          # [ares] length (CONFIRMED: chassis mesh x +-560)
     width: float = 600.0            # [ares] width (CONFIRMED: chassis mesh y +-300)
     back_mm: float = 0.0            # beyond the -x end: the UR control box ([ares] controller_out_mm, 2026-10-08)
+                                    # with its pendant panel and tolerance ([ares] footprint_back_mm, 2026-10-16)
 
     @classmethod
     def from_config(cls, cfg: Mapping) -> "AresShape":
         a = cfg["ares"]
-        return cls(float(a["length"]), float(a["width"]), float(a.get("controller_out_mm", 0.0) or 0.0))
+        back = max(float(a.get("controller_out_mm", 0.0) or 0.0), float(a.get("footprint_back_mm", 0.0) or 0.0))
+        return cls(float(a["length"]), float(a["width"]), back)
 
     @property
     def radius(self) -> float:
@@ -199,8 +205,9 @@ class AresShape:
 @dataclass
 class Obstacle:
     name: str
-    kind: str                 # "leg" | "block" | "plate" | "table"
+    kind: str                 # "leg" | "block" | "plate" | "table" | "room"
     poly: list[Pt]
+    clearance_mm: float | None = None   # route clearance to this obstacle (None: [routes] clearance_mm)
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
@@ -260,12 +267,16 @@ class _Checker:
     memoised waypoint / segment results (the planner validates many routes that share them)."""
 
     def __init__(self, obstacles: Sequence[Obstacle], ares: AresShape, clearance_mm: float, min_mm: float,
-                 min_deg: float):
+                 min_deg: float, rot_margin_deg: float = 0.0, rot_clearance_mm: float = 0.0):
         self.obst = list(obstacles)
         self.boxes = [_bbox(o.poly) for o in self.obst]
         self.ares, self.clr, self.min_mm, self.min_deg = ares, float(clearance_mm), float(min_mm), float(min_deg)
+        self.clrs = [obstacle_clearance(o, self.clr) for o in self.obst]
+        self.rot_clrs = [max(c, float(rot_clearance_mm)) for c in self.clrs]   # a rotation keeps the larger one
+        self.rot_margin = math.radians(float(rot_margin_deg))
         self._wp: dict = {}
         self._seg: dict = {}
+        self._rot: dict = {}
 
     @staticmethod
     def _key(w: Pose2D) -> tuple:
@@ -278,13 +289,13 @@ class _Checker:
             fp = self.ares.footprint(w)
             bb = _bbox(fp)
             d = []
-            for o, ob in zip(self.obst, self.boxes):
-                if _bbox_dist(bb, ob) >= self.clr:
-                    d.append(self.clr)
+            for o, ob, clr in zip(self.obst, self.boxes, self.clrs):
+                if _bbox_dist(bb, ob) >= clr:
+                    d.append(clr)
                 elif overlaps(fp, o.poly):
                     d.append(-1.0)
                 else:
-                    d.append(min(self.clr, poly_dist(fp, o.poly)))
+                    d.append(min(clr, poly_dist(fp, o.poly)))
             self._wp[k] = (fp, d)
         return self._wp[k]
 
@@ -296,12 +307,12 @@ class _Checker:
         info = [self.waypoint(w) for w in route]
         for i, (w, (fp, d)) in enumerate(zip(route, info)):
             terminal = i in (0, n - 1)
-            for o, di in zip(self.obst, d):
+            for o, di, clr in zip(self.obst, d, self.clrs):
                 if di < 0:
                     p.append(f"{name} waypoint {i} {w.describe()}: ARES footprint overlaps {o.name}")
-                elif not terminal and di < self.clr - 1e-6:
+                elif not terminal and di < clr - 1e-6:
                     p.append(f"{name} waypoint {i} {w.describe()}: {di:.0f} mm from {o.name} "
-                             f"(< clearance {self.clr:g} mm)")
+                             f"(< clearance {clr:g} mm)")
         for i in range(n - 1):
             p += [f"{name} {x}" for x in self.segment(i, route[i], route[i + 1], info[i], info[i + 1])]
         return p
@@ -323,8 +334,8 @@ class _Checker:
                 out.append(f"segment ?: translation {d:.2f} mm below the PLC minimum {self.min_mm:g} mm")
             swept = hull(ia[0] + ib[0])
             sb = _bbox(swept)
-            for o, ob, da, db in zip(self.obst, self.boxes, ia[1], ib[1]):
-                need = min(self.clr, max(da, 0.0), max(db, 0.0))
+            for o, ob, da, db, clr in zip(self.obst, self.boxes, ia[1], ib[1], self.clrs):
+                need = min(clr, max(da, 0.0), max(db, 0.0))
                 if _bbox_dist(sb, ob) >= max(need, 1e-6):
                     continue
                 ds = poly_dist(swept, o.poly)
@@ -336,24 +347,69 @@ class _Checker:
         else:
             if abs(math.degrees(th)) < self.min_deg:
                 out.append(f"segment ?: rotation {math.degrees(th):.3f} deg below the PLC minimum {self.min_deg:g} deg")
-            r = self.ares.radius
-            cb = (a.x_mm - r, a.y_mm - r, a.x_mm + r, a.y_mm + r)
-            for o, ob in zip(self.obst, self.boxes):
-                if _bbox_dist(cb, ob) >= self.clr:
-                    continue
-                dc = circle_dist((a.x_mm, a.y_mm), r, o.poly)
-                if dc < self.clr - 1e-6:
+            for o, dc, clr in self.rotation(a, th):
+                if dc < clr - 1e-6:
+                    what = f"overlaps {o.name} by {-dc:.0f} mm" if dc < 0 else f"is {dc:.0f} mm from {o.name}"
                     out.append(f"segment ? (rotate {math.degrees(th):+.1f} deg at ({a.x_mm:.0f}, {a.y_mm:.0f})): swept "
-                               f"circle r {r:.0f} mm is {dc:.0f} mm from {o.name} (< clearance {self.clr:g} mm)")
+                               f"area {what} (< clearance {clr:g} mm)")
         self._seg[k] = out
         return [x.replace("segment ?", f"segment {i}") for x in out]
 
+    def rotation(self, a: Pose2D, dtheta: float) -> list[tuple[Obstacle, float, float]]:
+        """rotation_distances of a rotation by dtheta on the spot at a (memoised)."""
+        k = (self._key(a), round(float(dtheta), 9))
+        if k not in self._rot:
+            self._rot[k] = rotation_distances(self.ares, a, dtheta, self.obst, self.boxes, self.rot_clrs,
+                                              self.rot_margin)
+        return self._rot[k]
+
+
+def obstacle_clearance(o: Obstacle, clearance_mm: float) -> float:
+    """Route clearance to o: its own (Obstacle.clearance_mm: a room wall, the station table) or the general one."""
+    return float(clearance_mm) if o.clearance_mm is None else float(o.clearance_mm)
+
+
+def rotation_distances(ares: AresShape, a: Pose2D, dtheta: float, obstacles: Sequence[Obstacle],
+                       boxes: Sequence[tuple], clrs: Sequence[float], margin_rad: float = 0.0,
+                       step_rad: float = math.radians(1.0)) -> list[tuple[Obstacle, float, float]]:
+    """[(obstacle, distance, its clearance)] of every obstacle closer than its clearance to the bounding box of a
+    rotation by dtheta on the spot at a: distance to the area the footprint sweeps (swept_rotation, the turn extended
+    by margin_rad beyond both ends for overshoot and the sequencer's closed-loop turn; minus the arc sagitta between
+    two footprints step_rad apart), negative = overlap. The swept area instead of the circle of the farthest corner
+    (2026-10-16): the chassis end turning towards the station reaches 635 mm, only the control box end ~1000 mm - with
+    the circle every rotation had to stay ~1000 mm from the station stacks and swung the box into the room wall."""
+    s = 1.0 if dtheta >= 0.0 else -1.0
+    a0 = Pose2D(a.x_mm, a.y_mm, a.theta_rad - s * margin_rad)
+    pieces = swept_rotation(ares, a0, a0, float(dtheta) + 2.0 * s * margin_rad, step_rad)
+    pboxes = [_bbox(p) for p in pieces]
+    sag = ares.radius * (1.0 - math.cos(step_rad / 2.0))
+    allb = (min(b[0] for b in pboxes), min(b[1] for b in pboxes), max(b[2] for b in pboxes), max(b[3] for b in pboxes))
+    out = []
+    for o, ob, clr in zip(obstacles, boxes, clrs):
+        if _bbox_dist(allb, ob) >= clr + sag:
+            continue
+        d = math.inf
+        for p, pb in zip(pieces, pboxes):
+            if _bbox_dist(pb, ob) >= min(d, clr + sag):
+                continue
+            if overlaps(p, o.poly):
+                d = -penetration(p, o.poly) - sag
+                break
+            d = min(d, poly_dist(p, o.poly) - sag)
+        if d < clr:
+            out.append((o, d, clr))
+    return out
+
 
 def validate_route(route: Sequence[Pose2D], obstacles: Sequence[Obstacle], ares: AresShape, clearance_mm: float, *,
-                   min_mm: float = 2.0, min_deg: float = 0.2, name: str = "route") -> list[str]:
+                   min_mm: float = 2.0, min_deg: float = 0.2, name: str = "route",
+                   rot_margin_deg: float = 0.0, rot_clearance_mm: float = 0.0) -> list[str]:
     """Every problem of a route (empty = valid); rules in the module docstring. min_mm / min_deg: the PLC minimum
-    move (mauer/ares/ads.py MIN_MOVE_MM / MIN_MOVE_DEG)."""
-    return _Checker(obstacles, ares, clearance_mm, min_mm, min_deg).check(route, name)
+    move (mauer/ares/ads.py MIN_MOVE_MM / MIN_MOVE_DEG). rot_margin_deg: a rotation is checked this far beyond both
+    ends ([routes] rotation_margin_deg); rot_clearance_mm: a rotation keeps at least this from every obstacle
+    ([routes] rotation_clearance_mm; an obstacle's larger own clearance wins)."""
+    return _Checker(obstacles, ares, clearance_mm, min_mm, min_deg, rot_margin_deg, rot_clearance_mm).check(route,
+                                                                                                          name)
 
 
 def route_stats(route: Sequence[Pose2D]) -> dict:
@@ -392,17 +448,18 @@ def _backed_off(p: Pose2D, b: float) -> Pose2D:
     return Pose2D(p.x_mm - b * math.cos(p.theta_rad), p.y_mm - b * math.sin(p.theta_rad), p.theta_rad)
 
 
-def _min_dist(fp: Sequence[Pt], obstacles: Sequence[Obstacle]) -> float:
-    return min((poly_dist(fp, o.poly) for o in obstacles), default=math.inf)
+def _clear(fp: Sequence[Pt], obstacles: Sequence[Obstacle], clearance: float) -> bool:
+    """fp keeps every obstacle's route clearance (obstacle_clearance)."""
+    return all(poly_dist(fp, o.poly) >= obstacle_clearance(o, clearance) for o in obstacles)
 
 
 def _back_off_point(p: Pose2D, obstacles, ares: AresShape, clearance: float, backoff: float) -> Pose2D:
     """p itself when its footprint is already clear, else p backed off (body -x) by k * backoff, k = 1, 2, ..."""
-    if _min_dist(ares.footprint(p), obstacles) >= clearance:
+    if _clear(ares.footprint(p), obstacles, clearance):
         return p
     for k in range(1, 21):
         q = _backed_off(p, k * backoff)
-        if _min_dist(ares.footprint(q), obstacles) >= clearance:
+        if _clear(ares.footprint(q), obstacles, clearance):
             return q
     raise RouteError(f"no free back-off point behind {p.describe()}")
 
@@ -441,7 +498,8 @@ class RoutePlan:
 def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares: AresShape, clearance_mm: float,
                backoff_mm: float, *, after_rotation_weight: float = 5.0, grid_mm: float = 100.0,
                search_mm: float = 2500.0, bounds: tuple[float, float, float, float] | None = None,
-               corridor_mm: float = 100.0, n_corridors: int = 15, min_approach_mm: float = 0.0) -> RoutePlan:
+               corridor_mm: float = 100.0, n_corridors: int = 15, min_approach_mm: float = 0.0,
+               rot_margin_deg: float = 0.0, rot_clearance_mm: float = 0.0) -> RoutePlan:
     """Cheapest valid route start -> goal of the form in the module docstring (at most one rotation). RouteError if
     none is found. Rotation points: the back-off points, the goal's back-off ray and a grid_mm grid within search_mm
     of start/goal (or `bounds` = (x0, y0, x1, y1)); between the back-off points and the rotation point up to two
@@ -458,7 +516,7 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
     tail = [goal] if same_pose(G1, goal) else [G1, goal]
     w = float(after_rotation_weight)
 
-    checker = _Checker(obstacles, ares, clearance_mm, 2.0, 0.2)
+    checker = _Checker(obstacles, ares, clearance_mm, 2.0, 0.2, rot_margin_deg, rot_clearance_mm)
 
     def check(route: list[Pose2D]) -> bool:
         return not checker.check(route)
@@ -492,12 +550,14 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
         for j in range(ny):
             cands.append((x0 + i * grid_mm, y0 + j * grid_mm))
     free = []
-    boxes = [_bbox(o.poly) for o in obstacles]
-    r_need = ares.radius + clearance_mm
+    boxes, clrs = checker.boxes, checker.rot_clrs
+    dth = wrap_angle(goal.theta_rad - start.theta_rad)
     for c in cands:
         cb = (c[0] - ares.radius, c[1] - ares.radius, c[0] + ares.radius, c[1] + ares.radius)
-        if all(_bbox_dist(cb, ob) >= clearance_mm or point_dist(c, o.poly) >= r_need
-               for o, ob in zip(obstacles, boxes)):
+        circle_free = all(_bbox_dist(cb, ob) >= clr or point_dist(c, o.poly) >= ares.radius + clr
+                          for o, ob, clr in zip(obstacles, boxes, clrs))
+        if circle_free or all(d >= clr - 1e-6 for _, d, clr in
+                              checker.rotation(Pose2D(c[0], c[1], start.theta_rad), dth)):
             lb = math.hypot(c[0] - S1.x_mm, c[1] - S1.y_mm) + w * math.hypot(c[0] - G1.x_mm, c[1] - G1.y_mm)
             free.append((lb, c))
     free.sort()
@@ -521,8 +581,9 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
             if check(r):
                 best = RoutePlan(r, c)
     if best is None:
-        raise RouteError(f"no route {start.describe()} -> {goal.describe()}: no rotation point with a clear circle "
-                         f"(r {ares.radius:.0f} + {clearance_mm:g} mm) reachable within the search area")
+        raise RouteError(f"no route {start.describe()} -> {goal.describe()}: no rotation point with a clear swept "
+                         f"area (footprint up to r {ares.radius:.0f} mm, clearance {clearance_mm:g} mm or the "
+                         "obstacle's own) reachable within the search area")
     best.stats = route_stats(best.waypoints)
     return best
 
@@ -645,7 +706,9 @@ def check_sites(sites: Sequence[PlateSite], leg_polys: Mapping[str, list[Pt]], s
     return p
 
 
-def obstacles(leg_polys: Mapping[str, list[Pt]], sites: Sequence[PlateSite], table: list[Pt] | None) -> list[Obstacle]:
+def obstacles(leg_polys: Mapping[str, list[Pt]], sites: Sequence[PlateSite], table: list[Pt] | None,
+              cfg: Mapping | None = None) -> list[Obstacle]:
+    """Legs, plates, spare blocks, the station table and (with cfg) the room walls ([[routes.room_walls]])."""
     out = [Obstacle(f"leg {k}", "leg", list(v)) for k, v in leg_polys.items()]
     for s in sites:
         out.append(Obstacle(f"plate {s.board or s.label}", "plate", list(s.plate)))
@@ -653,6 +716,21 @@ def obstacles(leg_polys: Mapping[str, list[Pt]], sites: Sequence[PlateSite], tab
             out.append(Obstacle(f"spare block {s.board or s.label}", "block", list(s.block)))
     if table is not None:
         out.append(Obstacle("station table", "table", list(table)))
+    return out + (room_walls(cfg) if cfg is not None else [])
+
+
+def room_walls(cfg: Mapping) -> list[Obstacle]:
+    """[[routes.room_walls]] (Samuel 2026-10-16: the controller swung into the wall behind leg A on the turn after
+    the station): walls of the room as route obstacles, box_mm = [x0, y0, x1, y1] in the wall frame (the wall itself,
+    any depth), clearance_mm = its own route clearance (default [routes] clearance_mm)."""
+    out = []
+    for i, w in enumerate((cfg.get("routes", {}) or {}).get("room_walls", []) or []):
+        x0, y0, x1, y1 = (float(v) for v in w["box_mm"])
+        if not (x1 > x0 and y1 > y0):
+            raise ValueError(f"[[routes.room_walls]] {i}: box_mm must be [x0, y0, x1, y1] with x1 > x0, y1 > y0")
+        c = w.get("clearance_mm")
+        out.append(Obstacle(str(w.get("name", f"room wall {i}")), "room", box_poly(x0, y0, x1, y1),
+                            None if c is None else float(c)))
     return out
 
 
@@ -690,7 +768,7 @@ def job_obstacles(cfg: Mapping, legs: Sequence[Mapping], T_wall_station, board_s
         polys[f.name] = [f.to_wall(u, v) for u, v in ((0.0, -W / 2), (Ln, -W / 2), (Ln, W / 2), (0.0, W / 2))]
     sites = [site_from_target(cfg, frames[str(t["leg"])], t, board_sizes[str(t["name"])])
              for t in cfg.get("targets", []) if t.get("parent") == "wall" and "leg" in t and str(t["leg"]) in frames]
-    return obstacles(polys, sites, station_table_poly(cfg, T_wall_station))
+    return obstacles(polys, sites, station_table_poly(cfg, T_wall_station), cfg)
 
 
 def swept_translation(ares: AresShape, a: Pose2D, b: Pose2D) -> list[Pt]:

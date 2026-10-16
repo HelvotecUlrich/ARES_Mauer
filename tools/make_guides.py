@@ -27,7 +27,8 @@ carpet tape, V-tabs for the existing board plates, station on the floor in one r
   plates ([[targets]] parent "station") with [guides] window_clearance.
 - Floor map: everything in the wall frame, shown in a map frame with the origin O at the OUTER START CORNER of the
   first leg's strip (x along the first leg, y towards ARES); pieces, course-0 stones, board plates, the station with
-  its stacks, ARES at every stop and at the dock with its routes (tools/make_job.py build_l) and rotation circles.
+  its stacks, ARES at every stop and at the dock with its routes (tools/make_job.py build_l) and the area every
+  rotation sweeps (footprints 15 deg apart).
 
 Outputs (in --out): laser_sheet_<n>.dxf (layers CUT red / ENGRAVE blue, as tools/make_plates.py; sheet border on
 layer SHEET green, not to be cut), laser_test.dxf (test pieces: one stone, a dovetail pair, an S-plate window),
@@ -715,7 +716,7 @@ class FloorModel:
     plates: list[tuple[str, list[Pt]]]        # W plates and S plates (wall frame)
     ares: list[tuple[str, Pose2D]]            # stops + dock
     routes: list[list[Pose2D]]
-    rot_circles: list[tuple[Pt, float]]
+    rot_sweeps: list[list[Pt]]                # ARES footprints during every rotation (15 deg apart, wall frame)
     origin: Pt                                # O in the wall frame
     x_axis: float                             # map x axis heading in the wall frame [rad]
     ares_shape: object = None
@@ -742,9 +743,8 @@ class FloorModel:
         pts += [self.to_map(q) for _, poly in self.stones + self.plates for q in poly]
         if with_ares:
             pts += [self.to_map(q) for fp in self.footprints() for q in fp]
-            for c, r in self.rot_circles:
-                m = self.to_map(c)
-                pts += [(m[0] - r, m[1] - r), (m[0] + r, m[1] + r)]
+            for fp in self.rot_sweeps:
+                pts += [self.to_map(q) for q in fp]
         a = np.asarray(pts)
         return float(a[:, 0].min()), float(a[:, 1].min()), float(a[:, 0].max()), float(a[:, 1].max())
 
@@ -797,7 +797,10 @@ def floor_model(cfg: dict, p: GuideParams, legs: list, sites: list, st_pieces: l
         for r in m.routes:
             for a, bb in zip(r, r[1:]):
                 if math.hypot(a.x_mm - bb.x_mm, a.y_mm - bb.y_mm) < 1.0 and abs(a.theta_rad - bb.theta_rad) > 1e-4:
-                    m.rot_circles.append(((a.x_mm, a.y_mm), m.ares_shape.radius))
+                    d = floor.wrap_angle(bb.theta_rad - a.theta_rad)       # the area the turn sweeps (2026-10-16)
+                    n = max(2, int(math.ceil(abs(d) / math.radians(15.0))))
+                    m.rot_sweeps += [m.ares_shape.footprint(Pose2D(a.x_mm, a.y_mm, a.theta_rad + d * i / n))
+                                     for i in range(1, n)]
     else:
         m.warnings.append("no job: ARES stops and routes not drawn")
     return m
@@ -895,15 +898,11 @@ def write_map_pdf(path: Path, m: FloorModel, cfg: dict, p: GuideParams, info: di
         c.drawPath(path_, stroke=1, fill=1 if fill else 0)
         c.setDash()
 
-    # ARES footprints along the routes, rotation circles, stops, dock
+    # ARES footprints along the routes and during the rotations, stops, dock
     for fp in m.footprints():
         poly(fp, stroke=(0.75, 0.82, 0.95), lw=0.3)
-    c.setStrokeColorRGB(0.6, 0.7, 0.95)
-    for ctr, r in m.rot_circles:
-        x, y = P(ctr)
-        c.setDash(2, 2)
-        c.circle(x, y, r / sc * mm, stroke=1, fill=0)
-        c.setDash()
+    for fp in m.rot_sweeps:
+        poly(fp, stroke=(0.6, 0.7, 0.95), lw=0.3, dash=(2, 2))
     for name, a in m.ares:
         poly(m.ares_shape.footprint(a), stroke=(0.1, 0.3, 0.8), lw=0.8, dash=(3, 2))
         x, y = P((a.x_mm, a.y_mm))
@@ -988,7 +987,7 @@ def write_map_pdf(path: Path, m: FloorModel, cfg: dict, p: GuideParams, info: di
     c.drawString(margin + 45 * mm, margin + 4 * mm,
                  "brown: MDF guide pieces (names = first-last stone) and the station piece with the S windows; grey "
                  "dashed: first-course stones and station stacks; green: board plates; blue: ARES at the stops / dock "
-                 "(dashed), its footprints along the routes and rotation circles")
+                 "(dashed), its footprints along the routes and during the rotations (dashed)")
     c.showPage()
     # page 2: marking points
     c.setFont("Helvetica-Bold", 11)
@@ -1060,7 +1059,7 @@ def plan_md(cfg: dict, data: dict, sheets: list, sc: int) -> list[str]:
     b0, b1 = fm.bbox(False), fm.bbox(True)
     lines.append("")
     lines.append(f"Guides + station: {b0[2] - b0[0]:.0f} x {b0[3] - b0[1]:.0f} mm; including every ARES position, route "
-                 f"and rotation circle: {b1[2] - b1[0]:.0f} x {b1[3] - b1[1]:.0f} mm "
+                 f"and rotation: {b1[2] - b1[0]:.0f} x {b1[3] - b1[1]:.0f} mm "
                  f"(x {b1[0]:.0f}..{b1[2]:.0f}, y {b1[1]:.0f}..{b1[3]:.0f} in the map frame).")
     n_cones = sum(len(pc.holes) for pc in data["leg_pieces"] + data["station_pieces"])
     lines.append("")
