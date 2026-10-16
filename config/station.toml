@@ -635,6 +635,11 @@ rotation_clearance_mm = 150.0  # ASSUMPTION: a rotation keeps at least this from
                             # "wir brauchen mehr Luft"): with the swept area the planner went to 55 mm from the
                             # station table and 59 mm from leg A after a ~2 m dead-reckoning drive; 150 keeps
                             # >= 155 mm to table / plates / legs and 184 mm to the room wall on the C job
+merge_approach = true       # Samuel 2026-10-16 ("my make these breaks in the movement before the wall, just drive there
+                            # in one go, like at the station"): the last two translations of a route (the leg before
+                            # the approach and the min_approach_mm approach) become ONE PLC move where the straight line
+                            # keeps every clearance (mauer.floor._merged_approach); the route still ends with a
+                            # translation, never a rotation on the stop
 
 [[routes.room_walls]]
 # Samuel 2026-10-16: the room wall behind leg A is 450 mm from the floor map origin O in -y (map y -450). The map

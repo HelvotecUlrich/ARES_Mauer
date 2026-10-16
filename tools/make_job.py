@@ -813,7 +813,8 @@ def route_params(cfg: dict) -> dict:
             "after_rotation_weight": float(r.get("after_rotation_weight", 5.0)),
             "grid_mm": float(r.get("grid_mm", 100.0)), "search_mm": float(r.get("search_mm", 2500.0)),
             "rotation_margin_deg": float(r.get("rotation_margin_deg", 0.0)),
-            "rotation_clearance_mm": float(r.get("rotation_clearance_mm", 0.0))}
+            "rotation_clearance_mm": float(r.get("rotation_clearance_mm", 0.0)),
+            "merge_approach": bool(r.get("merge_approach", False))}
 
 
 def T_wall_station(cfg: dict) -> np.ndarray:
@@ -865,7 +866,7 @@ def plan_l_routes(cfg: dict, stops: list[mjob.Stop], obstacles: list, dock: Pose
     ares = floor.AresShape.from_config(cfg)
     kw = dict(after_rotation_weight=rp["after_rotation_weight"], grid_mm=rp["grid_mm"], search_mm=rp["search_mm"],
               min_approach_mm=rp["min_approach_mm"], rot_margin_deg=rp["rotation_margin_deg"],
-              rot_clearance_mm=rp["rotation_clearance_mm"])
+              rot_clearance_mm=rp["rotation_clearance_mm"], merge_approach=rp["merge_approach"])
     problems: list[str] = []
     info: dict = {}
 

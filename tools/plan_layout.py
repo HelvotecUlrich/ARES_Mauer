@@ -245,7 +245,8 @@ def evaluate(cfg0: dict, n0s, ctx: "mj._Ctx", route_all: bool = True) -> dict:
     obst = floor.obstacles(leg_polys, [sites[i] for i in chosen], table_poly, cfg)
     rp = mj.route_params(cfg)
     kw = dict(after_rotation_weight=rp["after_rotation_weight"], grid_mm=rp["grid_mm"], search_mm=rp["search_mm"],
-              rot_margin_deg=rp["rotation_margin_deg"], rot_clearance_mm=rp["rotation_clearance_mm"])
+              rot_margin_deg=rp["rotation_margin_deg"], rot_clearance_mm=rp["rotation_clearance_mm"],
+              min_approach_mm=rp["min_approach_mm"], merge_approach=rp["merge_approach"])
     dock = mj.dock_in_wall(cfg)
     routes, problems = {}, []
     wall_moves = 0

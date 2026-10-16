@@ -499,7 +499,7 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
                backoff_mm: float, *, after_rotation_weight: float = 5.0, grid_mm: float = 100.0,
                search_mm: float = 2500.0, bounds: tuple[float, float, float, float] | None = None,
                corridor_mm: float = 100.0, n_corridors: int = 15, min_approach_mm: float = 0.0,
-               rot_margin_deg: float = 0.0, rot_clearance_mm: float = 0.0) -> RoutePlan:
+               rot_margin_deg: float = 0.0, rot_clearance_mm: float = 0.0, merge_approach: bool = False) -> RoutePlan:
     """Cheapest valid route start -> goal of the form in the module docstring (at most one rotation). RouteError if
     none is found. Rotation points: the back-off points, the goal's back-off ray and a grid_mm grid within search_mm
     of start/goal (or `bounds` = (x0, y0, x1, y1)); between the back-off points and the rotation point up to two
@@ -507,7 +507,8 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
     of the rotation. min_approach_mm: the route ends with a translation (body +x) of at least this length - the
     goal's back-off point lies at least that far behind the goal even where the goal is clear (2026-10-06: a dock ->
     stop route of the L ended with a rotation on the stop; the sequencer stops arrival_standoff_mm before the goal
-    along the last translation)."""
+    along the last translation). merge_approach ([routes] merge_approach, Samuel 2026-10-16 "just drive there in one
+    go"): the last two translations become one straight move where that keeps every clearance (_merged_approach)."""
     S1 = _back_off_point(start, obstacles, ares, clearance_mm, backoff_mm)
     G1 = _back_off_point(goal, obstacles, ares, clearance_mm, backoff_mm)
     if math.hypot(G1.x_mm - goal.x_mm, G1.y_mm - goal.y_mm) < min_approach_mm - 1e-9:
@@ -532,6 +533,8 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
                 best = RoutePlan(r, c)
         if best is None:
             raise RouteError(f"no route {start.describe()} -> {goal.describe()} without rotation")
+        if merge_approach:
+            best = _merged_approach(best, check)
         best.stats = route_stats(best.waypoints)
         return best
     # rotation candidates
@@ -584,8 +587,28 @@ def plan_route(start: Pose2D, goal: Pose2D, obstacles: Sequence[Obstacle], ares:
         raise RouteError(f"no route {start.describe()} -> {goal.describe()}: no rotation point with a clear swept "
                          f"area (footprint up to r {ares.radius:.0f} mm, clearance {clearance_mm:g} mm or the "
                          "obstacle's own) reachable within the search area")
+    if merge_approach:
+        best = _merged_approach(best, check)
     best.stats = route_stats(best.waypoints)
     return best
+
+
+def _merged_approach(plan: RoutePlan, check) -> RoutePlan:
+    """The route with its last two translations (same heading) replaced by one straight move from the start of the
+    first to the goal when check(route) passes (every clearance kept); else unchanged. The route still ends with a
+    translation, never a rotation on the stop. cost stays the planned one."""
+    r = list(plan.waypoints)
+    if len(r) < 3:
+        return plan
+    a, b, c = r[-3], r[-2], r[-1]
+
+    def translation(p: Pose2D, q: Pose2D) -> bool:
+        return math.hypot(q.x_mm - p.x_mm, q.y_mm - p.y_mm) >= 0.5 and abs(wrap_angle(q.theta_rad - p.theta_rad)) < 1e-6
+    if translation(a, b) and translation(b, c):
+        merged = r[:-2] + [c]
+        if check(merged):
+            return RoutePlan(merged, plan.cost)
+    return plan
 
 
 # ── obstacles from the config ─────────────────────────────────────────────────
