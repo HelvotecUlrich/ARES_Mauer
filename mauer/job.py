@@ -31,7 +31,10 @@ JSON layout (format "ares-mauer-job", version 2; version 1 = the same without th
      "looks": [{"name": "S0-W1", "boards": ["W1"],  # boards expected in the image
                 "T_base_flange": 4x4 | null,        # nominal flange pose (base frame, nominal ARES pose)
                 "q_rad": [6] | null,                # exact joint target (planner), used instead of the pose
-                "qnear_rad": [6] | null}],          # IK branch hint for the controller's get_inverse_kin
+                "qnear_rad": [6] | null,            # IK branch hint for the controller's get_inverse_kin
+                "via_from": "park" | "<look>" | null,   # optional (2026-10-16): via_q_rad lead from the park pose / the
+                "via_q_rad": [[6], ...]}],          #   previous look of the list to this one, planned offline by
+                                                    #   tools/make_job.py (motion guard, full station / built wall)
      "stones": [{"course": 0, "index": 0, "u_mm": 100.0, "z_top_mm": 140.0,
                  "leg": "A" | null, "kind": "full" | "half", "length_mm": 200.0,   # v2
                  "side_mm": 20.0,                   # v2, optional (2026-10-09): set from the side - down this far
@@ -122,6 +125,9 @@ class Look:
     T_base_flange: np.ndarray | None = None
     q_rad: list[float] | None = None
     qnear_rad: list[float] | None = None
+    via_from: str | None = None             # 2026-10-16: via_q_rad are the joint vias of the move from the park pose
+    via_q_rad: list[list[float]] = field(default_factory=list)   # ("park") or from the look named here to this one,
+    # planned offline (tools/make_job.py); the motion guard checks them first instead of searching a detour anew
 
 
 @dataclass
@@ -297,13 +303,16 @@ def _T(x) -> np.ndarray | None:
 
 
 def _look_to(lk: Look) -> dict:
-    return {"name": lk.name, "boards": list(lk.boards), "T_base_flange": _m(lk.T_base_flange), "q_rad": _q(lk.q_rad),
-            "qnear_rad": _q(lk.qnear_rad)}
+    d = {"name": lk.name, "boards": list(lk.boards), "T_base_flange": _m(lk.T_base_flange), "q_rad": _q(lk.q_rad),
+         "qnear_rad": _q(lk.qnear_rad)}
+    if lk.via_from is not None:
+        d.update(via_from=lk.via_from, via_q_rad=[_q(v) for v in lk.via_q_rad])
+    return d
 
 
 def _look_from(d: Mapping) -> Look:
     return Look(str(d["name"]), [str(b) for b in d["boards"]], _T(d.get("T_base_flange")), _q(d.get("q_rad")),
-                _q(d.get("qnear_rad")))
+                _q(d.get("qnear_rad")), d.get("via_from"), [_q(v) for v in d.get("via_q_rad") or []])
 
 
 def _route_to(r: Sequence[Pose2D]) -> list[dict]:

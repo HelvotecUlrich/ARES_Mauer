@@ -688,6 +688,54 @@ def _common_meta(ctx: _Ctx, key: str, extra: dict) -> dict:
             **extra, "warnings": ctx.warnings}
 
 
+def plan_look_vias(cfg: dict, job: mjob.Job) -> list[str]:
+    """Offline vias of every look move (Samuel 2026-10-16: "wieso muss da noch gerechnet werden, der Weg ist doch
+    schon offline klar" - the move between the two station looks waited 9..15 s for the motion guard's detour search
+    at every station trip): the motion guard (mauer.motionguard, the check of the real robot) plans park -> first look
+    and look -> next look of every stop (full magazine, the wall built by the end of the stop, nominal stop pose) and of
+    the station (nominal dock, every station slot holding a stone). A move that needs a detour keeps its vias in the
+    job (Look.via_from / via_q_rad, set in place); at run time the guard checks them first (mauer.sequencer: only when
+    the arm stands at via_from) and searches anew only if they are blocked there. Returns warnings."""
+    from mauer.motionguard import GuardWorld, MotionGuard
+    from mauer.reference import T_base_parent_from
+    mg = MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
+    park = np.asarray(job.park_q_rad, float)
+    mag = list(job.magazine.slots)
+    st = job.station
+    dock_in_station = Pose2D.from_T(g.inv(np.asarray(st.T_wall_station, float)) @ st.dock_in_wall.T)
+    T_bs = T_base_parent_from(dock_in_station, job.T_ares_base)
+    sets = []
+    built: list = []
+    for stop in job.stops:
+        built += list(stop.stones)
+        sets.append((f"stop {stop.index}", stop.looks,
+                     GuardWorld(magazine=mag, wall_stones=list(built), legs=list(job.legs),
+                                T_base_wall=T_base_parent_from(stop.ares, job.T_ares_base))))
+    sets.append(("station", st.looks, GuardWorld(magazine=mag, legs=list(job.legs), station=list(st.slots),
+                                                 T_base_station=T_bs)))
+    warnings = []
+    for where, looks, world in sets:
+        mg.set_world(world)
+        prev, prev_name = park, "park"
+        for lk in looks:
+            q = (np.asarray(lk.q_rad, float) if lk.q_rad is not None
+                 else ik_near(np.asarray(lk.T_base_flange, float), np.asarray(lk.qnear_rad if lk.qnear_rad is not None
+                                                                              else park, float)))
+            lk.via_from, lk.via_q_rad = None, []
+            if q is None:
+                warnings.append(f"{where}: look {lk.name} has no IK solution - no offline vias")
+                prev, prev_name = park, "park"
+                continue
+            v = mg.plan(prev, q, None)
+            if not v.ok:
+                warnings.append(f"{where}: no free path {prev_name} -> look {lk.name} in the guard model ("
+                                + " | ".join(v.problems[-2:]) + ") - the guard searches at run time")
+            elif v.vias:
+                lk.via_from, lk.via_q_rad = prev_name, [[float(x) for x in vq] for vq in v.vias]
+            prev, prev_name = q, lk.name
+    return warnings
+
+
 def _finish(ctx: _Ctx, stops, magazine, station, key, meta_extra, config_path, legs=None) -> mjob.Job:
     slot_info = plan_slots(stops, magazine, station, ctx.warnings)
     cfg_path = Path(config_path or STATION_TOML)
@@ -709,9 +757,23 @@ def _finish(ctx: _Ctx, stops, magazine, station, key, meta_extra, config_path, l
 def build_nominal(cfg: dict, length: int | None = None, dist: float | None = None, *,
                   reach_table_path: Path | None = None, allow_stale_reach: bool = False, max_looks: int = 2,
                   config_path: Path | None = None, look_margin_mm: float = LOOK_MARGIN_MM,
-                  half_stones: bool | None = None) -> mjob.Job:
+                  half_stones: bool | None = None, look_vias: bool = False) -> mjob.Job:
     """Nominal job (see the module docstring). length = stones in course 0 of a STRAIGHT wall; None = the shape of
-    the config: the L of [[wall.legs]] (build_l), or a straight wall of 24 stones without legs."""
+    the config: the L of [[wall.legs]] (build_l), or a straight wall of 24 stones without legs. look_vias: plan the
+    look moves offline (plan_look_vias, ~1-2 min; the CLI and robodk/simulate.py - the jobs that are run)."""
+    job = _build_nominal(cfg, length, dist, reach_table_path=reach_table_path, allow_stale_reach=allow_stale_reach,
+                         max_looks=max_looks, config_path=config_path, look_margin_mm=look_margin_mm,
+                         half_stones=half_stones)
+    if look_vias:
+        job.meta.setdefault("warnings", []).extend(plan_look_vias(cfg, job))
+        job.meta["look_vias"] = "tools/make_job.py plan_look_vias (motion guard, full station / stop built)"
+    return job
+
+
+def _build_nominal(cfg: dict, length: int | None = None, dist: float | None = None, *,
+                   reach_table_path: Path | None = None, allow_stale_reach: bool = False, max_looks: int = 2,
+                   config_path: Path | None = None, look_margin_mm: float = LOOK_MARGIN_MM,
+                   half_stones: bool | None = None) -> mjob.Job:
     if length is None and wallplan_is_l(cfg):
         return build_l(cfg, dist, reach_table_path=reach_table_path, allow_stale_reach=allow_stale_reach,
                        max_looks=max_looks, config_path=config_path, look_margin_mm=look_margin_mm,
@@ -933,7 +995,7 @@ def main(argv: list[str] | None = None) -> int:
         job = build_nominal(cfg, args.length, args.dist, reach_table_path=args.reach_table,
                             allow_stale_reach=args.allow_stale_reach, max_looks=args.max_looks,
                             config_path=args.config, look_margin_mm=args.look_margin,
-                            half_stones=False if args.no_half_stones else None)
+                            half_stones=False if args.no_half_stones else None, look_vias=True)
     except (ValueError, mjob.JobError) as e:
         print(f"FAILED: {e}", file=sys.stderr)
         return 1

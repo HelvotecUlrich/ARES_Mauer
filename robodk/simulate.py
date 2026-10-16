@@ -1646,7 +1646,7 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
     from make_job import leg_dist, leg_side
     for lg in wallplan.legs(cfg):                   # every leg's reach table (side, distance) - computed if missing
         reach_table(RDK, cfg, leg_dist(cfg, lg, args.dist), leg_side(cfg, lg))
-    job = build_nominal(cfg, dist=args.dist)
+    job = build_nominal(cfg, dist=args.dist, look_vias=True)       # offline look vias (2026-10-16)
     print(job.summary(), flush=True)
     initial, events = magazine_events(job)
     if args.plan_only:

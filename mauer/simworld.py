@@ -442,12 +442,12 @@ class SimRobot:
     def _held_kind(self) -> str | None:
         return None if self.holding is None else self.world.kind_of.get(self.holding[0], "full")
 
-    def _guard(self, q_target, what: str, column=None) -> None:
-        """mauer.motionguard check of the joint move q_cmd -> q_target (as URRobot._guarded); RobotError before the
-        move if refused."""
+    def _guard(self, q_target, what: str, column=None, vias=(), vias_first: bool = True) -> None:
+        """mauer.motionguard check of the joint move q_cmd -> q_target (as URRobot._guarded; vias: the job's, tried
+        first); RobotError before the move if refused."""
         if self.guard is None or q_target is None:
             return
-        v = self.guard.plan(self.q_cmd, q_target, self._held_kind(), (), column)
+        v = self.guard.plan(self.q_cmd, q_target, self._held_kind(), vias, column, vias_first)
         if not v.ok:
             raise RobotError(f"{what}: refused by the motion guard: " + " | ".join(v.problems[-3:]), action=what)
         self.guard_vias += len(v.vias)
@@ -485,7 +485,7 @@ class SimRobot:
                                    np.asarray(look.qnear_rad if look.qnear_rad is not None else self.q_cmd, float)))
             if q_look is None:
                 raise RobotError(f"look {look.name}: no IK solution", action="goto_look")
-            self._guard(q_look, f"look {look.name}")
+            self._guard(q_look, f"look {look.name}", vias=getattr(look, "via_q_rad", None) or (), vias_first=False)
             self.q_cmd = q_look
         if look.q_rad is not None:
             self.T_bf = ur5_fk(look.q_rad) @ self._noise()

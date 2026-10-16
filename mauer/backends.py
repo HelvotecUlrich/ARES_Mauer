@@ -268,7 +268,7 @@ class URRobot:
     def _vias(self, vias) -> list[str]:
         return [self.script.movej_q(q, self.speeds.a_joint, self.speeds.v_joint) for q in (vias or [])]
 
-    def _guarded(self, q_target, name: str, vias=None, column=None) -> list[str]:
+    def _guarded(self, q_target, name: str, vias=None, column=None, vias_first: bool = True) -> list[str]:
         """movej lines of the checked path actual joints -> (vias) -> q_target (mauer.motionguard; without a guard:
         the given vias unchecked - sim only). column: target TCP (x, y) of a place (MotionGuard.plan). RobotError if
         the guard finds no clear path."""
@@ -279,7 +279,8 @@ class URRobot:
                 float(np.max(np.abs(np.asarray(st.actual_qd, float)))) > self.idle_qd:     # q would not be the start)
             raise RobotError(f"{name}: no fresh RTDE sample of the arm at rest - not planning from stale joints",
                              action=name)
-        v = self.guard.plan(np.asarray(st.actual_q, float), q_target, self.holding, vias or (), column)
+        v = self.guard.plan(np.asarray(st.actual_q, float), q_target, self.holding, vias or (), column,
+                            vias_first)
         if not v.ok:
             raise RobotError(f"{name}: refused by the motion guard (no clear path in the capsule model): "
                              + " | ".join(v.problems[-3:]), action=name)
@@ -311,8 +312,9 @@ class URRobot:
 
     def goto_look(self, look):
         lines = [self._preamble(False)]
+        vias = getattr(look, "via_q_rad", None) or None     # planned offline (job), checked first by the guard
         if look.q_rad is not None:
-            lines += self._guarded(np.asarray(look.q_rad, float), "mauer_look")
+            lines += self._guarded(np.asarray(look.q_rad, float), "mauer_look", vias, vias_first=False)
             lines.append(self.script.movej_q(look.q_rad, self.speeds.a_joint, self.speeds.v_joint))
         else:
             T = np.asarray(look.T_base_flange, float)
@@ -322,7 +324,7 @@ class URRobot:
                 q_look = ik_near(T, np.asarray(q, float))
                 if q_look is None:
                     raise RobotError("mauer_look: no IK solution for the look pose", action="mauer_look")
-                lines += self._guarded(q_look, "mauer_look")
+                lines += self._guarded(q_look, "mauer_look", vias, vias_first=False)
                 q = q_look                           # the script's IK near the checked joints
             lines.append(self.script.look_pose(T, q, self.speeds.a_joint, self.speeds.v_joint, target="flange",
                                                T_flange_tcp=self.T_flange_tcp, reg_error=self.reg_error,

@@ -23,8 +23,11 @@ Detours (plan), the clear one with the least joint travel wins (travel_deg, Samu
 Wege"; the job's own vias are tried first): direct; via the park pose; straight above the target (transfer height, else
 OVER_TARGET_MM higher), alone or after the park pose; lift the TCP vertically to the transfer height at the start;
 lift at the start and above the target; lift - park - lift; compact poses near the base towards the target (as
-robodk/motion.Planner.compact), with and without a via above the target; up from the start by OVER_TARGET_MM; then a
-seeded joint-space RRT-Connect (RRT_*) with shortcut. park_last (magazine dry run): the same list with every detour
+robodk/motion.Planner.compact), with and without a via above the target; up from the start by OVER_TARGET_MM; then
+the high arc (2026-10-16: the move between the two station looks, low between stacks up to 5 layers high, found no
+fixed detour and waited 9..15 s for the RRT - a lift by joint interpolation bows into the stacks): straight up from
+the start and down onto the target in ARC_STEP_MM steps over the higher end by ARC_RISE_MM (lowest free one),
+shortcut; then a seeded joint-space RRT-Connect (RRT_*) with shortcut. park_last (magazine dry run): the same list with every detour
 through the park pose moved behind the others. The transfer height carries a stone with its
 pins LIFT_MARGIN_MM over a full magazine (as robodk/simulate.py safe_z(full)).
 
@@ -53,6 +56,10 @@ GRIPPER_PARTS = ("gripper", "jaw bar", "jaw +x", "jaw -x", "held stone")   # may
 COLUMN_ABOVE_MM = 20.0            # ... up to the approach height + this,
 COLUMN_TILT_DEG = 3.0             # ... with the tool axis this close to the target's
 FLOOR_SLAB_MM, FLOOR_HALF_MM = 50.0, 4000.0   # the floor (ARES frame z <= 0) as a box in the world
+ARC_STEP_MM = 100.0               # high arc: vertical steps of the lift chains (one joint move each, then shortcut)
+ARC_RISE_MM = tuple(float(d) for d in range(200, 901, 100))   # ... TCP this far over the higher end, lowest first
+MEMO_TOL_DEG = 10.0               # a high arc / RRT path found before is tried again (after the fixed detours) when
+MEMO_N = 16                       # both ends are this close per joint (the same look pair on the next station trip)
 RRT_ITER = 1000                   # RRT-Connect fallback (robodk/motion.Planner.rrt): iterations,
 RRT_STEP_DEG = 15.0               # largest joint step of an extension,
 RRT_MARGIN_DEG = (120.0, 60.0, 60.0, 120.0, 60.0, 120.0)   # sampling box around start / goal per joint
@@ -100,6 +107,19 @@ class Verdict:
     problems: list = field(default_factory=list)       # why the direct move (and every detour) was refused
 
 
+def _coarse_to_fine(n: int) -> list[int]:
+    """0..n, ends first, then the middles of the halves, quarters, ... (every index once)."""
+    out, spans, i = [0, n] if n else [0], [(0, n)], 0
+    while i < len(spans):
+        a, b = spans[i]
+        i += 1
+        if b - a >= 2:
+            m = (a + b) // 2
+            out.append(m)
+            spans += [(a, m), (m, b)]
+    return out
+
+
 def travel_deg(qs: Sequence[Sequence[float]]) -> float:
     """Joint travel of a joint path [deg]: the largest joint angle of every segment, summed - a movej takes about
     that long (the joints move together, the largest one sets the time)."""
@@ -122,6 +142,8 @@ class MotionGuard:
         self._checkers: list | None = None
         self._column: np.ndarray | None = None     # target TCP pose (base frame) of the plan in progress
         self.approach_mm = float(approach_mm)
+        self._memo: list[tuple[np.ndarray, np.ndarray, list[np.ndarray]]] = []   # (q_from, q_to, vias) of high arcs /
+        # RRT paths found (MEMO_N latest): tried again after the fixed detours before searching anew
         self.park_last = False                     # True: detours through the park pose only after every other one
         # of the fixed list (mauer.magtest, Samuel 2026-10-09: the park pose between the front and the magazine "is not
         # really necessary") - lift / over-target / compact first, RRT still last
@@ -267,12 +289,14 @@ class MotionGuard:
         return math.degrees(math.acos(c)) <= COLUMN_TILT_DEG
 
     def segment_problems(self, q0, q1, holding: str | None = None, from_start: bool = False) -> list[str]:
-        """Problems of the joint move q0 -> q1 (first sample that fails), [] = free. from_start: q0 is where the arm
-        stands now - its contacts may stay, not deepen (state_problems tolerate)."""
+        """Problems of the joint move q0 -> q1 (the first failing sample found), [] = free. The samples (every
+        STEP_DEG) are checked coarse to fine - ends, middle, quarters, ... (2026-10-16): a long blocked move is found
+        after a few samples (the shortcut and the detours try many). from_start: q0 is where the arm stands now - its
+        contacts may stay, not deepen (state_problems tolerate)."""
         q0, q1 = np.asarray(q0, float), np.asarray(q1, float)
         tol = self._contacts(q0, holding) if from_start else None
         n = max(1, int(math.ceil(float(np.max(np.abs(q1 - q0))) / self.step)))
-        for i in range(n + 1):
+        for i in _coarse_to_fine(n):
             q = q0 + (q1 - q0) * (i / n)
             p = self.state_problems(q, holding, tol)
             if p:
@@ -317,20 +341,24 @@ class MotionGuard:
         return out
 
     def plan(self, q_from: Sequence[float], q_to: Sequence[float], holding: str | None = None,
-             vias: Sequence[Sequence[float]] = (), column: np.ndarray | None = None) -> Verdict:
+             vias: Sequence[Sequence[float]] = (), column: np.ndarray | None = None,
+             vias_first: bool = True) -> Verdict:
         """Joint path q_from -> (vias) -> q_to: the given vias if that path is free, else the first free detour
         (module docstring). Verdict.ok False -> refuse the move. column = target TCP pose (4 x 4, base frame) of a
         pick / place: while the TCP is in its descent column (_in_column), gripper, jaws and held stone (GRIPPER_PARTS) may
         touch (not overlap) the stones of the world - they are above the slot, next to a butt joint or a magazine
         stack 5 mm away, as in the descent that follows (robodk/motion.py: the last 60 mm untested, above that
-        RoboDK's own clearance 0). Camera, adapter and arm links keep CLEARANCE_MM."""
+        RoboDK's own clearance 0). Camera, adapter and arm links keep CLEARANCE_MM. vias_first False (the offline
+        look vias, tools/make_job.py plan_look_vias - planned with this model for the worst case): the direct move
+        first when it is free, then the vias."""
         self._column = None if column is None else np.asarray(column, float)
         try:
-            return self._plan(q_from, q_to, holding, vias)
+            return self._plan(q_from, q_to, holding, vias, vias_first)
         finally:
             self._column = None
 
-    def candidates(self, q_from, q_to, vias: Sequence[Sequence[float]] = ()) -> list[list[np.ndarray]]:
+    def candidates(self, q_from, q_to, vias: Sequence[Sequence[float]] = (),
+                   vias_first: bool = True) -> list[list[np.ndarray]]:
         """The via lists plan() tries, in order: the job's vias first (if any), then direct and every detour of the
         module docstring sorted by joint travel (travel_deg ~ movej time; Samuel 2026-10-09 "keine unnoetigen Wege" -
         the list order used to send 43 of 134 blocked picks / places of the C through the park pose); park_last puts
@@ -368,26 +396,62 @@ class MotionGuard:
         cands = [uniq[i] for i in order]
         if vias:
             job = [np.asarray(v, float) for v in vias]
-            cands = [job] + [c for c in cands if not (len(c) == len(job)
-                                                      and all(np.allclose(x, y) for x, y in zip(c, job)))]
+            rest = [c for c in cands if not (len(c) == len(job) and all(np.allclose(x, y) for x, y in zip(c, job)))]
+            cands = [job] + rest if vias_first else [[]] + [job] + [c for c in rest if c]
         return cands
 
-    def _plan(self, q_from, q_to, holding, vias) -> Verdict:
+    def _plan(self, q_from, q_to, holding, vias, vias_first: bool = True) -> Verdict:
         q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
         end = self.state_problems(q_to, holding)
         if end:
             return Verdict(False, [], ["target: " + "; ".join(end)])
         problems: list[str] = []
-        for c in self.candidates(q_from, q_to, vias):
+        for c in self.candidates(q_from, q_to, vias, vias_first):
             p = self.path_problems([q_from, *c, q_to], holding)
             if not p:
                 return Verdict(True, c, problems)
             problems.append(f"{len(c)} via(s): {p[0]}")
+        tol = math.radians(MEMO_TOL_DEG)
+        for qa, qb, mv in reversed(self._memo):
+            if (np.max(np.abs(qa - q_from)) <= tol and np.max(np.abs(qb - q_to)) <= tol
+                    and not self.path_problems([q_from, *mv, q_to], holding)):
+                return Verdict(True, mv, problems + ["a detour found before"])
+        arc = self.high_arc(q_from, q_to, holding)
+        if arc is not None:
+            self._remember(q_from, q_to, arc)
+            return Verdict(True, arc, problems)
+        problems.append(f"high arc (rise {ARC_RISE_MM[0]:g}..{ARC_RISE_MM[-1]:g} mm): no free one")
         path = self.rrt(q_from, q_to, holding)
         if path is not None:
+            self._remember(q_from, q_to, path)
             return Verdict(True, path, problems)
         problems.append(f"RRT ({RRT_ITER} iterations): no path")
         return Verdict(False, [], problems)
+
+    def _remember(self, q_from, q_to, vias) -> None:
+        self._memo = (self._memo + [(np.asarray(q_from, float).copy(), np.asarray(q_to, float).copy(),
+                                     [np.asarray(v, float).copy() for v in vias])])[-MEMO_N:]
+
+    def high_arc(self, q_from, q_to, holding: str | None = None) -> list[np.ndarray] | None:
+        """Vias straight up from q_from and straight down onto q_to (TCP lifted in ARC_STEP_MM steps, same orientation)
+        to a common height ARC_RISE_MM over the higher end - the lowest rise whose path is free - shortcut (_shortcut);
+        None when no rise is free or reachable."""
+        q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
+        zf = float((ur5_fk(q_from) @ self.T_flange_tcp)[2, 3])
+        zt = float((ur5_fk(q_to) @ self.T_flange_tcp)[2, 3])
+        for rise in ARC_RISE_MM:
+            top = max(zf, zt) + rise
+            legs = []
+            for q, z in ((q_from, zf), (q_to, zt)):
+                h = top - z                                      # >= rise > 0: steps, then exactly to the top
+                legs.append([self.lift(q, dz) for dz in [float(d) for d in np.arange(ARC_STEP_MM, h, ARC_STEP_MM)]
+                             + [h]])
+            if any(v is None for leg in legs for v in leg):
+                return None                                      # the arm cannot reach that high: higher won't either
+            path = [q_from, *legs[0], *legs[1][::-1], q_to]
+            if not self.path_problems(path, holding):
+                return self._shortcut(path, holding)[1:-1]
+        return None
 
     def rrt(self, q_from, q_to, holding: str | None = None, iters: int | None = None, seed: int = 1
             ) -> list[np.ndarray] | None:
