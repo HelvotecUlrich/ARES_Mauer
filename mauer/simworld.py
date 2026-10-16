@@ -531,17 +531,26 @@ class SimRobot:
         return float(self.world.cfg.get("ur", {}).get("release_above_mm", 0.0))
 
     def place_wall(self, T_base_wall, stone):
-        """As URRobot.place_wall: the jaws open [ur] release_above_mm above the place pose; the stone drops that far
-        (world z) onto the pins / cones below."""
-        from .backends import release_pose
+        """As URRobot.place_wall: the jaws open [ur] release_above_mm above the place pose - a stone set from the side
+        [ur] release_side_mm short of it on its side (2026-10-16) -; the stone drops that far (world z) onto the pins
+        / cones below. SIM model of that side offset: landing with its pins within capture_mm of the place pose, the
+        conical pins pull it back by the deliberate offset (the rest of the error - ARES, camera, arm - stays, the SIM
+        does not centre wall stones otherwise); beyond the capture it stays where it fell (not seated)."""
+        from .backends import release_pose, side_release
+        from .config import release_side_mm
         self._call("place_wall")
         rel = self._release_above()
-        T_rel = release_pose(stone.T_wall_tcp, rel)
         side = float(getattr(stone, "side_mm", 0.0) or 0.0)     # from the side (2026-10-09): down beside it first
-        self._guard_above(T_base_wall, T_rel @ g.transl(side, 0.0, 0.0), stone.qnear_rad, f"place {stone.key}")
+        T_rel, side_rest = side_release(stone.T_wall_tcp, side, release_side_mm(self.world.cfg), rel)
+        self._guard_above(T_base_wall, T_rel @ g.transl(side_rest, 0.0, 0.0), stone.qnear_rad, f"place {stone.key}")
         self._move_tcp(np.asarray(T_base_wall, float) @ T_rel, f"place {stone.key}")
         sid, T_wall_stone, T_tcp_stone = self._release()
         T_wall_stone = g.transl(0.0, 0.0, -rel) @ T_wall_stone                # the drop
+        offset = T_rel[:3, 3] - release_pose(stone.T_wall_tcp, rel)[:3, 3]     # the deliberate side offset
+        kind_now = self.world.kind_of.get(sid, "full")
+        if np.any(offset) and pose_errors(stone.T_wall_tcp, T_wall_stone, self.world.pin_half_mm, self.world.height_mm,
+                                          self.world.pins_xy(kind_now))["pin_mm"] <= self.capture_mm:
+            T_wall_stone = g.transl(*(-offset)) @ T_wall_stone                 # the cones take it out
         kind = self.world.kind_of.get(sid, "full")
         if kind != getattr(stone, "kind", "full"):
             self.world.violations.append(f"{kind} stone {sid} placed as {stone.key} ({stone.kind})")

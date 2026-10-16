@@ -1,6 +1,7 @@
 """Config access: config/station.toml (all parameters with status tags) and the calibration files in calib/."""
 from __future__ import annotations
 
+import math
 import tomllib
 from pathlib import Path
 
@@ -106,6 +107,30 @@ def side_lift_mm(cfg: dict) -> float:
     b = cfg["brick"]
     return (float(b.get("pin_length", 0.0)) - float(b.get("bed_joint", 0.0))
             + float(cfg.get("ur", {}).get("place_side_above_pins_mm", 30.0)))
+
+
+def release_side_mm(cfg: dict) -> float:
+    """[ur] release_side_mm (Samuel 2026-10-16): a wall stone set from the side is let go this far short of its place
+    pose, on the side it comes from; 0 (at the place pose) in configs without it."""
+    return float(cfg.get("ur", {}).get("release_side_mm", 0.0) or 0.0)
+
+
+def side_release_split(side_mm: float, release_side_mm: float) -> tuple[float, float]:
+    """(shift, rest) along the place pose's TCP x for a wall stone set from the side (StoneTask.side_mm): the jaws let
+    go shift = sign(side_mm) * release_side_mm beside the place pose, towards the side point, and the side point stays
+    where it was (rest = side_mm - shift: the side point seen from the release pose, the sideways move). (0, 0) for a
+    stone set straight down (side_mm 0) - it is let go at its place pose. ValueError unless
+    0 <= release_side_mm < |side_mm| (at or beyond the side point there would be no sideways move left)."""
+    side, rel = float(side_mm), float(release_side_mm)
+    if not (math.isfinite(rel) and rel >= 0.0):
+        raise ValueError(f"[ur] release_side_mm must be >= 0, got {release_side_mm}")
+    if side == 0.0:
+        return 0.0, 0.0
+    if rel >= abs(side):
+        raise ValueError(f"[ur] release_side_mm {rel:g} must be smaller than the side approach |side_mm| {abs(side):g} "
+                         "([ur] place_side_mm): the stone would be let go at or beyond its side point")
+    shift = math.copysign(rel, side) if rel else 0.0
+    return shift, side - shift
 
 
 def T_flange_tcp(cfg: dict) -> np.ndarray:

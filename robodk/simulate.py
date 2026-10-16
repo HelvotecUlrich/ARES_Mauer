@@ -759,7 +759,9 @@ class LSim(Sim):
         side, low = None, None
         if getattr(task, "side_mm", 0.0):                # from the side (Samuel 2026-10-09): the shift in the ARES frame
             from mauer import config as mconfig
-            off = place * transl(float(task.side_mm), 0, 0)
+            off = place * transl(float(task.side_mm), 0, 0)                  # the side point (stays)
+            shift, _ = mconfig.side_release_split(float(task.side_mm), mconfig.release_side_mm(self.cfg))
+            place = place * transl(shift, 0, 0)          # let go [ur] release_side_mm short of it (2026-10-16)
             side = tuple(off.Pos()[i] - place.Pos()[i] for i in range(3))
             low = mconfig.side_lift_mm(self.cfg) - self.rel     # above the release pose
         P.z_safe = self.safe_z()

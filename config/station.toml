@@ -661,6 +661,13 @@ place_side_mm = 20.0        # ASSUMPTION (Samuel 2026-10-09: "seitlich und von o
                             # moves sideways to it - straight down into the small joint could hit the neighbour, from
                             # the side it is at most pushed a little. Planned per stone by tools/make_job.py
                             # (wallplan.side_signs -> StoneTask.side_mm); no neighbour or two: straight down
+release_side_mm = 5.0       # CONFIRMED: Samuel 2026-10-16 ("die Position wo der Stein losgelassen wird soll immer noch
+                            # 5mm seitlicher Abstand von der Endposition haben, da wir sonst Stein an Stein streifen,
+                            # der Stein platziert sich dann beim Runterfallen selbst"): a wall stone set from the side
+                            # is let go this far short of its place pose, on the side it comes from (towards the side
+                            # point, which stays place_side_mm beside it: the sideways move is place_side_mm - this),
+                            # release_above_mm above it; it drops onto the cones / pins and centres itself. Straight-
+                            # down stones and magazine put-downs let go at their place pose (config.side_release_split)
 place_side_above_pins_mm = 30.0  # Samuel 2026-10-09 ("so 3 cm ueber den Pins des unteren Steines"): the sideways move
                             # runs with the held stone's bottom this far above the pin tips of the course below
                             # (config.side_lift_mm: TCP pin_length - bed_joint + 30 = 52.5 mm above the place pose)

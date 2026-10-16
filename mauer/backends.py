@@ -27,7 +27,8 @@ Conventions: docs/ARCHITECTURE.md (T_a_b, mm, rad). Payload: [ur] payload_tool_k
 unknown -> URRobot refuses unless sim=True), stone [brick] mass_kg / half stone [half_brick] mass_kg (UNKNOWN 0) with
 the centre of gravity half a stone height below the stone's top face (TCP z into the stone; the top face at the TCP
 for a full stone, [half_brick] grasp_above_top_mm below it for a half stone - held 20 mm higher, 2026-10-09). Wall
-stones with StoneTask.side_mm are set from the side (place_wall, Samuel 2026-10-09).
+stones with StoneTask.side_mm are set from the side (place_wall, Samuel 2026-10-09) and let go [ur] release_side_mm
+short of their place pose on that side (side_release, Samuel 2026-10-16).
 """
 from __future__ import annotations
 
@@ -38,7 +39,8 @@ from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 import numpy as np
 
 from . import geometry as g
-from .config import grasp_above_top_mm, side_lift_mm
+from .config import grasp_above_top_mm, side_lift_mm, side_release_split
+from .config import release_side_mm as cfg_release_side_mm
 from .camera.base import Frame
 
 log = logging.getLogger("mauer.backends")
@@ -88,6 +90,16 @@ def release_pose(T_frame_tcp: np.ndarray, release_above_mm: float) -> np.ndarray
     """A place pose (magazine slot in the ARES frame, wall stone in the wall frame) raised by release_above_mm along
     the frame z (up): where the jaws let go ([ur] release_above_mm, Samuel 2026-10-09)."""
     return g.transl(0.0, 0.0, float(release_above_mm)) @ np.asarray(T_frame_tcp, float)
+
+
+def side_release(T_frame_tcp: np.ndarray, side_mm: float, release_side_mm: float,
+                 release_above_mm: float) -> tuple[np.ndarray, float]:
+    """(release pose, side_mm seen from it) of a wall stone: release_pose of the place pose moved
+    config.side_release_split's shift along its TCP x - a stone set from the side is let go [ur] release_side_mm short
+    of its place pose on the side it comes from (Samuel 2026-10-16), its side point (T_frame_tcp shifted side_mm,
+    raised) stays. A stone set straight down: (release_pose(T_frame_tcp), 0)."""
+    shift, rest = side_release_split(side_mm, release_side_mm)
+    return release_pose(np.asarray(T_frame_tcp, float) @ g.transl(shift, 0.0, 0.0), release_above_mm), rest
 
 
 # ── protocols ─────────────────────────────────────────────────────────────────
@@ -162,6 +174,9 @@ class URRobot:
         self.approach_mm = float(job.approach_mm)
         # every place lets go this far above the place pose: the stone settles on the cones / pins (2026-10-09)
         self.release_above_mm = float(u.get("release_above_mm", 0.0))
+        # ... and a wall stone set from the side this far short of its place pose, on its side (2026-10-16)
+        self.release_side_mm = cfg_release_side_mm(dict(cfg))
+        side_release_split(float(u.get("place_side_mm", 0.0) or 0.0), self.release_side_mm)   # ValueError early
         self.contact_mm = float(u.get("contact_mm", 60.0))
         self.do_open, self.do_close = int(u["do_grip_open"]), int(u["do_grip_close"])
         self.pulse_s, self.wait_s = float(u["grip_pulse_s"]), float(u["grip_wait_s"])
@@ -364,12 +379,15 @@ class URRobot:
     def place_wall(self, T_base_wall, stone):
         """The jaws open [ur] release_above_mm above the place pose (wall frame z), as place_magazine. A stone with
         side_mm (a placed neighbour, Samuel 2026-10-09) comes down beside it and moves sideways at
-        config.side_lift_mm above the place pose (side_lift_mm - release_above_mm above the release pose)."""
+        config.side_lift_mm above the place pose (side_lift_mm - release_above_mm above the release pose), towards the
+        place pose but only to [ur] release_side_mm short of it (Samuel 2026-10-16: else it scrapes along the
+        neighbour) - the jaws open there and the stone centres itself on the cones / pins (side_release)."""
         self.held_kind = getattr(stone, "kind", self.held_kind)
         side = float(getattr(stone, "side_mm", 0.0) or 0.0)
         low = side_lift_mm(self.cfg) - self.release_above_mm if side else None
-        return self._place(T_base_wall, release_pose(stone.T_wall_tcp, self.release_above_mm), stone.qnear_rad,
-                           stone.via_q_rad, "mauer_place_wall", side_mm=side, side_low_mm=low)
+        T_rel, side_rest = side_release(stone.T_wall_tcp, side, self.release_side_mm, self.release_above_mm)
+        return self._place(T_base_wall, T_rel, stone.qnear_rad, stone.via_q_rad, "mauer_place_wall",
+                           side_mm=side_rest, side_low_mm=low)
 
     def pick_station(self, T_base_station, slot):
         return self._pick(T_base_station, slot.T_station_tcp, slot.qnear_rad, None, "mauer_pick_station",
