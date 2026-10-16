@@ -102,6 +102,25 @@ def side_release(T_frame_tcp: np.ndarray, side_mm: float, release_side_mm: float
     return release_pose(np.asarray(T_frame_tcp, float) @ g.transl(shift, 0.0, 0.0), release_above_mm), rest
 
 
+def place_wall_poses(cfg: Mapping, stone, approach_mm: float) -> list[np.ndarray]:
+    """Wall-frame TCP poses whose IK URRobot.place_wall's script checks for `stone` (mauer.ur.script place_stone):
+    the release pose and the approach above it; for a stone set from the side also the side point at the approach
+    height and low ([ur] place_side_above_pins_mm, side_lift_mm) and the low point over the release pose. The
+    intermediate contact pose lies on the vertical between two of them. For the reach check of a measured stop
+    (mauer.sequencer)."""
+    u = cfg.get("ur", {})
+    above = float(u.get("release_above_mm", 0.0))
+    side = float(getattr(stone, "side_mm", 0.0) or 0.0)
+    T_rel, rest = side_release(stone.T_wall_tcp, side, cfg_release_side_mm(dict(cfg)), above)
+    up = g.transl(0.0, 0.0, float(approach_mm))
+    out = [up @ T_rel, T_rel]
+    if rest:
+        S = T_rel @ g.transl(rest, 0.0, 0.0)
+        low = g.transl(0.0, 0.0, side_lift_mm(dict(cfg)) - above)
+        out += [up @ S, low @ S, low @ T_rel]
+    return out
+
+
 # ── protocols ─────────────────────────────────────────────────────────────────
 @runtime_checkable
 class Robot(Protocol):

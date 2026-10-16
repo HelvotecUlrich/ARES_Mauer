@@ -666,9 +666,11 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
               f"from every obstacle; farthest corner r {rc.get('ares_radius_mm', 0):.0f} mm); every move between "
               "stops is a route too (same leg: back off, along the leg, approach - the plates end 10 mm before the ARES "
               "front at a stop, so the stop line itself keeps no clearance). The sequencer steers intermediate legs "
-              f"dead-reckoned and ends a route to a stop {rc.get('arrival_standoff_mm', 0):g} mm before it ([sequencer] "
-              "arrival_standoff_mm: ARES front 50 mm from the plates), measures the wall there and reaches the stop by "
-              "the closed-loop correction; the dock is reached closed loop on the last leg (camera at the dock).", ""]
+              "dead-reckoned and ends a route to a stop "
+              + (f"{rc.get('arrival_standoff_mm', 0):g} mm before it ([sequencer] arrival_standoff_mm)"
+                 if rc.get("arrival_standoff_mm", 0) else "on it ([sequencer] arrival_standoff_mm 0)")
+              + ", measures the wall there and corrects closed loop when ARES is off the stop tolerance or a stone "
+              "is out of reach; the dock is reached closed loop on the last leg (camera at the dock).", ""]
     for st in job.stops:
         if st.route:
             sts = route_stats(st.route)

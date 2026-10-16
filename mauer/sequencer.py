@@ -10,7 +10,9 @@ Per stop:
       exposure) @ T_flange_cam (hand-eye) @ T_cam_board -> reference.fit_frame(parent "wall") -> T_base_wall. Checks:
       every expected board seen (else MeasurementError, arm parked, run paused), fit residual RMS, measured ARES pose
       vs predicted (> max_jump = FrameJumpError, run stops). If ARES is farther than `stop_tol_mm` (or the heading
-      beyond the threshold) from the nominal stop pose: a correction move and a new measurement (max_corrections).
+      beyond `stop_tol_deg`) from the nominal stop pose, or a stone still to place there has no IK solution from the
+      measured frame (2026-10-16): a correction move and a new measurement (max_corrections); a heading within
+      stop_tol_deg is kept then (translation only) unless a stone is out of reach.
   (c) per stone: magazine empty -> reload(); pick from the magazine slot (ARES frame, fixed to the UR base); place at
       pose_trans(T_base_wall_measured, T_wall_tcp) (mauer.ur.script place_stone on the real robot).
   (d) park.
@@ -26,8 +28,10 @@ Routes (job v2: moves between stops, leg change between the legs of an L, statio
   translation or one rotation per PLC command, no measurement on the way); the last leg goes to the dock, or to
   `arrival_standoff_mm` before the stop (the job's meta.route_check, [sequencer] arrival_standoff_mm): the wall is
   measured there and the stop is reached by the closed-loop correction from that measurement, so the dead-reckoned
-  route error never meets the plates 10 mm in front of ARES. The first wall measurement after a route uses the
-  route_max_jump limits, after a station trip the station limits.
+  route error never meets the plates 10 mm in front of ARES (wall distance 740). 0 since 2026-10-16 (the plates are
+  110 mm away at 840; the standoff forced a correction after every route): the route ends at the stop and is only
+  corrected when the measurement says so. The first wall measurement after a route uses the route_max_jump limits,
+  after a station trip the station limits.
 Interruptions (pause, a declined step, an ARES or robot error) keep the route progress (route, next leg); run() with
   the same stop resumes it: an interrupted station trip continues to the station (and does the reload), an interrupted
   return or move between stops continues its remaining legs - never a straight line from wherever ARES stands to the
@@ -80,7 +84,7 @@ from . import config as mconfig
 from . import floor as _floor
 from .ares.ads import MIN_MOVE_DEG, MIN_MOVE_MM, AresNotReady, MoveRefused, vehicle_words
 from .ares.ads import AresError as AdsError
-from .backends import BackendError, RobotError, ShotError
+from .backends import BackendError, RobotError, ShotError, place_wall_poses
 from .job import Job, Look, SlotState, StoneTask, reload_plan, reload_short, restart_fill
 from .laid import shift_job
 from .laid import summary as _laid_summary
@@ -137,6 +141,10 @@ class SequencerParams:
     rotate_keep_dir_deg: float = 150.0     # larger rotations keep the previous direction (E003 reversal loss 1.2 deg)
     stop_tol_mm: float = 20.0              # ARES position error at a stop that triggers a correction (reach table
                                            # grid 20 mm; boards stay in view for +-35 mm, README Camera)
+    stop_tol_deg: float = 1.0              # ARES heading error at a stop that triggers a correction; below it a
+                                           # correction only translates (run 2026-10-16: small rotations scatter
+                                           # +-0.45 deg, translations land within 2 mm). Either way a stone of the
+                                           # stop without IK from the measured frame triggers a correction too
     max_corrections: int = 2               # correction moves per arrival
     max_correction_mm: float = 100.0       # cap of (closed-loop move - nominal move)
     max_jump_mm: float = 50.0              # measured vs predicted ARES pose at the wall -> FrameJumpError
@@ -775,11 +783,14 @@ class Sequencer:
                                  f"{p.describe()} to {seg[1].describe()} would cross an obstacle: " + "; ".join(probs)
                                  + " - drive ARES manually onto the route, set_pose(pose), then resume", self.stop_k)
 
-    def _drive_to(self, target: Pose2D, nominal_from: Pose2D | None, why: str, rotate_first: bool = True) -> None:
+    def _drive_to(self, target: Pose2D, nominal_from: Pose2D | None, why: str, rotate_first: bool = True,
+                  rot_threshold_deg: float | None = None) -> None:
         """Closed-loop relative move from pose_est to target (body frame of pose_est). rotate_first: rotation, then
         translation (stops: heading correction first); else translation, then rotation at the target.
         nominal_from: where the move nominally starts - the deviation of pose_est from it (= the correction) is
-        capped at max_correction_mm. Does NOT park the arm: the caller parks first, the interlock refuses otherwise."""
+        capped at max_correction_mm. rot_threshold_deg: heading error that is rotated away (default
+        rotate_threshold_deg). Does NOT park the arm: the caller parks first, the interlock refuses otherwise."""
+        rot_thr = self.p.rotate_threshold_deg if rot_threshold_deg is None else float(rot_threshold_deg)
         start = self.pose_est
         if nominal_from is not None:
             ex, ey = nominal_from.x_mm - start.x_mm, nominal_from.y_mm - start.y_mm
@@ -792,14 +803,14 @@ class Sequencer:
         self.log.write("drive", why=why, start=start, start_src=self.pose_src, target=target, dx_mm=dx, dy_mm=dy,
                        dtheta_deg=math.degrees(dth))
         if rotate_first:
-            if abs(math.degrees(dth)) > self.p.rotate_threshold_deg:
+            if abs(math.degrees(dth)) > rot_thr:
                 self._rotate(dth, why)
                 dx, dy, _ = relative_move(self.pose_est, target)
             self._translate(dx, dy, why)
         else:
             self._translate(dx, dy, why)
             _, _, dth = relative_move(self.pose_est, target)
-            if abs(math.degrees(dth)) > self.p.rotate_threshold_deg:
+            if abs(math.degrees(dth)) > rot_thr:
                 self._rotate(dth, why)
 
     # ── station location estimate ────────────────────────────────────────────
@@ -1003,23 +1014,47 @@ class Sequencer:
             self.T_base_wall = fit.T_base_parent
             self._wall_meas = (self.T_base_wall, meas)      # measured 6-DoF frame (tilt, height) + its ARES pose
             e_mm, e_deg = stop.ares.delta(meas)
+            unreach = self._unreachable(k)
             rec = {"kind": "wall", "stop": k, "why": why, "attempt": attempt, "boards": fit.boards,
                    "rms_mm": fit.rms_mm, "max_mm": fit.max_mm, "baseline_mm": fit.baseline_mm, "measured": meas,
                    "predicted": pred, "jump_mm": d_mm, "jump_deg": d_deg, "err_nominal_mm": e_mm,
-                   "err_nominal_deg": e_deg, "tilt_deg": tilt_deg(T_wa)}
+                   "err_nominal_deg": e_deg, "tilt_deg": tilt_deg(T_wa), "unreachable": unreach}
             self.result.measurements.append(rec)
             self.log.write("wall_frame", source="camera", T_base_wall=fit.T_base_parent, fit=fit.to_dict(), **rec)
             lim = (self.p.max_jump_mm, self.p.max_jump_deg)
-            if e_mm <= self.p.stop_tol_mm and e_deg <= self.p.rotate_threshold_deg:
+            if e_mm <= self.p.stop_tol_mm and e_deg <= self.p.stop_tol_deg and not unreach:
                 break
             if attempt == self.p.max_corrections:
                 self._warn(f"stop {k}: ARES still {e_mm:.1f} mm / {e_deg:.2f} deg from the nominal stop after "
-                           f"{attempt} corrections - continuing with the measured frame (check reach)")
+                           f"{attempt} corrections"
+                           + (f", stones without IK from the measured frame: {', '.join(unreach)}" if unreach else "")
+                           + " - continuing with the measured frame (check reach)")
                 break
             self.result.corrections += 1
             self._park()
-            self._drive_to(stop.ares, None, f"stop {k} correction {attempt + 1}")
+            # a heading within stop_tol_deg is kept (translation only: a small rotation scatters more than it
+            # corrects) - unless a stone is out of reach, then every heading error beyond rotate_threshold_deg goes
+            self._drive_to(stop.ares, None, f"stop {k} correction {attempt + 1}",
+                           rot_threshold_deg=self.p.rotate_threshold_deg if unreach else self.p.stop_tol_deg)
         self._park()
+
+    def _unreachable(self, k: int) -> list[str]:
+        """Labels of the stones of stop k still to place that have a pose of their place (backends.place_wall_poses)
+        without a nominal IK solution near their hint from the measured wall frame (mauer.simworld.ik_near, as
+        tools/make_job.py): the stop tolerance alone does not keep every stone in reach (2026-10-16: three course-3
+        half stones of the C job lose the approach pose 8-18 mm off their stop)."""
+        from .simworld import ik_near
+        T_fi = g.inv(np.asarray(self.job.T_flange_tcp, float))
+        q_park = np.asarray(self.job.park_q_rad, float)
+        out = []
+        for t in self.job.stops[k].stones:
+            if t.key in self.placed or t.key in self._prebuilt:
+                continue
+            hint = q_park if t.qnear_rad is None else np.asarray(t.qnear_rad, float)
+            if any(ik_near(self.T_base_wall @ P @ T_fi, hint) is None
+                   for P in place_wall_poses(self.cfg, t, self.job.approach_mm)):
+                out.append(t.label)
+        return out
 
     # ── magazine / reload ────────────────────────────────────────────────────
     def dock_in_wall(self) -> Pose2D:

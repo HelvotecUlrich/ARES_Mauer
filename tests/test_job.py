@@ -416,9 +416,10 @@ def test_l_routes_are_valid(ljob, lcfg):
                                     [1e9] * len(obst), math.radians(lcfg["routes"].get("rotation_margin_deg", 0.0)))
     assert all(d >= max(clr, rc) - 1e-6 for _, d, _ in near)
     assert segs[-1].kind == "translate" and segs[-1].length_mm < 300.0     # rotate right before the approach
-    # the approach of every route to a stop is longer than the arrival standoff (the sequencer stops that far before)
+    # the approach of every route to a stop is longer than the arrival standoff (the sequencer stops that far before;
+    # 0 since 2026-10-16)
     so = lcfg["sequencer"]["arrival_standoff_mm"]
-    assert ljob.meta["route_check"]["arrival_standoff_mm"] == so > 0
+    assert ljob.meta["route_check"]["arrival_standoff_mm"] == so >= 0
     for s in ljob.stops:
         for route, a, b in ((s.route_to_station, s.ares, dock), (s.route_from_station, dock, s.ares)):
             assert route[0].delta(a)[0] < 1e-6 and route[-1].delta(b)[0] < 1e-6

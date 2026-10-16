@@ -56,15 +56,15 @@ def report(run_dir: str | Path) -> str:
             "jump = measured − predicted ARES pose (the drive error of the moves since the last measurement); "
             "nominal = measured − nominal stop / dock.", "",
             "| # | min | where | why | try | jump mm | jump ° | nominal mm | nominal ° | fit RMS mm | tilt ° | measured "
-            "(x, y, θ) |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+            "(x, y, θ) | out of reach |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for i, e in enumerate(meas, 1):
         where = f"stop {e.get('stop')}" + (" station" if e["event"] == "station_frame" else "")
         tilt = "-" if e.get("tilt_deg") is None else f"{e['tilt_deg']:.2f}"
         out.append(f"| {i} | {(e['t'] - t0) / 60.0:.1f} | {where} | {e.get('why', 'dock')} | {e.get('attempt', 0)} "
                    f"| {e.get('jump_mm', 0.0):.1f} | {e.get('jump_deg', 0.0):.2f} | {e.get('err_nominal_mm', 0.0):.1f} "
                    f"| {e.get('err_nominal_deg', 0.0):.2f} | {e.get('rms_mm', 0.0):.2f} | {tilt} "
-                   f"| {_pose(e.get('measured'))} |")
+                   f"| {_pose(e.get('measured'))} | {', '.join(e.get('unreachable') or []) or '-'} |")
     groups: dict[str, list] = {}
     for e in meas:
         if e["event"] == "station_frame":
@@ -77,8 +77,9 @@ def report(run_dir: str | Path) -> str:
                    "arrival": "wall at the start / a direct stop move"}.get(e.get("why"), f"wall ({e.get('why')})")
         groups.setdefault(key, []).append(e)
     out += ["", "## Drive error by situation", "",
-            "A route (leg change, return from the station) ends [sequencer] arrival_standoff_mm before its stop on "
-            "purpose: its 'nominal' includes that standoff; the correction moves close it.", "",
+            "A route (leg change, return from the station) ends the job's [sequencer] arrival_standoff_mm before its "
+            "stop on purpose (40 mm until 2026-10-16, 0 since): its 'nominal' includes that standoff; the correction "
+            "moves close it.", "",
             "| situation | jump mm | jump ° | nominal mm after |", "|---|---|---|---|"]
     for key, es in groups.items():
         out.append(f"| {key} | {_stats([e.get('jump_mm', 0.0) for e in es])} "

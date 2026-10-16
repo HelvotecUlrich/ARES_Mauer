@@ -240,6 +240,57 @@ def test_frame_jump_beyond_the_limit_stops(cfg, job10, tmp_path):
     assert seq.run().state == "done" and seq.result.corrections >= 1 and w.placement_stats()["horiz_mm"]["max"] < 0.5
 
 
+def test_stop_heading_within_stop_tol_deg_is_kept(cfg, job10, tmp_path):
+    """[sequencer] stop_tol_deg (run analysis 2026-10-16: small rotations scattered +-0.45 deg on the floor,
+    translations landed within 2 mm): a heading error below it is no reason for a correction, a correction for the
+    position only translates, a heading beyond it is rotated away."""
+    job = short_job(job10, n0=2, n1=2)
+    p = SequencerParams(stop_tol_deg=1.0, rotate_threshold_deg=0.5)
+
+    def heading_err(w):
+        return math.degrees(w.ares_true.theta_rad - job.stops[1].ares.theta_rad)
+
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path / "a", params=p)
+    w.forced_slips[1] = (0.0, 0.0, 0.8)                        # 0.8 deg off at stop 1: kept, no correction
+    assert seq.run().state == "done" and seq.result.corrections == 0
+    assert heading_err(w) == pytest.approx(0.8, abs=0.05) and w.placement_stats()["horiz_mm"]["max"] < 0.5
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path / "b", params=p)
+    w.forced_slips[1] = (0.0, -30.0, 0.8)                      # 30 mm and 0.8 deg: one correction, translation only
+    assert seq.run().state == "done" and seq.result.corrections == 1
+    assert [m["kind"] for m in w.ares.moves] == ["translate", "translate"]
+    assert heading_err(w) == pytest.approx(0.8, abs=0.05) and w.ares_true.delta(job.stops[1].ares)[0] < 1.0
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path / "c", params=p)
+    w.forced_slips[1] = (0.0, 0.0, 1.4)                        # 1.4 deg: the correction rotates
+    assert seq.run().state == "done" and seq.result.corrections == 1
+    assert "rotate" in [m["kind"] for m in w.ares.moves[1:]] and abs(heading_err(w)) < 0.05
+
+
+def test_a_stone_out_of_reach_from_the_measured_stop_forces_a_correction(cfg, job10, tmp_path):
+    """Within stop_tol_mm / stop_tol_deg a stone of the stop can still be out of reach (C job 2026-10-16: three
+    course-3 half stones lose the approach pose 8-18 mm off their stop): the sequencer checks the IK of every stone
+    still to place from the measured frame (backends.place_wall_poses) and corrects - rotating any heading beyond
+    rotate_threshold_deg then."""
+    job = short_job(job10, n0=2, n1=2)
+    p = SequencerParams(stop_tol_deg=1.0, rotate_threshold_deg=0.5)
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path, params=p)
+    w.forced_slips[1] = (0.0, 0.0, 0.8)
+    real, calls = seq._unreachable, []
+
+    def first_stop1_out_of_reach(k):
+        calls.append(k)
+        return ["test stone"] if calls.count(1) == 1 and k == 1 else real(k)
+    seq._unreachable = first_stop1_out_of_reach
+    assert seq.run().state == "done" and seq.result.corrections == 1
+    assert "rotate" in [m["kind"] for m in w.ares.moves[1:]]
+    walls = [e for e in _events(seq) if e["event"] == "wall_frame" and e.get("stop") == 1]
+    assert [e["unreachable"] for e in walls] == [["test stone"], []]
+    # the check itself: nothing out of reach from the measured frame, everything from a frame 2 m away
+    seq.placed = set()
+    assert real(1) == []
+    seq.T_base_wall = g.transl(2000.0, 0.0, 0.0) @ seq.T_base_wall
+    assert real(1) == [t.label for t in job.stops[1].stones]
+
+
 def test_robot_block_error_stops_safely(cfg, job10, tmp_path):
     job = short_job(job10, n0=5, n1=2)
     w, seq = sim(cfg, job, WorldErrors(), tmp_path, fail_on={"place_wall": 3})
@@ -474,8 +525,7 @@ def test_l_leg_change_and_station_trip_with_half_stones(lcfg, ljob, tmp_path):
     p = w.placement_stats()
     assert res.state == "done" and p["n"] == p["seated"] == 8
     # the true ARES path (mauer.simworld floor check): never into a leg or the table; a plate only on the short
-    # closed-loop approach from a measured pose (a slip of up to 30 mm, ASSUMPTION, against the 10 mm plate gap) -
-    # every route ends arrival_standoff_mm (40) before its stop
+    # closed-loop approach from a measured pose (a slip of up to 30 mm, ASSUMPTION, against the plate gap)
     assert [v for v in w.violations if not v.startswith("ARES footprint overlaps plate")] == []
     for h, why in _floor_hits(w, seq):
         assert h["obstacle"].startswith("plate") and "correction" in why and h["depth_mm"] < 30.0, (h, why)
@@ -526,21 +576,30 @@ def test_tour_drives_the_same_ares_moves_without_handling_a_stone(lcfg, ljob, tm
     assert rep.count("| translate (") + rep.count("| rotate (") == len(moves(ev1))
 
 
-def test_l_route_drives_the_waypoints_without_errors(lcfg, ljob, tmp_path):
+@pytest.mark.parametrize("standoff", [None, 40.0], ids=["config standoff", "job with a 40 mm standoff"])
+def test_l_route_drives_the_waypoints_without_errors(lcfg, ljob, tmp_path, standoff):
     """No drive errors: the commanded moves of the leg change are the route legs (steered from the camera-measured
-    start, so up to the image noise) - the last one ends arrival_standoff_mm before the stop - and one closed-loop
-    correction from the wall measurement there brings ARES onto the B stop."""
+    start, so up to the image noise). With the configured arrival_standoff_mm (0 since 2026-10-16) the last leg ends on
+    the B stop and the wall measurement there needs no correction; a job with a standoff (40 mm until 2026-10-16)
+    ends that far before the stop and one closed-loop correction from the measurement there brings ARES onto it."""
     job = short_l_job(ljob, n_a=1, n_b=2, fill=3)            # no reload: the only ARES moves are the leg change
+    if standoff is None:
+        so = job.meta["route_check"]["arrival_standoff_mm"]
+        assert so == lcfg["sequencer"]["arrival_standoff_mm"]
+    else:
+        so = standoff
+        job = dataclasses.replace(job, meta={**job.meta, "route_check": {**job.meta["route_check"],
+                                                                          "arrival_standoff_mm": so}})
     w, seq = sim(lcfg, job, WorldErrors(), tmp_path)
-    assert seq.run().state == "done" and w.violations == []
+    res = seq.run()
+    assert res.state == "done" and w.violations == []
     r = job.stops[1].route
     from mauer.floor import segments
     from mauer.reference import relative_move
     segs, _ = segments(r)
-    so = job.meta["route_check"]["arrival_standoff_mm"]
-    assert so > 0 and seq.standoff_mm == so
+    assert seq.standoff_mm == so
     cmds = [(m["kind"], m.get("dx_mm"), m.get("dy_mm"), m.get("dtheta_deg")) for m in w.ares.moves]
-    assert len(cmds) == len(segs) + 1
+    assert len(cmds) == len(segs) + (1 if so > 0 else 0)
     for i, ((kind, dx, dy, dth), sg) in enumerate(zip(cmds, segs)):
         assert kind == sg.kind
         if kind == "translate":
@@ -550,10 +609,13 @@ def test_l_route_drives_the_waypoints_without_errors(lcfg, ljob, tmp_path):
             assert (dx, dy) == pytest.approx((ex, ey), abs=0.5)    # steered from the measured start (image noise)
         else:
             assert dth == pytest.approx(math.degrees(sg.angle_rad), abs=0.05)
-    kind, dx, dy, _ = cmds[-1]                                       # closed loop from the measurement
-    assert kind == "translate" and (dx, dy) == pytest.approx((so, 0.0), abs=0.5)
+    if so > 0:
+        kind, dx, dy, _ = cmds[-1]                                   # closed loop from the measurement
+        assert kind == "translate" and (dx, dy) == pytest.approx((so, 0.0), abs=0.5)
     ev = _events(seq)
-    assert [e["why"] for e in ev if e["event"] == "wall_frame" and e.get("stop") == 1][:2] == ["after route"] * 2
+    n = 2 if so > 0 else 1
+    assert [e["why"] for e in ev if e["event"] == "wall_frame" and e.get("stop") == 1] == ["after route"] * n
+    assert res.corrections == n - 1
     d_mm, d_deg = w.ares_true.delta(job.stops[1].ares)
     assert d_mm < 0.5 and d_deg < 0.05
 

@@ -202,6 +202,24 @@ def test_ur_robot_straight_down_stones_let_go_at_the_place_pose(cfg, job):
     assert g.pose_delta(_script_pose(body, "pl_at"), exp)[0] < 1e-6
 
 
+def test_place_wall_poses_are_the_poses_the_script_checks(cfg, job):
+    """backends.place_wall_poses (the sequencer's reach check of a measured stop, 2026-10-16) lists exactly the poses
+    whose IK the place script guards (the contact pose aside, it lies on a vertical between two of them)."""
+    from mauer.backends import place_wall_poses
+    r, link, _, c = _ur_robot(cfg, job)
+    T_base_wall = g.inv(job.T_ares_base) @ g.inv(job.stops[0].ares.T)
+    side = next(t for t in job.stones() if t.side_mm)
+    straight = next(t for t in job.stones() if not t.side_mm)
+    for stone, names in ((side, ("pl_above", "pl_at", "pl_sabove", "pl_slow", "pl_low")),
+                         (straight, ("pl_above", "pl_at"))):
+        r.place_wall(T_base_wall, stone)
+        _, body = link.blocks[-1]
+        got = place_wall_poses(c, stone, job.approach_mm)
+        assert len(got) == len(names)
+        for P, n in zip(got, names):
+            assert g.pose_delta(P, _script_pose(body, n))[0] < 1e-6, n
+
+
 def test_ur_robot_magazine_put_down_has_no_lateral_offset(cfg, job):
     r, link, _, c = _ur_robot(cfg, job)
     T_base_ares = g.inv(np.asarray(job.T_ares_base))

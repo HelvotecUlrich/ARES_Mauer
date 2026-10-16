@@ -619,8 +619,8 @@ dock_tol_deg = 1.5          # ASSUMPTION: ARES heading error at the dock every s
 # high (wheels must not run over them).
 clearance_mm = 50.0         # ASSUMPTION: minimum clearance of routes and rotations to every obstacle (a room wall: its own)
 min_approach_mm = 60.0      # ASSUMPTION: every route ends with a straight approach (body +x) of at least this length
-                            # = [sequencer] arrival_standoff_mm 40 + 20 (2026-10-06: a dock -> stop route of the L
-                            # ended with a rotation on the stop; mauer.floor.plan_route min_approach_mm)
+                            # (= the [sequencer] arrival_standoff_mm 40 of the time + 20; 2026-10-06: a dock -> stop
+                            # route of the L ended with a rotation on the stop; mauer.floor.plan_route min_approach_mm)
 backoff_mm = 100.0          # ASSUMPTION: back-off step from a stop. Every move between stops is a route (same leg
                             # too: back off, along, approach) - at the wall distance 740 the stop line kept only 10 mm
                             # to the plates (review 2026-10-05); at 840 (110 mm) the planner rarely needs it
@@ -757,10 +757,18 @@ check_collisions = true     # RoboDK collision check for reachable poses (slower
 
 [sequencer]
 # Closed-loop stop sequencing (mauer/sequencer.py). All ASSUMPTION first-run values, to be tuned on the robot.
-rotate_threshold_deg = 0.5  # heading error that triggers a rotation: 2.5x the PLC minimum 0.2°, ~3.5 sigma of the
-                            # E003 rotation scatter 0.14°
+rotate_threshold_deg = 0.5  # heading error that triggers a rotation (routes, dock, a stop with a stone out of reach):
+                            # 2.5x the PLC minimum 0.2°, ~3.5 sigma of the E003 rotation scatter 0.14° (on the floor
+                            # 2026-10-16 small rotations scattered +-0.45° by the camera, see stop_tol_deg)
 rotate_keep_dir_deg = 150.0 # larger rotations keep the previous direction (E003: ~1.2° loss after reversing)
 stop_tol_mm = 20.0          # ARES position error at a stop that triggers a correction move
+stop_tol_deg = 1.0          # ASSUMPTION (run analysis 2026-10-16, Samuel "ja setz um"): ARES heading error at a stop
+                            # that triggers a correction; below it a correction only translates. Run 2026-10-16_132348:
+                            # 5 correction rotations of 0.6..1.2° ended 0.25..0.58° off (the 0.5° limit needed a second
+                            # round once), translation-only corrections within 0.8..2 mm. IK check of the C job (every
+                            # stone, ARES +-20 mm in 8 directions, turned +-1.0°): no stone loses IK at 1.0° that does
+                            # not at +-20 mm already; 1.5° would add one (Bc3i0h). A stone of the stop without IK from
+                            # the measured frame triggers a correction anyway (mauer.sequencer _unreachable)
 max_corrections = 2         # correction moves per arrival (stop or dock)
 max_correction_mm = 100.0   # cap of (closed-loop move - nominal move)
 max_jump_mm = 50.0          # measured vs predicted ARES pose at the wall beyond this -> stop
@@ -772,11 +780,13 @@ route_max_jump_deg = 5.0
 max_fit_rms_mm = 1.0        # corner residual RMS of the frame fit beyond this -> pause
 dock_tol_mm = 30.0          # dock position error that triggers a correction move
 require_all_boards = true   # every expected board of a look must be measured
-arrival_standoff_mm = 40.0  # ASSUMPTION: a route (stop move, leg change, station return) ends this far BEFORE its stop,
-                            # the wall is measured there and the last 40 mm + the route error are closed loop from the
-                            # measurement (introduced at the wall distance 740, when the plates ended 10 mm before the
-                            # ARES front; at 840 they are 150 mm away at the standoff, 110 mm at the stop).
-                            # tools/make_job.py checks the looks for ARES at this standoff too
+arrival_standoff_mm = 0.0   # ASSUMPTION: a route (stop move, leg change, station return) ends this far BEFORE its stop,
+                            # the wall is measured there and the rest + the route error are closed loop from the
+                            # measurement. 40 since the wall distance 740 (the plates ended 10 mm before the ARES front);
+                            # 0 since 2026-10-16 (Samuel "ja setz um" after run 2026-10-16_132348: the 40 mm forced a
+                            # correction after every route, 7 of 8; at 840 the plates are 110 mm away at the stop, the
+                            # largest overshoot towards them was 12 mm). tools/make_job.py checks the looks for ARES at
+                            # this standoff too
 search_step_mm = 50.0       # board search when none of the expected boards is usable (after long routes ARES can be
 search_rings = 2            # > 45 mm off the prediction): looks for ARES displaced by +-50 / +-100 mm, 8 directions
 
