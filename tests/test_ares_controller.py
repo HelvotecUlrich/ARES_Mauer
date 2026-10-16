@@ -32,12 +32,16 @@ def test_the_controller_box_on_ares(cfg):
 
 
 def test_the_footprint_and_the_rotation_circle_include_the_controller(cfg):
+    # the floor footprint reaches the box with its pendant panel ([ares] footprint_back_mm 400, Samuel 2026-10-16),
+    # the arm's collision box stays at controller_out_mm 250 (test above)
+    back = max(cfg["ares"]["controller_out_mm"], cfg["ares"].get("footprint_back_mm", 0.0))
+    assert back == pytest.approx(400.0)
     sh = floor.AresShape.from_config(cfg)
     xs = [p[0] for p in sh.footprint(Pose2D(0.0, 0.0, 0.0))]
-    assert min(xs) == pytest.approx(-810.0) and max(xs) == pytest.approx(560.0)
-    assert sh.radius == pytest.approx(math.hypot(810.0, 300.0))
+    assert min(xs) == pytest.approx(-560.0 - back) and max(xs) == pytest.approx(560.0)
+    assert sh.radius == pytest.approx(math.hypot(560.0 + back, 300.0))
     turned = [p[0] for p in sh.footprint(Pose2D(0.0, 0.0, math.pi))]
-    assert max(turned) == pytest.approx(810.0)                         # the box turns with ARES
+    assert max(turned) == pytest.approx(560.0 + back)                  # the box turns with ARES
     bare = floor.AresShape(1120.0, 600.0)
     assert bare.radius == pytest.approx(math.hypot(560.0, 300.0))      # without a controller: as before
 

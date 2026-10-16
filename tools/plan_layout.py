@@ -48,6 +48,7 @@ from mauer import armcheck  # noqa: E402
 from mauer import config as mconfig  # noqa: E402
 from mauer import floor  # noqa: E402
 from mauer import geometry as g  # noqa: E402
+from mauer.reference import Pose2D  # noqa: E402
 from mauer.vision.targets import board_specs  # noqa: E402
 
 RESULTS = REPO / "results"
@@ -520,9 +521,12 @@ def draw_layout(cfg: dict, geo: dict, path: Path, s: float = 0.3) -> None:
             for a, b in zip(st.route, st.route[1:]):
                 c.line((a.x_mm, a.y_mm), (b.x_mm, b.y_mm), (0, 0, 220), 2)
                 if math.hypot(b.x_mm - a.x_mm, b.y_mm - a.y_mm) < 0.5:
-                    c.circle((a.x_mm, a.y_mm), ares.radius, (0, 0, 220), 1, dashed=True)
-                    c.circle((a.x_mm, a.y_mm), ares.radius + mj.route_params(cfg)["clearance_mm"], (0, 0, 120), 1,
-                             dashed=True)
+                    d = wrap(b.theta_rad - a.theta_rad)                     # the swept footprints (2026-10-16)
+                    n = max(2, int(math.ceil(abs(d) / math.radians(15.0))))
+                    for i in range(1, n):
+                        fp = ares.footprint(Pose2D(a.x_mm, a.y_mm, a.theta_rad + d * i / n))
+                        for p, q in zip(fp, fp[1:] + fp[:1]):
+                            c.line(p, q, (0, 0, 220), 1)
                     c.text((a.x_mm + 60, a.y_mm + 60), f"rotate {math.degrees(wrap(b.theta_rad - a.theta_rad)):+.0f} deg",
                            (0, 0, 200), 0.45)
             for w in st.route:
@@ -536,7 +540,7 @@ def draw_layout(cfg: dict, geo: dict, path: Path, s: float = 0.3) -> None:
            (20, 20, 20), 0.55, 1, px=True)
     c.text((15, 55), "grey: course-0 stones = base blocks | orange: board plates (name, leg u) | coloured: ARES "
                      "footprint per stop (arrow = heading, circle = UR base) | red: routes between stops (back off / "
-                     "along / approach; leg change with its rotation circle r 635 + 50 mm clearance) | dashed grey: "
+                     "along / approach; leg change with the footprints of its rotation) | dashed grey: "
                      "station trips", (60, 60, 60), 0.4, 1, px=True)
     # elevations
     y_el = int((y1 - y0) * s) + c.pad_top + 40
@@ -657,7 +661,9 @@ def write_report(cfg: dict, geo: dict, path: Path, rows: list[dict] | None) -> N
               f"Waypoints in the wall frame, one PLC command per leg (translation in the body frame OR rotation, "
               f">= 2 mm / 0.2 deg). Checked with the chassis {rc.get('ares_radius_mm', 0) * 2:.0f} mm diagonal "
               f"([ares] length x width), clearance {rc.get('clearance_mm', 0):g} mm to legs, plates, blocks and the "
-              f"station table (rotation: swept circle r {rc.get('ares_radius_mm', 0):.0f} mm); every move between "
+              f"station table, room walls with their own clearance (rotation: the area the footprint sweeps, "
+              f"{rc.get('rotation_margin_deg', 0):g} deg beyond both ends, >= {rc.get('rotation_clearance_mm', 0):g} mm "
+              f"from every obstacle; farthest corner r {rc.get('ares_radius_mm', 0):.0f} mm); every move between "
               "stops is a route too (same leg: back off, along the leg, approach - the plates end 10 mm before the ARES "
               "front at a stop, so the stop line itself keeps no clearance). The sequencer steers intermediate legs "
               f"dead-reckoned and ends a route to a stop {rc.get('arrival_standoff_mm', 0):g} mm before it ([sequencer] "
