@@ -254,6 +254,19 @@ def test_config_status_parser():
     assert st["[[targets]] W3.xyz"]["status"] == "PLACEHOLDER"              # from the [[targets]] block comment
     assert st["[[targets]] S0.xyz"]["status"] == "ASSUMPTION"               # own inline tag (floor station)
     assert st["[brick] mass_kg"]["status"] == "ASSUMPTION"
+    # a multi-line array (slots_xy, 2026-10-16): its second line is no section header, its tag follows it
+    assert st["[pickup_station] slots_xy"]["status"] == "ASSUMPTION"
+    assert st["[pickup_station] half_slots_xy"]["status"] == "ASSUMPTION"
+    assert not [k for k in st if not k.startswith("[") or k[1].isdigit()]
+
+
+def test_config_status_multi_line_array(tmp_path):
+    f = tmp_path / "c.toml"
+    f.write_text("[a]\nxs = [[1.0, 2.0],\n      [3.0, 4.0]]\n      # CONFIRMED: measured\nn = 3  # PLACEHOLDER\n"
+                 "[b]\nm = 1  # ASSUMPTION\n", encoding="utf-8")
+    st = mjob.config_status(f)
+    assert {k: v["status"] for k, v in st.items()} == {"[a] xs": "CONFIRMED", "[a] n": "PLACEHOLDER",
+                                                       "[b] m": "ASSUMPTION"}
 
 
 def test_make_job_cli(tmp_path, capsys):

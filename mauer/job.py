@@ -954,6 +954,7 @@ def config_sha256(path: str | Path | None = None, variant: str | None = None) ->
     return hashlib.sha256(data).hexdigest()
 
 
+_HEADER = re.compile(r"^\[\[?\s*[A-Za-z0-9_.\-]+\s*\]\]?\s*(#.*)?$")   # [section] / [[array]] (+ comment)
 _KEY = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 
 
@@ -1013,7 +1014,7 @@ def _status_of_file(path: Path) -> dict[str, dict]:
             in_header_block = False
             i += 1
             continue
-        if s.startswith("["):
+        if _HEADER.match(s):                 # not the continuation line of a multi-line array ("[1.0, 2.0], ...")
             flush_entry()
             entry, entry_name = {}, None
             header = s.split("#")[0].strip()
@@ -1045,6 +1046,10 @@ def _status_of_file(path: Path) -> dict[str, dict]:
         key, rest = m.group(1), m.group(2)
         comment = _split_comment(rest)
         j = i + 1
+        while j < len(lines) and lines[j].startswith((" ", "\t")) and lines[j].strip() \
+                and not lines[j].strip().startswith("#"):   # the rest of a multi-line value (slots_xy, 2026-10-16:
+            comment = _split_comment(lines[j]) or comment   # its tag sits in the comment lines after it)
+            j += 1
         cont = []
         while j < len(lines) and lines[j].startswith((" ", "\t")) and lines[j].strip().startswith("#"):
             cont.append(lines[j].strip().lstrip("#").strip())
