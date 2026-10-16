@@ -12,7 +12,10 @@ Per stop:
       vs predicted (> max_jump = FrameJumpError, run stops). If ARES is farther than `stop_tol_mm` (or the heading
       beyond `stop_tol_deg`) from the nominal stop pose, or a stone still to place there has no IK solution from the
       measured frame (2026-10-16): a correction move and a new measurement (max_corrections); a heading within
-      stop_tol_deg is kept then (translation only) unless a stone is out of reach.
+      stop_tol_deg is kept then (translation only) unless a stone is out of reach - then the correction goes to the
+      nominal stop or the nearest offset within the tolerance from which every stone is in reach (_reach_target; a
+      tilted ARES can put a stone out of reach at the nominal stop), and no correction is driven that would not move
+      ARES. A board only partly in the image re-aims its look at once (shot again before the next look).
   (c) per stone: magazine empty -> reload(); pick from the magazine slot (ARES frame, fixed to the UR base); place at
       pose_trans(T_base_wall_measured, T_wall_tcp) (mauer.ur.script place_stone on the real robot).
   (d) park.
@@ -130,6 +133,9 @@ class PreflightError(SequencerError):
     def __init__(self, problems: Sequence[str]):
         self.problems = list(problems)
         super().__init__("real run refused:\n  - " + "\n  - ".join(self.problems))
+
+
+REACH_STEP_MM = 5.0         # grid of the offsets around a stop that _reach_target tries (2026-10-16)
 
 
 # ── parameters ────────────────────────────────────────────────────────────────
@@ -463,6 +469,7 @@ class Sequencer:
         self.T_base_station: np.ndarray | None = None      # measured at the dock (motion guard world)
         self._wall_meas: tuple | None = None   # (measured T_base_wall, ARES pose estimate at that measurement)
         self._aim_frame: tuple | None = None   # (parent, T_parent_base) the current look is aimed with
+        self._arm_at: str | None = None        # "park" / the look the arm stands at (offline look vias apply), else None
         self._prebuilt: set[tuple] = set()     # stones of earlier stops / runs that stand already (run start)
         self.route_progress: RouteProgress | None = None
         self.pending_why: str | None = None      # limits of the next wall measurement after a finished route / return
@@ -558,8 +565,12 @@ class Sequencer:
         if guard is not None:                        # mauer.motionguard: what the arm must not touch right now
             guard.set_world(self._guard_world())
         try:
-            return getattr(self.robot, action)(*args, **kw)
+            out = getattr(self.robot, action)(*args, **kw)
+            self._arm_at = ("park" if action == "park" else getattr(args[0], "name", None) if action == "goto_look"
+                            else None)
+            return out
         except RobotError as e:
+            self._arm_at = None
             self.log.write("robot_error", action=action, what=desc, error=str(e))
             if action in ("pick_magazine", "pick_station"):        # the jaws may or may not hold the stone now
                 slot = next((a for a in args if hasattr(a, "id")), None)
@@ -584,9 +595,7 @@ class Sequencer:
         if aim is not None and aim[0] == "wall":
             T_bw = g.inv(aim[1])
         elif self._wall_meas is not None and self.pose_est is not None:
-            T_meas, pose_meas = self._wall_meas
-            D = g.inv(pose_meas.T) @ self.pose_est.T                  # planar ARES motion since the measurement
-            T_bw = g.inv(g.inv(T_meas) @ self.T_ares_base @ D @ self.T_base_ares)
+            T_bw = self._wall_frame_at(self.pose_est)
         elif self.pose_est is not None:
             T_bw = T_base_parent_from(self.pose_est, self.T_ares_base)
         T_bs = None
@@ -608,6 +617,8 @@ class Sequencer:
     def _park(self) -> None:
         if not self.robot.is_parked():
             self._robot("park", "park")
+        else:
+            self._arm_at = "park"
 
     # ── ARES ─────────────────────────────────────────────────────────────────
     def _interlock(self, what: str) -> None:
@@ -828,13 +839,17 @@ class Sequencer:
         self.dr = np.eye(4)
 
     def _observe_station(self, obs: Pose2D) -> None:
-        """Station location = component-wise median of all observations (robust to a slip on one trip); starts from
-        the nominal [pickup_station] pose (PLACEHOLDER)."""
+        """Station location = component-wise median of all observations and the nominal [pickup_station] pose as one
+        more (robust to a slip on one trip). Each observation carries the drive error of one trip; until 2026-10-16
+        the first one alone set the estimate - run 2026-10-16_163318: 1.5 deg of one trip to the station became the
+        station's heading and the return arrived 58 mm / 2 deg off (the station itself was 4-7 mm / 0.1-0.5 deg from
+        the nominal by all 8 observations of the run)."""
         self.station_obs.append(obs)
         nom = Pose2D.from_T(self.T_wall_station_nominal)
-        x = float(np.median([o.x_mm for o in self.station_obs]))
-        y = float(np.median([o.y_mm for o in self.station_obs]))
-        th = nom.theta_rad + float(np.median([wrap_angle(o.theta_rad - nom.theta_rad) for o in self.station_obs]))
+        pts = [nom] + self.station_obs
+        x = float(np.median([o.x_mm for o in pts]))
+        y = float(np.median([o.y_mm for o in pts]))
+        th = nom.theta_rad + float(np.median([wrap_angle(o.theta_rad - nom.theta_rad) for o in pts]))
         T = planar_T(x, y, th)
         T[2, 3] = self.T_wall_station_nominal[2, 3]
         self.T_wall_station = T
@@ -871,6 +886,8 @@ class Sequencer:
             nonlocal T_est
             T_pb = T_est if T_aim is None else T_aim
             aimed = self._aim(lk, T_nom, T_pb)
+            if aimed.via_q_rad and aimed.via_from != self._arm_at:   # the job's vias lead from another pose
+                aimed = replace(aimed, via_from=None, via_q_rad=[])
             self._aim_frame = (parent, T_pb)         # the guard's frame of `parent` = the one the look is aimed with
             self._robot("goto_look", f"look {lk.name}{tag} ({', '.join(lk.boards)})", aimed)
             try:
@@ -922,7 +939,11 @@ class Sequencer:
                                    ares=Pose2D.from_T(T_est @ self.T_base_ares))
 
         for lk in looks:
+            n_coarse = len(coarse)
             shoot(lk, "")
+            if len(coarse) > n_coarse and any(b in missing for b in lk.boards):
+                shoot(lk, " retry")                  # partly in view: re-aimed at once while the arm is still there
+                                                     # (Samuel 2026-10-16), not after the other looks
         if missing and not observed and not coarse:
             self._search(looks, parent, T_nom, T_est, shoot, coarse, observed)
             if coarse:
@@ -1024,6 +1045,19 @@ class Sequencer:
             lim = (self.p.max_jump_mm, self.p.max_jump_deg)
             if e_mm <= self.p.stop_tol_mm and e_deg <= self.p.stop_tol_deg and not unreach:
                 break
+            target = stop.ares
+            if unreach:                              # the nominal stop - or near it where every stone is in reach
+                target = self._reach_target(k, meas) or stop.ares
+                self.log.write("reach_target", stop=k, unreachable=unreach, target=target,
+                               offset_mm=list(relative_move(stop.ares, target)[:2]))
+            dx, dy, dth = relative_move(meas, target)
+            rot_thr = self.p.rotate_threshold_deg if unreach else self.p.stop_tol_deg
+            if math.hypot(dx, dy) < MIN_MOVE_MM and abs(math.degrees(dth)) <= max(rot_thr, MIN_MOVE_DEG):
+                # within reach of the stop already: a correction would not move ARES (run 2026-10-16_163318: two
+                # empty rounds for a half stone out of reach at the nominal stop)
+                self._warn(f"stop {k}: ARES {e_mm:.1f} mm / {e_deg:.2f} deg from the nominal stop - stones without "
+                           f"IK from the measured frame: {', '.join(unreach)}; a correction cannot help (check reach)")
+                break
             if attempt == self.p.max_corrections:
                 self._warn(f"stop {k}: ARES still {e_mm:.1f} mm / {e_deg:.2f} deg from the nominal stop after "
                            f"{attempt} corrections"
@@ -1034,16 +1068,25 @@ class Sequencer:
             self._park()
             # a heading within stop_tol_deg is kept (translation only: a small rotation scatters more than it
             # corrects) - unless a stone is out of reach, then every heading error beyond rotate_threshold_deg goes
-            self._drive_to(stop.ares, None, f"stop {k} correction {attempt + 1}",
-                           rot_threshold_deg=self.p.rotate_threshold_deg if unreach else self.p.stop_tol_deg)
+            self._drive_to(target, None, f"stop {k} correction {attempt + 1}", rot_threshold_deg=rot_thr)
         self._park()
 
-    def _unreachable(self, k: int) -> list[str]:
+    def _wall_frame_at(self, pose: Pose2D) -> np.ndarray:
+        """The last measured 6-DoF wall frame (T_base_wall; tilt and height kept) for ARES moved planar from the pose
+        of that measurement to `pose`. (Until 2026-10-16 _guard_world conjugated the move with T_ares_base instead
+        of T_base_ares - with the UR turned 90 deg on ARES a 17 mm / 0.7 deg move put the wall 40 mm off.)"""
+        T_meas, pose_meas = self._wall_meas
+        D = g.inv(pose_meas.T) @ pose.T                               # planar ARES motion since the measurement
+        return g.inv(g.inv(T_meas) @ self.T_base_ares @ D @ self.T_ares_base)
+
+    def _unreachable(self, k: int, T_base_wall: np.ndarray | None = None, first: bool = False) -> list[str]:
         """Labels of the stones of stop k still to place that have a pose of their place (backends.place_wall_poses)
-        without a nominal IK solution near their hint from the measured wall frame (mauer.simworld.ik_near, as
-        tools/make_job.py): the stop tolerance alone does not keep every stone in reach (2026-10-16: three course-3
-        half stones of the C job lose the approach pose 8-18 mm off their stop)."""
+        without a nominal IK solution near their hint from the wall frame T_base_wall (default: the measured one;
+        mauer.simworld.ik_near, as tools/make_job.py): the stop tolerance alone does not keep every stone in reach
+        (2026-10-16: three course-3 half stones of the C job lose the approach pose 8-18 mm off their stop; ARES
+        tilted 0.5 deg at stop 0 takes Bc3i0h's out of reach at the nominal stop). first: stop at the first one."""
         from .simworld import ik_near
+        T_bw = self.T_base_wall if T_base_wall is None else T_base_wall
         T_fi = g.inv(np.asarray(self.job.T_flange_tcp, float))
         q_park = np.asarray(self.job.park_q_rad, float)
         out = []
@@ -1051,10 +1094,32 @@ class Sequencer:
             if t.key in self.placed or t.key in self._prebuilt:
                 continue
             hint = q_park if t.qnear_rad is None else np.asarray(t.qnear_rad, float)
-            if any(ik_near(self.T_base_wall @ P @ T_fi, hint) is None
+            if any(ik_near(T_bw @ P @ T_fi, hint) is None
                    for P in place_wall_poses(self.cfg, t, self.job.approach_mm)):
                 out.append(t.label)
+                if first:
+                    break
         return out
+
+    def _reach_target(self, k: int, meas: Pose2D) -> Pose2D | None:
+        """Where to correct to when stones of stop k are out of reach from the measured pose `meas`: the nominal stop
+        shifted by the smallest offset (REACH_STEP_MM grid, at most stop_tol_mm - REACH_STEP_MM: room for the move
+        error) from which every stone still to place has IK - predicted from the measured frame, tilt kept
+        (_wall_frame_at). The heading: the nominal one if the correction rotates (beyond rotate_threshold_deg), else
+        the measured one. None if no offset helps."""
+        nom = self.job.stops[k].ares
+        rot = abs(math.degrees(wrap_angle(meas.theta_rad - nom.theta_rad))) > self.p.rotate_threshold_deg
+        th = nom.theta_rad if rot else meas.theta_rad
+        lim = self.p.stop_tol_mm - REACH_STEP_MM
+        n = int(lim // REACH_STEP_MM)
+        offs = sorted(((i * REACH_STEP_MM, j * REACH_STEP_MM) for i in range(-n, n + 1) for j in range(-n, n + 1)
+                       if math.hypot(i, j) * REACH_STEP_MM <= lim + 1e-9), key=lambda o: (math.hypot(*o), o))
+        for ox, oy in offs:
+            p = Pose2D.from_T(nom.T @ planar_T(ox, oy, 0.0))
+            p = Pose2D(p.x_mm, p.y_mm, th)
+            if not self._unreachable(k, self._wall_frame_at(p), first=True):
+                return p
+        return None
 
     # ── magazine / reload ────────────────────────────────────────────────────
     def dock_in_wall(self) -> Pose2D:

@@ -276,9 +276,9 @@ def test_a_stone_out_of_reach_from_the_measured_stop_forces_a_correction(cfg, jo
     w.forced_slips[1] = (0.0, 0.0, 0.8)
     real, calls = seq._unreachable, []
 
-    def first_stop1_out_of_reach(k):
+    def first_stop1_out_of_reach(k, T_base_wall=None, first=False):
         calls.append(k)
-        return ["test stone"] if calls.count(1) == 1 and k == 1 else real(k)
+        return ["test stone"] if calls.count(1) == 1 and k == 1 else real(k, T_base_wall, first)
     seq._unreachable = first_stop1_out_of_reach
     assert seq.run().state == "done" and seq.result.corrections == 1
     assert "rotate" in [m["kind"] for m in w.ares.moves[1:]]
@@ -289,6 +289,63 @@ def test_a_stone_out_of_reach_from_the_measured_stop_forces_a_correction(cfg, jo
     assert real(1) == []
     seq.T_base_wall = g.transl(2000.0, 0.0, 0.0) @ seq.T_base_wall
     assert real(1) == [t.label for t in job.stops[1].stones]
+
+
+def test_a_partly_seen_board_is_shot_again_at_once(cfg, job10, tmp_path):
+    """Samuel 2026-10-16: a board only partly in the image re-aims the SAME look right away (the arm is still there),
+    not after the other looks of the measurement."""
+    job = short_job(job10, n0=2, n1=2)
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path, params=SequencerParams(max_jump_mm=100.0))
+    w.forced_slips[1] = (0.0, -75.0, 0.0)                       # stop 1: the boards only partly in view
+    assert seq.run().state == "done"
+    ev = _events(seq)
+    i = next(n for n, e in enumerate(ev) if e["event"] == "coarse_aim")
+    shots = [e["look"] for e in ev[i:] if e["event"] == "shot"]
+    assert shots[0] == ev[i]["look"] + " retry"
+
+
+def test_wall_frame_at_follows_a_planar_ares_move(cfg, job10, tmp_path):
+    """The measured wall frame predicted for ARES moved since (motion guard world, reach target): exact for a planar
+    frame - 2026-10-16 fix of the guard world, which conjugated the move with the wrong frame (40 mm off after a
+    17 mm / 0.7 deg move with the UR turned 90 deg on ARES)."""
+    from mauer.reference import T_base_parent_from
+    _, seq = sim(cfg, short_job(job10, n0=1, n1=1), WorldErrors(), tmp_path)
+    pm, pn = Pose2D(226.0, 580.0, math.radians(0.3)), Pose2D(240.0, 570.0, math.radians(-0.4))
+    seq._wall_meas = (T_base_parent_from(pm, seq.T_ares_base), pm)
+    assert g.pose_delta(seq._wall_frame_at(pn), T_base_parent_from(pn, seq.T_ares_base))[0] < 1e-6
+    seq.pose_est = pn
+    assert g.pose_delta(seq._guard_world().T_base_wall, T_base_parent_from(pn, seq.T_ares_base))[0] < 1e-6
+
+
+def test_out_of_reach_at_the_stop_corrects_to_a_reachable_offset(cfg, job10, tmp_path):
+    """A stone out of reach at the nominal stop (run 2026-10-16: ARES tilted 0.5 deg at stop 0 took Bc3i0h's
+    approach pose out of the UR5's reach): the correction goes to the smallest offset within the stop tolerance from
+    which every stone is in reach - and when none is, no empty correction is driven (two such rounds in that run)."""
+    from mauer.reference import T_parent_ares
+    job = short_job(job10, n0=2, n1=2)
+    nom = job.stops[1].ares
+
+    def needs_left(seq, real):                  # stop 1 "reachable" only with ARES >= 4 mm to its body +y
+        def f(k, T_base_wall=None, first=False):
+            if k != 1:
+                return real(k, T_base_wall, first)
+            T = seq.T_base_wall if T_base_wall is None else T_base_wall
+            p = Pose2D.from_T(g.inv(nom.T) @ T_parent_ares(T, seq.T_ares_base))
+            return [] if p.y_mm >= 4.0 else ["test stone"]
+        return f
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path / "a")
+    seq._unreachable = needs_left(seq, seq._unreachable)
+    assert seq.run().state == "done" and seq.result.corrections == 1
+    tg = next(e for e in _events(seq) if e["event"] == "reach_target")
+    assert tg["offset_mm"][1] == pytest.approx(5.0, abs=0.01) and abs(tg["offset_mm"][0]) < 0.01
+    p = Pose2D.from_T(g.inv(nom.T) @ w.ares_true.T)
+    assert p.y_mm == pytest.approx(5.0, abs=1.0)
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path / "b")    # never in reach: no correction, a warning
+    real = seq._unreachable
+    seq._unreachable = lambda k, T_base_wall=None, first=False: ["test stone"] if k == 1 else real(k, T_base_wall,
+                                                                                                   first)
+    assert seq.run().state == "done" and seq.result.corrections == 0
+    assert any(e["event"] == "warning" and "a correction cannot help" in e["msg"] for e in _events(seq))
 
 
 def test_robot_block_error_stops_safely(cfg, job10, tmp_path):
