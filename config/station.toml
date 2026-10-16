@@ -463,7 +463,11 @@ rpy_deg = [180.0, 0.0, 0.0]
 name = "S1"
 parent = "station"
 first_id = 210
-xyz = [1197.5, 112.3, 4.1]  # ASSUMPTION: plate centre (1237.5, 76.3) = row centre +500 mm (see S0)
+xyz = [1199.0, 115.0, 4.1]  # ASSUMPTION: plate centre (1237.5, 76.3) = row centre +500 mm (see S0); x, y relative to
+                            # S0 MEASURED (camera, 5 station measurements of the real runs 2026-10-16: S1 in the S0 board
+                            # frame x 1001.2..1001.9, y -2.2..-3.1 mm, board y = -station y -> +1.5 / +2.7 mm to the
+                            # planned 1197.5 / 112.3): the station fit RMS drops from 0.63..0.95 mm (limit [sequencer]
+                            # max_fit_rms_mm 1.0) to ~0.2 mm. z kept (the measured height difference scatters +-5 mm)
 rpy_deg = [180.0, 0.0, 0.0]
 
 [plates]
