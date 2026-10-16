@@ -206,7 +206,9 @@ of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config
   layer of the outer row-2 stacks in 2 of 3 seeds without it): the 4 inner full stacks of row 1 5 high (0.6 m,
   stability not checked), the others 4 / 2 -> **56 stones (44 full + 12 half)**; with the magazine (12 full + 2 half)
   the whole C from one fill, 3 full stones left over. `results/steinliste.pdf` lists every stack (name as engraved on
-  the MDF) with the number of layers to fill. Two station boards S0 / S1 (1 m baseline) stay; one would do for the
+  the MDF) with the number of layers to fill (since 2026-10-16 also drawings of the magazine, the station and the
+  unfolded wall, and where every station / magazine stone ends up in the wall - see below). Two station boards S0 / S1
+  (1 m baseline) stay; one would do for the
   fit, at a less precise heading. A longer station does not help: the reach ends at +-725 mm (row 1) / +-550 mm (row 2).
 - **Gripping and setting** (Samuel 2026-10-09): half stones are gripped `[half_brick] grasp_above_top_mm` = 20 mm
   higher (their pin pair stands in the middle, under the gripper; every half-stone TCP pose is raised,
@@ -225,6 +227,21 @@ of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config
   the UR sits at the vehicle rear (`[ares] frame_x_points_to`).
 - Floor guides `targets/guides/` (the strip runs through the door and on to W7's spare block), stone list
   `results/steinliste.pdf`, layout `results/l_wall_plan.md`.
+
+## Stone list: station -> wall (2026-10-16)
+
+Samuel: "eine Zeichnung von der Station und wo welcher Platz ist und die Steinliste erweitern, so dass man weiss
+welcher Stein in der Station schlussendlich wo an der Mauer ist". `tools/make_stone_list.py` traces every stone
+through the sequencer's loading rule (`loading_plan` -> `stones`: magazine start fill or station stack / layer, station
+trip, magazine slot, laying number, leg, course, u) and `results/steinliste.pdf` (copy in `final/`) now has: the
+magazine on the deck with the laying number per layer of the start fill (section 3), the station from above at 1:7 with
+the MDF piece and S windows of `tools/make_guides.py`, the engraved stack names and per layer the laying number (4),
+the wall unfolded and seen from outside, every stone with its laying number and origin, coloured by station trip (5),
+the station -> wall and magazine -> wall tables (6) and the laying order with the origin of every stone (7). Checked
+against `mauer.sequencer` (test: an ARES tour of `c_acb`, which needs a station top-up, takes every stone from the
+traced magazine slot, filled from the traced station slot on the traced trip; the main C the same, 67/67). The mapping
+holds while the run follows the plan: a resumed run, a stone declared placed by hand or a `slot_changed` log record
+shifts it from there on.
 
 ## Magazine dry run on ARES (2026-10-08)
 

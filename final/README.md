@@ -34,7 +34,7 @@ der Tabelle füllen.** Ein Stein darüber ist der Software unbekannt und liegt d
 
 | Datei | Was |
 |---|---|
-| `steinliste.pdf` | Steine je Schenkel / Lage, Beladeplan, **Stapelhöhen der Station**, Setzreihenfolge |
+| `steinliste.pdf` | Steine je Schenkel / Lage, Beladeplan, **Stapelhöhen der Station**, **Zeichnungen von Magazin, Station und Mauer** (seit 2026-10-16: je Platz die Nr. des Steins und wo er in der Mauer landet), Zuordnung Station → Mauer, Setzreihenfolge mit Herkunft |
 | `floor_map.pdf` | Bodenplan 1:20 auf A3 (in 100 % drucken, 1-m-Balken prüfen), Seite 2: Messpunkte, Diagonalen, Teile |
 | `floor_plan.md` | dieselben Koordinaten und Diagonalen als Text |
 | `laser/laser_sheet_1..5.dxf` | MDF **5 mm** 800 × 600 (seit 2026-10-09, vorher 4 mm): Blatt 1 + 2 Station, 3 – 5 Bodenführungen (Ebenen CUT / ENGRAVE / SHEET). **Blatt 3 – 5 neu für die 1-mm-Fuge (2026-10-14)**; die Station (Blatt 1 + 2) und die Board-Platten bleiben - jede Platte hat jetzt genau eine V-Nase unter einer ihrer Kerben |
