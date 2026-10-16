@@ -34,7 +34,8 @@ der Tabelle füllen.** Ein Stein darüber ist der Software unbekannt und liegt d
 
 | Datei | Was |
 |---|---|
-| `steinliste.pdf` | Steine je Schenkel / Lage, Beladeplan, **Stapelhöhen der Station**, Setzreihenfolge |
+| `steinliste.pdf` | Steine je Schenkel / Lage, Beladeplan, **Stapelhöhen der Station**, Stations- und Magazinplan, **für jeden Stein Magazinplatz und Stationsplatz** (Startfüllung, jede Stationsfahrt, Setzreihenfolge; abgeglichen mit der ARES-Tour 2026-10-16) |
+| `stationsplan.pdf` | Platznamen von Abholstation (s00 … s10, h00 … h03) und Magazin (r0y0 … r1y2, a/b) zum Anschreiben, mit Lagen und ARES-Dockseite (`tools/make_station_map.py`) |
 | `floor_map.pdf` | Bodenplan 1:20 auf A3 (in 100 % drucken, 1-m-Balken prüfen), Seite 2: Messpunkte, Diagonalen, Teile |
 | `floor_plan.md` | dieselben Koordinaten und Diagonalen als Text |
 | `laser/laser_sheet_1..5.dxf` | MDF **5 mm** 800 × 600 (seit 2026-10-09, vorher 4 mm): Blatt 1 + 2 Station, 3 – 5 Bodenführungen (Ebenen CUT / ENGRAVE / SHEET). **Blatt 3 – 5 neu für die 1-mm-Fuge (2026-10-14)**; die Station (Blatt 1 + 2) und die Board-Platten bleiben - jede Platte hat jetzt genau eine V-Nase unter einer ihrer Kerben |

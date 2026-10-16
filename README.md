@@ -206,7 +206,9 @@ of ARES, 25 cm out, 20 cm over the deck". Main config now (the C before: `config
   layer of the outer row-2 stacks in 2 of 3 seeds without it): the 4 inner full stacks of row 1 5 high (0.6 m,
   stability not checked), the others 4 / 2 -> **56 stones (44 full + 12 half)**; with the magazine (12 full + 2 half)
   the whole C from one fill, 3 full stones left over. `results/steinliste.pdf` lists every stack (name as engraved on
-  the MDF) with the number of layers to fill. Two station boards S0 / S1 (1 m baseline) stay; one would do for the
+  the MDF) with the number of layers to fill and, for every stone, its magazine slot and station slot (start fill,
+  each station trip, laying order; `--check-log <run.jsonl>` compares it with a run log); `results/stationsplan.pdf`
+  (`tools/make_station_map.py`) shows the slot names of the station and the magazine to write onto the station. Two station boards S0 / S1 (1 m baseline) stay; one would do for the
   fit, at a less precise heading. A longer station does not help: the reach ends at +-725 mm (row 1) / +-550 mm (row 2).
 - **Gripping and setting** (Samuel 2026-10-09): half stones are gripped `[half_brick] grasp_above_top_mm` = 20 mm
   higher (their pin pair stands in the middle, under the gripper; every half-stone TCP pose is raised,
