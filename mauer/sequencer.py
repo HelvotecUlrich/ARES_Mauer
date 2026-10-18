@@ -653,8 +653,15 @@ class Sequencer:
                                  "known pose, call set_pose(pose), then resume", self.stop_k) from e
         self.result.ares_moves += 1
         ok = bool(getattr(out, "ok", True))
+        # the PLC's wheel odometry of the move (2026-10-18: run 182116 could not tell slip from a turn the odometry
+        # saw but the open-loop heading of a translation never corrects - FB_RelMove commands omega 0): body-frame
+        # odometry delta (this repo's ARES frame) and the PLC's lateral / heading error (PLC frame, as reported)
+        odom = out.odom_delta() if hasattr(out, "odom_delta") else None
+        diag = {k: getattr(out, k) for k in ("lat_err_mm", "head_err_deg", "final_err_mm", "final_err_deg", "elapsed_s")
+                if isinstance(getattr(out, k, None), (int, float)) and math.isfinite(getattr(out, k))}
         self.log.write("ares_move", kind=kind, args=list(args), ok=ok, why=why, n=self.result.ares_moves,
-                       summary=out.summary() if hasattr(out, "summary") else str(out))
+                       summary=out.summary() if hasattr(out, "summary") else str(out),
+                       **({"odom": list(odom)} if odom is not None else {}), **diag)
         if not ok:
             text = out.summary() if hasattr(out, "summary") else str(out)
             if not getattr(out, "rejected", False):          # a rejected command never moved ARES

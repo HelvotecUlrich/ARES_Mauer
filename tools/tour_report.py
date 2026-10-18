@@ -85,11 +85,17 @@ def report(run_dir: str | Path) -> str:
         out.append(f"| {key} | {_stats([e.get('jump_mm', 0.0) for e in es])} "
                    f"| {_stats([e.get('jump_deg', 0.0) for e in es])} "
                    f"| {_stats([e.get('err_nominal_mm', 0.0) for e in es])} |")
-    out += ["", "## ARES moves", "", "| # | min | why | move | ok |", "|---|---|---|---|---|"]
+    out += ["", "## ARES moves", "",
+            "odometry = the PLC's wheel odometry of the move (dx, dy mm, dθ °, body frame; logged since 2026-10-18), "
+            "PLC lat / head = its lateral / heading error of a translation (PLC frame).", "",
+            "| # | min | why | move | odometry | PLC lat mm / head ° | ok |", "|---|---|---|---|---|---|---|"]
     for e in moves:
         args = ", ".join(f"{a:+.1f}" for a in e.get("args", []))
+        od = ", ".join(f"{a:+.1f}" if i < 2 else f"{a:+.2f}" for i, a in enumerate(e["odom"])) if e.get("odom") else "-"
+        lh = (f"{e['lat_err_mm']:+.1f} / {e.get('head_err_deg', 0.0):+.2f}"
+              if e["kind"] == "translate" and "lat_err_mm" in e else "-")
         out.append(f"| {e.get('n')} | {(e['t'] - t0) / 60.0:.1f} | {e.get('why', '')} | {e['kind']} ({args}) "
-                   f"| {'ok' if e.get('ok') else 'NOT ok: ' + str(e.get('summary', ''))} |")
+                   f"| {od} | {lh} | {'ok' if e.get('ok') else 'NOT ok: ' + str(e.get('summary', ''))} |")
     warns = [e["msg"] for e in ev if e["event"] == "warning"]
     if warns:
         out += ["", "## Warnings", ""] + [f"- {w}" for w in warns]
