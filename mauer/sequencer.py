@@ -1091,21 +1091,52 @@ class Sequencer:
         without a nominal IK solution near their hint from the wall frame T_base_wall (default: the measured one;
         mauer.simworld.ik_near, as tools/make_job.py): the stop tolerance alone does not keep every stone in reach
         (2026-10-16: three course-3 half stones of the C job lose the approach pose 8-18 mm off their stop; ARES
-        tilted 0.5 deg at stop 0 takes Bc3i0h's out of reach at the nominal stop). first: stop at the first one."""
+        tilted 0.5 deg at stop 0 takes Bc3i0h's out of reach at the nominal stop). With a motion guard on the robot
+        also the stones whose approach pose - the target the guard checks before the place (MotionGuard
+        target_problems) - collides: the magazine as it is without the planned slots of the stones placed until then,
+        the wall standing plus the stop's stones before it (SIM 2026-10-18, stop_tol_deg 2.0: ARES 19.7 mm / 1.01 deg off
+        stop 2, every stone with IK, the place of Ac0i0 refused - forearm 1 mm too close to a magazine stone; the run
+        stopped). first: stop at the first one."""
+        from .backends import side_release
+        from .config import release_side_mm
         from .simworld import ik_near
         T_bw = self.T_base_wall if T_base_wall is None else T_base_wall
         T_fi = g.inv(np.asarray(self.job.T_flange_tcp, float))
         q_park = np.asarray(self.job.park_q_rad, float)
+        guard = getattr(self.robot, "guard", None)
+        if guard is not None:
+            world = self._guard_world()
+            done = self.placed | self._prebuilt
+            standing = [t for t in self.job.stones() if t.key in done]
+            above = float(self.cfg.get("ur", {}).get("release_above_mm", 0.0))
+            up = g.transl(0.0, 0.0, float(self.job.approach_mm))
+            before, taken = [], set()
         out = []
-        for t in self.job.stops[k].stones:
-            if t.key in self.placed or t.key in self._prebuilt:
-                continue
-            hint = q_park if t.qnear_rad is None else np.asarray(t.qnear_rad, float)
-            if any(ik_near(T_bw @ P @ T_fi, hint) is None
-                   for P in place_wall_poses(self.cfg, t, self.job.approach_mm)):
-                out.append(t.label)
-                if first:
-                    break
+        try:
+            for t in self.job.stops[k].stones:
+                if t.key in self.placed or t.key in self._prebuilt:
+                    continue
+                hint = q_park if t.qnear_rad is None else np.asarray(t.qnear_rad, float)
+                bad = any(ik_near(T_bw @ P @ T_fi, hint) is None
+                          for P in place_wall_poses(self.cfg, t, self.job.approach_mm))
+                if not bad and guard is not None:
+                    taken.add(t.slot)
+                    T_rel, rest = side_release(t.T_wall_tcp, float(getattr(t, "side_mm", 0.0) or 0.0),
+                                               release_side_mm(self.cfg), above)
+                    T_tcp = T_rel @ g.transl(rest, 0.0, 0.0)              # as the backend's approach / column
+                    q = ik_near(T_bw @ up @ T_tcp @ T_fi, hint)
+                    guard.set_world(replace(world, wall_stones=standing + before, T_base_wall=T_bw,
+                                            magazine=[m for m in world.magazine if m.id not in taken]))
+                    bad = q is None or bool(guard.target_problems(q, t.kind, T_bw @ T_tcp))
+                if guard is not None:
+                    before.append(t)
+                if bad:
+                    out.append(t.label)
+                    if first:
+                        break
+        finally:
+            if guard is not None:
+                guard.set_world(self._guard_world())
         return out
 
     def _reach_target(self, k: int, meas: Pose2D) -> Pose2D | None:

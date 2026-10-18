@@ -767,13 +767,16 @@ rotate_threshold_deg = 0.5  # heading error that triggers a rotation (routes, do
                             # 2026-10-16 small rotations scattered +-0.45° by the camera, see stop_tol_deg)
 rotate_keep_dir_deg = 150.0 # larger rotations keep the previous direction (E003: ~1.2° loss after reversing)
 stop_tol_mm = 20.0          # ARES position error at a stop that triggers a correction move
-stop_tol_deg = 1.0          # ASSUMPTION (run analysis 2026-10-16, Samuel "ja setz um"): ARES heading error at a stop
-                            # that triggers a correction; below it a correction only translates. Run 2026-10-16_132348:
-                            # 5 correction rotations of 0.6..1.2° ended 0.25..0.58° off (the 0.5° limit needed a second
-                            # round once), translation-only corrections within 0.8..2 mm. IK check of the C job (every
-                            # stone, ARES +-20 mm in 8 directions, turned +-1.0°): no stone loses IK at 1.0° that does
-                            # not at +-20 mm already; 1.5° would add one (Bc3i0h). A stone of the stop without IK from
-                            # the measured frame triggers a correction anyway (mauer.sequencer _unreachable)
+stop_tol_deg = 2.0          # ASSUMPTION (Samuel 2026-10-18 "die Toleranz kann man noch ein bisschen lockern solange alle
+                            # Steine erreichbar bleiben"; 1.0 since 2026-10-16): ARES heading error at a stop that
+                            # triggers a correction; below it a correction only translates. The stones are placed in
+                            # the measured frame, the heading costs only reach: IK check of the C job (every stone, ARES
+                            # turned +-1.0..3.0°, at the stop and +-20 mm in 4 directions): up to 3° no stone loses IK
+                            # that does not at +-20 mm / 1.0° already (the reach-edge half stones Bc3i0h, Bc3i9h,
+                            # Ac3i0h; Bc3i0h at the nominal stop from 1.5°) - a stone of the stop without IK from the
+                            # measured frame triggers a correction anyway (mauer.sequencer _unreachable). Replay of the
+                            # runs of 2026-10-16: 2.0° saves one correction (163318 stop 1, 1.36°), 2.5° also 182116
+                            # stop 0 (2.50°). Sideways corrections turn ARES by 0.2..2.2° (docs/ANALYSE_2026-10-18_DE.md)
 max_corrections = 2         # correction moves per arrival (stop or dock)
 max_correction_mm = 100.0   # cap of (closed-loop move - nominal move)
 max_jump_mm = 50.0          # measured vs predicted ARES pose at the wall beyond this -> stop

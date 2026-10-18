@@ -291,6 +291,42 @@ def test_a_stone_out_of_reach_from_the_measured_stop_forces_a_correction(cfg, jo
     assert real(1) == [t.label for t in job.stops[1].stones]
 
 
+def test_a_stone_whose_approach_collides_counts_as_out_of_reach(cfg, job10, tmp_path):
+    """SIM 2026-10-18 (stop_tol_deg 2.0): ARES 19.7 mm / 1.01 deg off a stop, every stone with IK, but the guard refused
+    the place of the corner stone (forearm 1 mm from a magazine stone) and the run stopped. The reach check also asks
+    the robot's motion guard about the approach pose of every stone still to place (the target it checks before the
+    place): one that collides counts as out of reach - checked with the stop's stones before it standing and the
+    magazine without their planned slots; without a guard only the IK counts."""
+    job = short_job(job10, n0=2, n1=2)
+    w, seq = sim(cfg, job, WorldErrors(), tmp_path)
+    assert seq.run().state == "done"
+    seq.placed = set()
+    stones = job.stops[1].stones
+    seen = []
+
+    class Guard:
+        world = None
+
+        def set_world(self, world):
+            self.world = world
+
+        def target_problems(self, q, holding, column):
+            seen.append(([t.key for t in self.world.wall_stones], [m.id for m in self.world.magazine], holding,
+                         column))
+            return ["forearm vs magazine stone (ares) 1 mm too close"] if len(seen) == 2 else []
+    seq.robot.guard = Guard()
+    assert seq._unreachable(1) == [stones[1].label]
+    assert len(seen) == len(stones) and seen[1][0] == [stones[0].key] and seen[1][2] == stones[1].kind
+    assert not {stones[0].slot, stones[1].slot} & set(seen[1][1])
+    from mauer.backends import side_release                                  # the column as the backend's place
+    from mauer.config import release_side_mm
+    T_rel, rest = side_release(stones[1].T_wall_tcp, float(stones[1].side_mm or 0.0), release_side_mm(cfg),
+                               float(cfg["ur"].get("release_above_mm", 0.0)))
+    assert np.allclose(seen[1][3], seq.T_base_wall @ T_rel @ g.transl(rest, 0.0, 0.0))
+    seq.robot.guard = None
+    assert seq._unreachable(1) == []
+
+
 def test_a_partly_seen_board_is_shot_again_at_once(cfg, job10, tmp_path):
     """Samuel 2026-10-16: a board only partly in the image re-aims the SAME look right away (the arm is still there),
     not after the other looks of the measurement."""

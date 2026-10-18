@@ -428,6 +428,17 @@ class MotionGuard:
         finally:
             self._column = None
 
+    def target_problems(self, q: Sequence[float], holding: str | None = None,
+                        column: np.ndarray | None = None) -> list[str]:
+        """Collisions at the target q of a move as plan() checks it ("target: ..." refusal) - column: the target TCP
+        pose of a pick / place (its descent column); [] = free. For the reach check of a measured stop
+        (mauer.sequencer _unreachable)."""
+        self._column = None if column is None else np.asarray(column, float)
+        try:
+            return self.state_problems(q, holding)
+        finally:
+            self._column = None
+
     # ── look moves ───────────────────────────────────────────────────────────
     def _tcp(self, q: Sequence[float]) -> np.ndarray:
         return ur5_fk(np.asarray(q, float)) @ self.T_flange_tcp
