@@ -396,6 +396,9 @@ class SimRobot:
         self.world = world
         self.guard = guard                       # mauer.motionguard.MotionGuard (as URRobot) or None
         self.guard_vias = 0                      # detour vias the guard inserted (statistics)
+        self.motion_s: Counter = Counter()       # estimated joint-move time per action [s] (motionguard.move_time_s
+        # at [ur] v_joint / a_joint over the guarded paths; blended for look moves) - statistics
+        self.at_look = False                     # the last action was a look: the park leaves upwards (as URRobot)
         self.rng = np.random.default_rng(seed + 7)
         self.check_ik = check_ik
         self.fail_on = dict(fail_on or {})
@@ -421,6 +424,7 @@ class SimRobot:
         return g.pose_xyz_rpy(self.rng.normal(0.0, e.repeat_mm, 3), self.rng.normal(0.0, e.repeat_deg, 3))
 
     def _call(self, action: str) -> None:
+        self.at_look = False
         self.calls[action] += 1
         self.world.n_blocks += 1
         if self.fail_on.get(action) == self.calls[action]:
@@ -442,15 +446,20 @@ class SimRobot:
     def _held_kind(self) -> str | None:
         return None if self.holding is None else self.world.kind_of.get(self.holding[0], "full")
 
-    def _guard(self, q_target, what: str, column=None, vias=(), vias_first: bool = True) -> None:
+    def _guard(self, q_target, what: str, column=None, vias=(), vias_first: bool = True, look: bool = False) -> None:
         """mauer.motionguard check of the joint move q_cmd -> q_target (as URRobot._guarded; vias: the job's, tried
-        first); RobotError before the move if refused."""
+        first; look: a look move, blended); RobotError before the move if refused."""
         if self.guard is None or q_target is None:
             return
-        v = self.guard.plan(self.q_cmd, q_target, self._held_kind(), vias, column, vias_first)
+        v = self.guard.plan(self.q_cmd, q_target, self._held_kind(), vias, column, vias_first, look)
         if not v.ok:
             raise RobotError(f"{what}: refused by the motion guard: " + " | ".join(v.problems[-3:]), action=what)
         self.guard_vias += len(v.vias)
+        from .motionguard import move_time_s
+        u = self.world.cfg.get("ur", {})
+        if "v_joint" in u and "a_joint" in u:
+            self.motion_s[what.split(" ")[0]] += move_time_s([self.q_cmd, *v.vias, q_target], float(u["v_joint"]),
+                                                             float(u["a_joint"]), blended=bool(v.blend_mm))
 
     def _guard_above(self, T_base_frame, T_frame_tcp, hint, what: str, approach_mm: float | None = None) -> None:
         if self.guard is None:
@@ -470,8 +479,9 @@ class SimRobot:
 
     # ── Robot interface ──────────────────────────────────────────────────────
     def park(self):
+        look = self.at_look and self.holding is None
         self._call("park")
-        self._guard(self.park_q, "park")
+        self._guard(self.park_q, "park", look=look)
         self.q_cmd = self.park_q.copy()
         self.q = self.park_q.copy()
         self.T_bf = ur5_fk(self.q)
@@ -485,13 +495,14 @@ class SimRobot:
                                    np.asarray(look.qnear_rad if look.qnear_rad is not None else self.q_cmd, float)))
             if q_look is None:
                 raise RobotError(f"look {look.name}: no IK solution", action="goto_look")
-            self._guard(q_look, f"look {look.name}", vias=getattr(look, "via_q_rad", None) or (), vias_first=False)
+            self._guard(q_look, f"look {look.name}", vias=getattr(look, "via_q_rad", None) or (), look=True)
             self.q_cmd = q_look
         if look.q_rad is not None:
             self.T_bf = ur5_fk(look.q_rad) @ self._noise()
             self.q, self.parked = np.asarray(look.q_rad, float), False
         else:
             self._move_flange(look.T_base_flange, f"look {look.name}")
+        self.at_look = True
 
     def shot(self, camera):
         self.world.n_shots += 1

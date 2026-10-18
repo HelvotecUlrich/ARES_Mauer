@@ -147,8 +147,8 @@ def _ur_robot(cfg, job):
     c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"], c["half_brick"]["mass_kg"] = 1.5, 3.0, 1.5
     guard = MotionGuard(c, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
     cols = []
-    guard.plan = lambda q_from, q_to, holding, vias=(), column=None: (
-        cols.append(column) or types.SimpleNamespace(ok=True, vias=[], problems=[]))
+    guard.plan = lambda q_from, q_to, holding, vias=(), column=None, *a, **k: (
+        cols.append(column) or types.SimpleNamespace(ok=True, vias=[], problems=[], blend_mm=[]))
     link = _Link(job.park_q_rad)
     return URRobot(link, c, job, guard=guard), link, cols, c
 

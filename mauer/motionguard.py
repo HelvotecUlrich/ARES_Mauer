@@ -31,6 +31,17 @@ shortcut; then a seeded joint-space RRT-Connect (RRT_*) with shortcut. park_last
 through the park pose moved behind the others. The transfer height carries a stone with its
 pins LIFT_MARGIN_MM over a full magazine (as robodk/simulate.py safe_z(full)).
 
+Look moves (plan look=True, 2026-10-18, Samuel: "zu den Codes und weg von den Codes ... am besten nach oben wegfahren,
+sinnvolle und effiziente Bewegungen"; run 2026-10-16_182116: 577 of 847 s were look and park moves, the move between
+two looks swung low over the magazine when it was free and otherwise took a stop-and-go detour of up to 6 vias): park
+-> look, look -> look and look -> park leave a look straight up (ARC_STEP_MM steps) to LOOK_RISE_MM over the higher
+look, swing over (a waypoint every LOOK_ARC_STEP_DEG of base turn, the TCP height interpolated, pulled LOOK_PULL_MM
+towards the UR base axis mid-swing to keep clear of a high wall or station stacks) and come straight down onto the
+next look; the free candidate with the least joint travel wins (the job's vias first, a re-aimed retry of the same look
+directly). Its vias are blended (URScript movej r = blend_radii, BLEND_MM): the arm stops only at the looks (image) and
+at the park pose. The blended corners are checked too (blend_curves). Without a free candidate: the high arc, then the
+detours above - blended where their corners are free, else stopping at every via as before.
+
 Units mm, rad. Frames: docs/ARCHITECTURE.md (UR base frame for joints and poses).
 """
 from __future__ import annotations
@@ -63,6 +74,18 @@ MEMO_N = 16                       # both ends are this close per joint (the same
 RRT_ITER = 1000                   # RRT-Connect fallback (robodk/motion.Planner.rrt): iterations,
 RRT_STEP_DEG = 15.0               # largest joint step of an extension,
 RRT_MARGIN_DEG = (120.0, 60.0, 60.0, 120.0, 60.0, 120.0)   # sampling box around start / goal per joint
+LOOK_RISE_MM = (150.0, 250.0, 350.0, 450.0, 550.0)   # look moves: TCP this far over the higher look in the swing
+LOOK_PULL_MM = (0.0, 150.0, 300.0)            # ... pulled this far towards the UR base axis mid-swing
+LOOK_SLANT = (0.0, 0.5, 1.0)      # ... leaving / reaching a look: straight up, or also this many mm towards the UR base
+                                  # axis per mm of rise (27 / 45 deg: a code at the foot of a high wall or stack)
+LOOK_ARC_STEP_DEG = 30.0          # ... one swing waypoint per this much base-joint turn
+LOOK_R_MIN_MM = 250.0             # ... the TCP of a swing waypoint at least this far from the UR base axis
+LOOK_DIRECT_MM = 150.0            # look -> look with the TCPs closer than this (a re-aimed retry): direct move first
+BLEND_MM = 100.0                  # ASSUMPTION: blend radius of the vias of a look move (URScript movej r) ...
+BLEND_FRAC = 0.45                 # ... at most this fraction of the TCP distance to either neighbour: two blends never
+                                  # overlap (the UR skips a waypoint whose blend overlaps the next one)
+BLEND_SAMPLES = 40                # search of the point where the TCP enters a blend sphere along a joint move
+PARK_TOL_RAD = 0.01               # joints this close to the park pose are at the park pose (backends.URRobot park_tol_rad)
 
 
 @dataclass
@@ -105,6 +128,7 @@ class Verdict:
     ok: bool
     vias: list = field(default_factory=list)           # joint vias before the target (rad)
     problems: list = field(default_factory=list)       # why the direct move (and every detour) was refused
+    blend_mm: list = field(default_factory=list)       # look moves: blend radius per via (URScript movej r), else []
 
 
 def _coarse_to_fine(n: int) -> list[int]:
@@ -125,6 +149,51 @@ def travel_deg(qs: Sequence[Sequence[float]]) -> float:
     that long (the joints move together, the largest one sets the time)."""
     return float(sum(np.degrees(np.max(np.abs(np.asarray(b, float) - np.asarray(a, float))))
                      for a, b in zip(qs, qs[1:])))
+
+
+def blend_radii(qs: Sequence[Sequence[float]], T_flange_tcp: np.ndarray) -> list[float]:
+    """Blend radius [mm] of every via qs[1:-1] of a look move: BLEND_MM, at most BLEND_FRAC of the TCP distance to
+    either neighbour (the start and the target are exact stops, radius 0)."""
+    P = [(ur5_fk(np.asarray(q, float)) @ np.asarray(T_flange_tcp, float))[:3, 3] for q in qs]
+    return [min(BLEND_MM, BLEND_FRAC * float(np.linalg.norm(P[i] - P[i - 1])),
+                BLEND_FRAC * float(np.linalg.norm(P[i + 1] - P[i]))) for i in range(1, len(qs) - 1)]
+
+
+def blend_curves(qs: Sequence[Sequence[float]], radii: Sequence[float], T_flange_tcp: np.ndarray
+                 ) -> list[list[np.ndarray]]:
+    """The blended corners of the joint path qs (radius radii[i - 1] at via qs[i]): per via with a radius >= 1 mm the
+    quadratic Bezier from where the TCP enters the blend sphere on the incoming move to where it leaves it on the
+    outgoing one, the via as control point, sampled at quarters (5 joint vectors) - the UR's blend lies in that
+    corner. Checked like moves (MotionGuard._blend_problems, robodk/simulate.py)."""
+    T_ft = np.asarray(T_flange_tcp, float)
+
+    def tcp(q):
+        return (ur5_fk(q) @ T_ft)[:3, 3]
+
+    def enter(q_far, q_via, r):
+        p = tcp(q_via)
+        for i in range(BLEND_SAMPLES + 1):
+            q = q_far + (q_via - q_far) * (i / BLEND_SAMPLES)
+            if float(np.linalg.norm(tcp(q) - p)) <= r:
+                return q
+        return q_via
+    qs = [np.asarray(q, float) for q in qs]
+    out = []
+    for i, r in enumerate(radii, 1):
+        if r >= 1.0:
+            qa, qb = enter(qs[i - 1], qs[i], r), enter(qs[i + 1], qs[i], r)
+            out.append([(1 - t) ** 2 * qa + 2 * t * (1 - t) * qs[i] + t * t * qb for t in (0.0, 0.25, 0.5, 0.75, 1.0)])
+    return out
+
+
+def move_time_s(qs: Sequence[Sequence[float]], v: float, a: float, blended: bool = False) -> float:
+    """Rough duration [s] of the joint path qs at joint speed v [rad/s] and acceleration a [rad/s^2]: every movej one
+    trapezoid of its largest joint change (it stops at every via), blended one trapezoid over their sum (a lower bound:
+    a sharp blend slows down)."""
+    def trapezoid(d: float) -> float:
+        return d / v + v / a if d > v * v / a else 2.0 * math.sqrt(max(d, 0.0) / a)
+    ds = [float(np.max(np.abs(np.asarray(b, float) - np.asarray(q, float)))) for q, b in zip(qs, qs[1:])]
+    return trapezoid(sum(ds)) if blended else float(sum(trapezoid(d) for d in ds))
 
 
 class MotionGuard:
@@ -342,7 +411,7 @@ class MotionGuard:
 
     def plan(self, q_from: Sequence[float], q_to: Sequence[float], holding: str | None = None,
              vias: Sequence[Sequence[float]] = (), column: np.ndarray | None = None,
-             vias_first: bool = True) -> Verdict:
+             vias_first: bool = True, look: bool = False) -> Verdict:
         """Joint path q_from -> (vias) -> q_to: the given vias if that path is free, else the first free detour
         (module docstring). Verdict.ok False -> refuse the move. column = target TCP pose (4 x 4, base frame) of a
         pick / place: while the TCP is in its descent column (_in_column), gripper, jaws and held stone (GRIPPER_PARTS) may
@@ -350,12 +419,116 @@ class MotionGuard:
         stack 5 mm away, as in the descent that follows (robodk/motion.py: the last 60 mm untested, above that
         RoboDK's own clearance 0). Camera, adapter and arm links keep CLEARANCE_MM. vias_first False (the offline
         look vias, tools/make_job.py plan_look_vias - planned with this model for the worst case): the direct move
-        first when it is free, then the vias."""
+        first when it is free, then the vias. look (a move to a look pose, or from one to the park pose): the up -
+        over - down candidates first (look_candidates, the job's vias before them), blended (Verdict.blend_mm); if
+        none is free, the high arc and the detours (blended where their corners are free)."""
         self._column = None if column is None else np.asarray(column, float)
         try:
-            return self._plan(q_from, q_to, holding, vias, vias_first)
+            return self._plan(q_from, q_to, holding, vias, vias_first, look)
         finally:
             self._column = None
+
+    # ── look moves ───────────────────────────────────────────────────────────
+    def _tcp(self, q: Sequence[float]) -> np.ndarray:
+        return ur5_fk(np.asarray(q, float)) @ self.T_flange_tcp
+
+    def _lift_chain(self, q: Sequence[float], h: float, slant: float = 0.0) -> list[np.ndarray] | None:
+        """Joints with the TCP lifted by ARC_STEP_MM, 2 ARC_STEP_MM, ... and finally h mm (same orientation; one short
+        joint move each stays close to the line) - vertically, or with slant mm towards the UR base axis per mm of
+        rise; [] for h <= 0, None if a step has no IK."""
+        if h <= 1e-6:
+            return []
+        q = np.asarray(q, float)
+        if slant <= 0.0:
+            out = [self.lift(q, float(d)) for d in [*np.arange(ARC_STEP_MM, h - 1e-6, ARC_STEP_MM), h]]
+            return None if any(v is None for v in out) else out
+        T = self._tcp(q)
+        r = float(np.hypot(T[0, 3], T[1, 3]))
+        u = -T[:2, 3] / max(r, 1e-9)                          # horizontal unit vector towards the UR base axis
+        out, prev = [], q
+        for d in [*np.arange(ARC_STEP_MM, h - 1e-6, ARC_STEP_MM), h]:
+            s_ = min(slant * float(d), max(r - LOOK_R_MIN_MM, 0.0))
+            qn = ik_near(g.transl(u[0] * s_, u[1] * s_, float(d)) @ T @ g.inv(self.T_flange_tcp), prev)
+            if qn is None:
+                return None
+            out.append(qn)
+            prev = qn
+        return out
+
+    def _swing(self, qa: Sequence[float], qb: Sequence[float], pull: float) -> list[np.ndarray] | None:
+        """Waypoints of the swing qa -> qb (the tops of a look move): none for pull 0 (one joint move - it bows
+        towards the UR base by itself), else one per LOOK_ARC_STEP_DEG of base-joint turn (at least one), each at the
+        pose of the linear joint interpolation with the TCP height interpolated linearly and the TCP pulled
+        pull * sin(pi t) towards the UR base axis (not under LOOK_R_MIN_MM from it); IK near the interpolation. None
+        if a waypoint has no IK."""
+        if pull <= 0.0:
+            return []
+        qa, qb = np.asarray(qa, float), np.asarray(qb, float)
+        n = max(int(math.ceil(math.degrees(abs(float(qb[0] - qa[0]))) / LOOK_ARC_STEP_DEG - 1e-9)) - 1, 1)
+        za, zb = float(self._tcp(qa)[2, 3]), float(self._tcp(qb)[2, 3])
+        out = []
+        for i in range(1, n + 1):
+            t = i / (n + 1)
+            ql = qa + (qb - qa) * t
+            T = self._tcp(ql)
+            r0 = float(np.hypot(T[0, 3], T[1, 3]))
+            r = max(r0 - pull * math.sin(math.pi * t), min(LOOK_R_MIN_MM, r0))
+            T[:2, 3] *= r / max(r0, 1e-9)
+            T[2, 3] = (1.0 - t) * za + t * zb
+            q = ik_near(T @ g.inv(self.T_flange_tcp), ql)
+            if q is None:
+                return None
+            out.append(q)
+        return out
+
+    def look_candidates(self, q_from: Sequence[float], q_to: Sequence[float]) -> list[tuple[list[np.ndarray], str]]:
+        """[(vias, label)] of a look move (module docstring), least joint travel first: from a look (any pose but the
+        park pose) straight up, the swing, straight down onto a look - for every LOOK_RISE_MM x LOOK_PULL_MM that has
+        IK. A look -> look move of under LOOK_DIRECT_MM (a re-aimed retry) gets the direct move first."""
+        q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
+        Tf, Tt = self._tcp(q_from), self._tcp(q_to)
+        low_f = not np.allclose(q_from, self.park_q, atol=PARK_TOL_RAD)
+        low_t = not np.allclose(q_to, self.park_q, atol=PARK_TOL_RAD)
+        first = ([([], "direct (re-aimed look)")] if low_f and low_t
+                 and float(np.hypot(*(Tt[:2, 3] - Tf[:2, 3]))) < LOOK_DIRECT_MM else [])
+        zs = [float(T[2, 3]) for T, low in ((Tf, low_f), (Tt, low_t)) if low]
+        cands: list[tuple[list[np.ndarray], str]] = []
+        for rise in (LOOK_RISE_MM if zs else ()):
+            top = max(zs) + rise
+            for su in (LOOK_SLANT if low_f else (0.0,)):
+                up = self._lift_chain(q_from, top - float(Tf[2, 3]), su) if low_f else []
+                for sd in (LOOK_SLANT if low_t else (0.0,)):
+                    down = self._lift_chain(q_to, top - float(Tt[2, 3]), sd) if low_t else []
+                    if up is None or down is None:
+                        continue
+                    for pull in LOOK_PULL_MM:
+                        sw = self._swing(up[-1] if up else q_from, down[-1] if down else q_to, pull)
+                        if sw is not None:
+                            cands.append(([*up, *sw, *down[::-1]],
+                                          f"rise {rise:g} mm, slant {su:g}/{sd:g}, pull {pull:g} mm"))
+        cands.sort(key=lambda c: travel_deg([q_from, *c[0], q_to]))
+        return first + cands
+
+    def _blend_problems(self, qs: Sequence[Sequence[float]], radii: Sequence[float], holding: str | None) -> list[str]:
+        """The blended corners of a look move (blend_curves) must be free too. [] = free."""
+        for i, curve in enumerate(blend_curves(qs, radii, self.T_flange_tcp), 1):
+            p = self.path_problems(curve, holding, from_start=False)
+            if p:
+                return [f"blend {i}: {p[0]}"]
+        return []
+
+    def _plan_look(self, q_from: np.ndarray, q_to: np.ndarray, holding: str | None,
+                   vias: Sequence[Sequence[float]], problems: list[str]) -> Verdict | None:
+        """The first free look candidate (the job's vias first), blended; None if none is free (problems appended)."""
+        cands = ([([np.asarray(v, float) for v in vias], "the job's vias")] if len(vias) else [])
+        for c, label in cands + self.look_candidates(q_from, q_to):
+            path = [q_from, *c, q_to]
+            radii = blend_radii(path, self.T_flange_tcp)
+            p = self.path_problems(path, holding) or self._blend_problems(path, radii, holding)
+            if not p:
+                return Verdict(True, c, problems, radii)
+            problems.append(f"look move ({label}): {p[0]}")
+        return None
 
     def candidates(self, q_from, q_to, vias: Sequence[Sequence[float]] = (),
                    vias_first: bool = True) -> list[list[np.ndarray]]:
@@ -400,27 +573,57 @@ class MotionGuard:
             cands = [job] + rest if vias_first else [[]] + [job] + [c for c in rest if c]
         return cands
 
-    def _plan(self, q_from, q_to, holding, vias, vias_first: bool = True) -> Verdict:
+    def _plan(self, q_from, q_to, holding, vias, vias_first: bool = True, look: bool = False) -> Verdict:
         q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
         end = self.state_problems(q_to, holding)
         if end:
             return Verdict(False, [], ["target: " + "; ".join(end)])
         problems: list[str] = []
-        for c in self.candidates(q_from, q_to, vias, vias_first):
-            p = self.path_problems([q_from, *c, q_to], holding)
-            if not p:
-                return Verdict(True, c, problems)
-            problems.append(f"{len(c)} via(s): {p[0]}")
-        tol = math.radians(MEMO_TOL_DEG)
-        for qa, qb, mv in reversed(self._memo):
-            if (np.max(np.abs(qa - q_from)) <= tol and np.max(np.abs(qb - q_to)) <= tol
-                    and not self.path_problems([q_from, *mv, q_to], holding)):
-                return Verdict(True, mv, problems + ["a detour found before"])
-        arc = self.high_arc(q_from, q_to, holding)
-        if arc is not None:
-            self._remember(q_from, q_to, arc)
-            return Verdict(True, arc, problems)
-        problems.append(f"high arc (rise {ARC_RISE_MM[0]:g}..{ARC_RISE_MM[-1]:g} mm): no free one")
+        if not look:
+            return self._detour(q_from, q_to, holding, vias, vias_first, problems)
+        v = self._plan_look(q_from, q_to, holding, vias, problems)
+        if v is not None:
+            return v
+        v = self._detour(q_from, q_to, holding, vias, vias_first, problems, arc_first=True)
+        if v.ok:                                     # a detour of a look move: blended where its corners are free
+            path = [q_from, *v.vias, q_to]
+            radii = blend_radii(path, self.T_flange_tcp)
+            if not self._blend_problems(path, radii, holding):
+                v.blend_mm = radii
+        return v
+
+    def _detour(self, q_from, q_to, holding, vias, vias_first: bool, problems: list[str],
+                arc_first: bool = False) -> Verdict:
+        """The fixed detours (candidates), a detour found before (memo) and the high arc - in this order, or memo and
+        high arc first (arc_first: a look move should leave upwards rather than swing low) - then the RRT."""
+        def fixed() -> Verdict | None:
+            for c in self.candidates(q_from, q_to, vias, vias_first):
+                p = self.path_problems([q_from, *c, q_to], holding)
+                if not p:
+                    return Verdict(True, c, problems)
+                problems.append(f"{len(c)} via(s): {p[0]}")
+            return None
+
+        def memo() -> Verdict | None:
+            tol = math.radians(MEMO_TOL_DEG)
+            for qa, qb, mv in reversed(self._memo):
+                if (np.max(np.abs(qa - q_from)) <= tol and np.max(np.abs(qb - q_to)) <= tol
+                        and not self.path_problems([q_from, *mv, q_to], holding)):
+                    return Verdict(True, mv, problems + ["a detour found before"])
+            return None
+
+        def arc() -> Verdict | None:
+            found = self.high_arc(q_from, q_to, holding, keep_ends=arc_first)
+            if found is not None:
+                self._remember(q_from, q_to, found)
+                return Verdict(True, found, problems)
+            problems.append(f"high arc (rise {ARC_RISE_MM[0]:g}..{ARC_RISE_MM[-1]:g} mm): no free one")
+            return None
+
+        for step in ((memo, arc, fixed) if arc_first else (fixed, memo, arc)):
+            v = step()
+            if v is not None:
+                return v
         path = self.rrt(q_from, q_to, holding)
         if path is not None:
             self._remember(q_from, q_to, path)
@@ -432,10 +635,11 @@ class MotionGuard:
         self._memo = (self._memo + [(np.asarray(q_from, float).copy(), np.asarray(q_to, float).copy(),
                                      [np.asarray(v, float).copy() for v in vias])])[-MEMO_N:]
 
-    def high_arc(self, q_from, q_to, holding: str | None = None) -> list[np.ndarray] | None:
+    def high_arc(self, q_from, q_to, holding: str | None = None, keep_ends: bool = False) -> list[np.ndarray] | None:
         """Vias straight up from q_from and straight down onto q_to (TCP lifted in ARC_STEP_MM steps, same orientation)
         to a common height ARC_RISE_MM over the higher end - the lowest rise whose path is free - shortcut (_shortcut);
-        None when no rise is free or reachable."""
+        None when no rise is free or reachable. keep_ends (look moves): the first ARC_STEP_MM up from q_from and the
+        last down onto q_to stay vertical (only what lies between is shortcut), except at the park pose."""
         q_from, q_to = np.asarray(q_from, float), np.asarray(q_to, float)
         zf = float((ur5_fk(q_from) @ self.T_flange_tcp)[2, 3])
         zt = float((ur5_fk(q_to) @ self.T_flange_tcp)[2, 3])
@@ -450,7 +654,12 @@ class MotionGuard:
                 return None                                      # the arm cannot reach that high: higher won't either
             path = [q_from, *legs[0], *legs[1][::-1], q_to]
             if not self.path_problems(path, holding):
-                return self._shortcut(path, holding)[1:-1]
+                if not keep_ends:
+                    return self._shortcut(path, holding)[1:-1]
+                a = 0 if np.allclose(q_from, self.park_q, atol=PARK_TOL_RAD) else 1      # first kept via (lift 1)
+                b = len(path) - (1 if np.allclose(q_to, self.park_q, atol=PARK_TOL_RAD) else 2)   # last (descent 1)
+                mid = self._shortcut(path[a:b + 1], holding, from_start=a == 0)
+                return mid[(1 if a == 0 else 0):(len(mid) - 1 if b == len(path) - 1 else len(mid))]
         return None
 
     def rrt(self, q_from, q_to, holding: str | None = None, iters: int | None = None, seed: int = 1
@@ -498,11 +707,11 @@ class MotionGuard:
                     return self._shortcut(full, holding)[1:-1]
         return None
 
-    def _shortcut(self, path: list, holding: str | None) -> list:
+    def _shortcut(self, path: list, holding: str | None, from_start: bool = True) -> list:
         out, i = [path[0]], 0
         while i < len(path) - 1:
             j = len(path) - 1
-            while j > i + 1 and self.segment_problems(path[i], path[j], holding, from_start=(i == 0)):
+            while j > i + 1 and self.segment_problems(path[i], path[j], holding, from_start=from_start and i == 0):
                 j -= 1
             out.append(path[j])
             i = j

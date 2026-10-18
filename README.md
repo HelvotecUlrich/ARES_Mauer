@@ -171,6 +171,11 @@ Plan and state of the work: **`docs/PLAN_2026-10-07_realtest.md`**.
   (replaced by an elbow-up compact pose, TCP 144 mm ahead of the ARES front at 919 mm - **verify slowly on the
   robot**). Guarded world simulation: main C 76/76, c_acb 74/74. A real start at stop k > 0 needs `--resume-log` (or
   `--stop-untouched`) so that the guard knows the wall that stands.
+- **Look moves** (2026-10-18, `MotionGuard.plan(look=True)`): park → code → code → park leave a code straight up,
+  swing over (pulled towards the UR base if the wall or the station stacks are in the way) and come straight down
+  onto the next code; the vias are blended (`movej r`), so the arm stops only for the image and at the park pose.
+  Planned offline into the job (`make_job.look_moves`) and checked in RoboDK by `robodk/simulate.py` (stamp
+  condition). Analysis of run 2026-10-16_182116 and the numbers: `docs/ANALYSE_2026-10-18_DE.md`.
 - **RoboDK-verified jobs**: a complete clean `robodk/simulate.py` run writes `data/jobs/nominal_C[_variant]_robodk.json`
   (meta `reach_check` "robodk"), which `preflight_real` requires for the real robot.
 - **Time-lapse**: `py.exe robodk/simulate.py --animate --video results/l_wall_sim.mp4` (`robodk/timelapse.py`).

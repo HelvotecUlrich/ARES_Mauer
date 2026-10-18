@@ -237,6 +237,8 @@ class URRobot:
         self.guard = guard
         self.holding: str | None = None          # kind of the stone the jaws may hold (guard), None = empty: set
         # when a pick starts, cleared only by a successful place - the operator confirms empty jaws at start-up
+        self.at_look = False                     # the last block was a look that ended ok: the park leaves upwards
+        # (motionguard look move, Samuel 2026-10-18)
 
     def set_speed_factor(self, f: float) -> None:
         """Every following move at f times the [ur] speeds and accelerations (0 < f <= 1; the HMI's REAL speed, as
@@ -265,13 +267,17 @@ class URRobot:
         kg, cog = self.payloads[self.held_kind] if holding else (self.tool_kg, self.tool_cog)
         return self.script.preamble(self.T_flange_tcp, kg, cog)
 
-    def _vias(self, vias) -> list[str]:
-        return [self.script.movej_q(q, self.speeds.a_joint, self.speeds.v_joint) for q in (vias or [])]
+    def _vias(self, vias, blend_mm=()) -> list[str]:
+        r = list(blend_mm) or [0.0] * len(vias or [])
+        return [self.script.movej_q(q, self.speeds.a_joint, self.speeds.v_joint, r_mm)
+                for q, r_mm in zip(vias or [], r)]
 
-    def _guarded(self, q_target, name: str, vias=None, column=None, vias_first: bool = True) -> list[str]:
+    def _guarded(self, q_target, name: str, vias=None, column=None, vias_first: bool = True,
+                 look: bool = False) -> list[str]:
         """movej lines of the checked path actual joints -> (vias) -> q_target (mauer.motionguard; without a guard:
-        the given vias unchecked - sim only). column: target TCP (x, y) of a place (MotionGuard.plan). RobotError if
-        the guard finds no clear path."""
+        the given vias unchecked - sim only). column: target TCP (x, y) of a place (MotionGuard.plan). look: a look
+        move (MotionGuard.plan look - up, over, down; its vias blended). RobotError if the guard finds no clear
+        path."""
         if self.guard is None:
             return self._vias(vias)
         st = self.link.state()                       # plan from a fresh sample of an arm at rest (review: a stale
@@ -280,11 +286,11 @@ class URRobot:
             raise RobotError(f"{name}: no fresh RTDE sample of the arm at rest - not planning from stale joints",
                              action=name)
         v = self.guard.plan(np.asarray(st.actual_q, float), q_target, self.holding, vias or (), column,
-                            vias_first)
+                            vias_first, look)
         if not v.ok:
             raise RobotError(f"{name}: refused by the motion guard (no clear path in the capsule model): "
                              + " | ".join(v.problems[-3:]), action=name)
-        return self._vias(v.vias)
+        return self._vias(v.vias, v.blend_mm)
 
     def _q_above(self, T_base_frame: np.ndarray, T_frame_tcp: np.ndarray, q_hint, name: str,
                  approach_mm: float | None = None) -> np.ndarray:
@@ -299,36 +305,44 @@ class URRobot:
         return q
 
     def _run(self, body: str, name: str, settle_s: float = 0.0):
+        self.at_look = False
         res = self.link.run_block(body, name=name, timeout_s=self.timeout_s, settle_s=settle_s)
         if not res.ok:
             raise RobotError(f"{name}: {res.error}", res, name)
+        self.at_look = name == "mauer_look"
         return res
 
     # ── Robot interface ──────────────────────────────────────────────────────
     def park(self):
-        body = "\n".join([self._preamble(self.holding is not None), *self._guarded(self.park_q, "mauer_park"),
+        """Joint move to the park pose; from a look (at_look) straight up first (MotionGuard look move, blended)."""
+        body = "\n".join([self._preamble(self.holding is not None),
+                          *self._guarded(self.park_q, "mauer_park", look=self.at_look and self.holding is None),
                           self.script.movej_q(self.park_q, self.speeds.a_joint, self.speeds.v_joint)])
         return self._run(body, "mauer_park")
 
     def goto_look(self, look):
+        """To the look pose: MotionGuard look move (up from a look, over, straight down; the job's offline vias tried
+        first), its vias blended - the arm stops at the look only. The controller's IK check of the look pose stands
+        before the first move of the block."""
         lines = [self._preamble(False)]
         vias = getattr(look, "via_q_rad", None) or None     # planned offline (job), checked first by the guard
         if look.q_rad is not None:
-            lines += self._guarded(np.asarray(look.q_rad, float), "mauer_look", vias, vias_first=False)
+            lines += self._guarded(np.asarray(look.q_rad, float), "mauer_look", vias, look=True)
             lines.append(self.script.movej_q(look.q_rad, self.speeds.a_joint, self.speeds.v_joint))
         else:
             T = np.asarray(look.T_base_flange, float)
             q = self._qnear(look.qnear_rad, T @ self.T_flange_tcp)
+            moves: list[str] = []
             if self.guard is not None:
                 from .simworld import ik_near
                 q_look = ik_near(T, np.asarray(q, float))
                 if q_look is None:
                     raise RobotError("mauer_look: no IK solution for the look pose", action="mauer_look")
-                lines += self._guarded(q_look, "mauer_look", vias, vias_first=False)
+                moves = self._guarded(q_look, "mauer_look", vias, look=True)
                 q = q_look                           # the script's IK near the checked joints
             lines.append(self.script.look_pose(T, q, self.speeds.a_joint, self.speeds.v_joint, target="flange",
                                                T_flange_tcp=self.T_flange_tcp, reg_error=self.reg_error,
-                                               ik_check=self.ik_check))
+                                               ik_check=self.ik_check, vias=moves))
         return self._run("\n".join(lines), "mauer_look")
 
     def shot(self, camera):

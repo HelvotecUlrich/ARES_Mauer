@@ -688,52 +688,79 @@ def _common_meta(ctx: _Ctx, key: str, extra: dict) -> dict:
             **extra, "warnings": ctx.warnings}
 
 
-def plan_look_vias(cfg: dict, job: mjob.Job) -> list[str]:
-    """Offline vias of every look move (Samuel 2026-10-16: "wieso muss da noch gerechnet werden, der Weg ist doch
-    schon offline klar" - the move between the two station looks waited 9..15 s for the motion guard's detour search
-    at every station trip): the motion guard (mauer.motionguard, the check of the real robot) plans park -> first look
-    and look -> next look of every stop (full magazine, the wall built by the end of the stop, nominal stop pose) and of
-    the station (nominal dock, every station slot holding a stone). A move that needs a detour keeps its vias in the
-    job (Look.via_from / via_q_rad, set in place); at run time the guard checks them first (mauer.sequencer: only when
-    the arm stands at via_from) and searches anew only if they are blocked there. Returns warnings."""
-    from mauer.motionguard import GuardWorld, MotionGuard
+def look_worlds(cfg: dict, job: mjob.Job) -> list[tuple[str, list, object]]:
+    """[(where, looks, GuardWorld)] of every stop and of the station, the worst case of their look moves: full
+    magazine, the wall built by the end of the stop at the nominal stop pose; at the nominal dock every station slot
+    holding a stone."""
+    from mauer.motionguard import GuardWorld
     from mauer.reference import T_base_parent_from
-    mg = MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
-    park = np.asarray(job.park_q_rad, float)
     mag = list(job.magazine.slots)
     st = job.station
     dock_in_station = Pose2D.from_T(g.inv(np.asarray(st.T_wall_station, float)) @ st.dock_in_wall.T)
-    T_bs = T_base_parent_from(dock_in_station, job.T_ares_base)
-    sets = []
-    built: list = []
+    sets, built = [], []
     for stop in job.stops:
         built += list(stop.stones)
         sets.append((f"stop {stop.index}", stop.looks,
                      GuardWorld(magazine=mag, wall_stones=list(built), legs=list(job.legs),
                                 T_base_wall=T_base_parent_from(stop.ares, job.T_ares_base))))
     sets.append(("station", st.looks, GuardWorld(magazine=mag, legs=list(job.legs), station=list(st.slots),
-                                                 T_base_station=T_bs)))
-    warnings = []
-    for where, looks, world in sets:
+                                                 T_base_station=T_base_parent_from(dock_in_station, job.T_ares_base))))
+    return sets
+
+
+def look_moves(cfg: dict, job: mjob.Job, set_vias: bool = False) -> tuple[list[dict], list[str]]:
+    """The look moves of every stop and of the station as the motion guard plans them (MotionGuard.plan look=True,
+    Samuel 2026-10-18: up from a code, over, straight down onto the next; blended) in their worst-case world
+    (look_worlds): park -> first look -> next look ... -> park. ([{"where", "from", "to", "path" (joints rad, ends
+    included), "blend_mm", "time_s" (motionguard.move_time_s at [ur] v_joint / a_joint)}], warnings). set_vias: the
+    moves into a look become its via_from / via_q_rad (in place)."""
+    from mauer.motionguard import MotionGuard, move_time_s
+    mg = MotionGuard(cfg, job.T_ares_base, job.park_q_rad, job.T_flange_tcp, approach_mm=job.approach_mm)
+    park = np.asarray(job.park_q_rad, float)
+    v_j, a_j = float(cfg["ur"]["v_joint"]), float(cfg["ur"]["a_joint"])
+    moves, warnings = [], []
+    for where, looks, world in look_worlds(cfg, job):
         mg.set_world(world)
         prev, prev_name = park, "park"
-        for lk in looks:
-            q = (np.asarray(lk.q_rad, float) if lk.q_rad is not None
-                 else ik_near(np.asarray(lk.T_base_flange, float), np.asarray(lk.qnear_rad if lk.qnear_rad is not None
-                                                                              else park, float)))
-            lk.via_from, lk.via_q_rad = None, []
-            if q is None:
-                warnings.append(f"{where}: look {lk.name} has no IK solution - no offline vias")
-                prev, prev_name = park, "park"
+        for lk in [*looks, None]:
+            if lk is None:
+                q, name = park, "park"
+            else:
+                q = (np.asarray(lk.q_rad, float) if lk.q_rad is not None
+                     else ik_near(np.asarray(lk.T_base_flange, float),
+                                  np.asarray(lk.qnear_rad if lk.qnear_rad is not None else park, float)))
+                name = lk.name
+                if set_vias:
+                    lk.via_from, lk.via_q_rad = None, []
+                if q is None:
+                    warnings.append(f"{where}: look {lk.name} has no IK solution - no offline vias")
+                    prev, prev_name = park, "park"
+                    continue
+            if prev_name == "park" and name == "park":
                 continue
-            v = mg.plan(prev, q, None)
+            v = mg.plan(prev, q, None, look=True)
             if not v.ok:
-                warnings.append(f"{where}: no free path {prev_name} -> look {lk.name} in the guard model ("
+                warnings.append(f"{where}: no free path {prev_name} -> {name} in the guard model ("
                                 + " | ".join(v.problems[-2:]) + ") - the guard searches at run time")
-            elif v.vias:
-                lk.via_from, lk.via_q_rad = prev_name, [[float(x) for x in vq] for vq in v.vias]
-            prev, prev_name = q, lk.name
-    return warnings
+            else:
+                path = [prev, *v.vias, q]
+                moves.append({"where": where, "from": prev_name, "to": name, "path": [list(map(float, x)) for x in path],
+                              "blend_mm": [float(r) for r in v.blend_mm],
+                              "time_s": move_time_s(path, v_j, a_j, blended=bool(v.blend_mm))})
+                if set_vias and lk is not None and v.vias:
+                    lk.via_from, lk.via_q_rad = prev_name, [[float(x) for x in vq] for vq in v.vias]
+            prev, prev_name = q, name
+    return moves, warnings
+
+
+def plan_look_vias(cfg: dict, job: mjob.Job) -> list[str]:
+    """Offline vias of every look move (Samuel 2026-10-16: "wieso muss da noch gerechnet werden, der Weg ist doch
+    schon offline klar" - the move between the two station looks waited 9..15 s for the motion guard's detour search
+    at every station trip): look_moves (the motion guard's look moves - 2026-10-18 up, over, down, blended - in the
+    worst-case world of every stop and of the station). A move that needs vias keeps them in the job (Look.via_from /
+    via_q_rad, set in place); at run time the guard checks them first (mauer.sequencer: only when the arm stands at
+    via_from) and plans anew only if they are blocked there. Returns warnings."""
+    return look_moves(cfg, job, set_vias=True)[1]
 
 
 def _finish(ctx: _Ctx, stops, magazine, station, key, meta_extra, config_path, legs=None) -> mjob.Job:

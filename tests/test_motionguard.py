@@ -241,3 +241,136 @@ def test_the_shortest_free_detour_wins(cfg, job, monkeypatch):
     mg.park_last = True
     pk = [any(np.allclose(v, mg.park_q) for v in c) for c in mg.candidates(q_from, q_to)]
     assert pk == sorted(pk)                                                    # every park detour behind the others
+
+
+# ── look moves (2026-10-18) ──────────────────────────────────────────────────
+def _tcp_of(job, q):
+    from mauer.simworld import ur5_fk
+    return (ur5_fk(np.asarray(q, float)) @ np.asarray(job.T_flange_tcp))[:3, 3]
+
+
+def _blends_do_not_overlap(job, path, radii):
+    """Every blend sphere stays within its two moves and never reaches the neighbouring one (the UR would skip it)."""
+    P = [_tcp_of(job, q) for q in path]
+    r = [0.0, *radii, 0.0]
+    return all(r[i] + r[i + 1] < float(np.linalg.norm(P[i + 1] - P[i])) + 1e-9 for i in range(len(P) - 1))
+
+
+@pytest.fixture(scope="module")
+def look_moves(cfg, job):
+    moves, warnings = make_job.look_moves(cfg, job)
+    return moves, warnings
+
+
+def test_every_look_move_leaves_a_code_upwards_and_is_blended(cfg, job, look_moves):
+    """Samuel 2026-10-18 ("die Bewegungen zu den Codes und weg von den Codes ... am besten nach oben wegfahren, sodass
+    es sinnvolle und effiziente Bewegungen gibt"): every move of the job's measurements - park -> look -> look -> park
+    at every stop and at the station, in the worst-case world - is free, leaves a look upwards and comes down onto the
+    next one from above (the via next to a look >= 50 mm higher, straight above it or slanted towards the UR base by
+    at most motionguard.LOOK_SLANT - a code at the foot of the high wall), its vias are blended (the arm stops only at
+    the looks and the park pose) and no two blends overlap."""
+    from mauer.motionguard import LOOK_SLANT
+    moves, warnings = look_moves
+    n_looks = sum(len(s.looks) for s in job.stops) + len(job.station.looks)
+    assert warnings == [] and len(moves) == n_looks + len(job.stops) + 1          # into every look, + back to park
+    mg = _guard(cfg, job)
+    worlds = {w: world for w, _, world in make_job.look_worlds(cfg, job)}
+    for m in moves:
+        path = [np.asarray(q) for q in m["path"]]
+        mg.set_world(worlds[m["where"]])
+        assert mg.path_problems(path) == [], (m["where"], m["from"], m["to"])
+        assert len(m["blend_mm"]) == len(path) - 2 and all(r > 0.0 for r in m["blend_mm"]), m
+        assert _blends_do_not_overlap(job, path, m["blend_mm"])
+        for end, via, is_look in ((path[0], path[1], m["from"] != "park"), (path[-1], path[-2], m["to"] != "park")):
+            if is_look:
+                a, b = _tcp_of(job, end), _tcp_of(job, via)
+                assert b[2] > a[2] + 50.0, (m["where"], m["from"], m["to"])
+                assert float(np.hypot(*(b - a)[:2])) <= max(LOOK_SLANT) * (b[2] - a[2]) + 1.0, (m["from"], m["to"])
+
+
+def test_look_moves_are_faster_than_the_stop_and_go_detours(cfg, job, look_moves):
+    """Run 2026-10-16_182116: the look and park moves took 577 of the tour's 847 s; the two station looks were 19..22 s
+    apart (a 5-via detour that stops at every via). The blended look moves of the station take less than 2/3 of the
+    joint-move time the guard's detours (unblended, as before) take in the same world."""
+    from mauer.motionguard import move_time_s
+    moves, _ = look_moves
+    mg = _guard(cfg, job)
+    world = next(w for name, _, w in make_job.look_worlds(cfg, job) if name == "station")
+    mg.set_world(world)
+    v, a = float(cfg["ur"]["v_joint"]), float(cfg["ur"]["a_joint"])
+    new = old = 0.0
+    for m in (m for m in moves if m["where"] == "station"):
+        q0, q1 = np.asarray(m["path"][0]), np.asarray(m["path"][-1])
+        before = mg.plan(q0, q1, None, vias_first=False)
+        assert before.ok and before.blend_mm == []
+        old += move_time_s([q0, *before.vias, q1], v, a)
+        new += m["time_s"]
+    assert new < 2.0 / 3.0 * old, (new, old)
+
+
+def test_blend_radii_stay_inside_short_moves(cfg, job):
+    """A short move between two vias (a lift step) gets a small radius: BLEND_FRAC of it; the ends are exact."""
+    from mauer import motionguard as mgm
+    mg = _guard(cfg, job)
+    q0 = np.asarray(job.park_q_rad, float)
+    assert mgm.blend_radii([q0, q0, q0], job.T_flange_tcp) == [0.0]       # zero-length moves: no blend
+    lk = job.stops[0].looks[0]
+    q = ik_near(np.asarray(lk.T_base_flange), np.asarray(lk.qnear_rad))
+    up1, up2 = mg.lift(q, 40.0), mg.lift(q, 400.0)
+    r = mgm.blend_radii([q, up1, up2], job.T_flange_tcp)
+    assert r[0] == pytest.approx(mgm.BLEND_FRAC * 40.0, rel=1e-3)
+    r = mgm.blend_radii([q, up2, q], job.T_flange_tcp)
+    assert r[0] == pytest.approx(mgm.BLEND_MM)
+
+
+def test_ur_robot_sends_blended_look_moves_and_parks_upwards(cfg, job):
+    """URRobot: a look move's vias go out as movej with the guard's blend radius (r in m), after the controller's IK
+    check of the look pose and before the final move to it; the park after a look asks the guard for a look move (up
+    first), a park after anything else does not."""
+    import types
+    from mauer.backends import URRobot
+    c = copy.deepcopy(cfg)
+    c["ur"]["payload_tool_kg"], c["brick"]["mass_kg"], c["half_brick"]["mass_kg"] = 1.5, 3.0, 1.5
+    mg = _guard(c, job)
+    calls = []
+    q_via = np.radians([40.0, -80.0, 120.0, -130.0, -90.0, 110.0])
+
+    def plan(q_from, q_to, holding=None, vias=(), column=None, vias_first=True, look=False):
+        calls.append(look)
+        return types.SimpleNamespace(ok=True, vias=[q_via, q_via + 0.1] if look else [], problems=[],
+                                     blend_mm=[45.0, 22.5] if look else [])
+    mg.plan = plan
+
+    class _State:
+        actual_q = list(job.park_q_rad)
+        actual_qd = [0.0] * 6
+        program_running = False
+
+    class _Link:
+        reg_error = 26
+        blocks = []
+
+        def state(self):
+            return _State()
+
+        def state_age_s(self):
+            return 0.0
+
+        def run_block(self, body, name, timeout_s, settle_s=0.0):
+            self.blocks.append((name, body))
+            return types.SimpleNamespace(ok=True, error=None)
+
+    link = _Link()
+    rob = URRobot(link, c, job, guard=mg)
+    rob.goto_look(job.stops[0].looks[0])
+    name, body = link.blocks[-1]
+    lines = body.splitlines()
+    moves = [i for i, ln in enumerate(lines) if ln.startswith("movej(")]
+    guard_line = next(i for i, ln in enumerate(lines) if "get_inverse_kin" in ln and not ln.startswith("movej("))
+    assert name == "mauer_look" and guard_line < moves[0] and len(moves) == 3
+    assert lines[moves[0]].endswith(", r=0.045)") and lines[moves[1]].endswith(", r=0.0225)")
+    assert "get_inverse_kin(look" in lines[moves[2]] and ", r=" not in lines[moves[2]]
+    rob.park()
+    assert calls == [True, True] and ", r=" in link.blocks[-1][1]
+    rob.park()                                                   # from the park pose: no look move
+    assert calls[-1] is False

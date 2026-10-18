@@ -513,6 +513,8 @@ class LSim(Sim):
         self.stone_log: list = []
         self.route_log: list = []
         self.look_log: list = []
+        self.look_move_log: list = []       # the job's look moves (make_job.look_moves) checked in RoboDK
+        self.look_moves: list = []          # ... those moves (run_l sets them)
         self.notes: list = []
         self.cam = None
         self.grid = None
@@ -920,6 +922,7 @@ class LSim(Sim):
         self.caption(f"Fahrt {n}: Kamera misst die Tafeln der Abholstation")
         res = self.looks(k, f"station trip {n}", sorted(self.station_boards), planned, execute=True)
         trip["looks"] = {b: bool(r["ok"]) for b, r in res.items()}
+        self.check_look_moves(k, f"station trip {n}", [m for m in self.look_moves if m["where"] == "station"])
         if image is not None:
             trip["image"] = station_image(self, image, n)
         for i, (ssid, mid, kind) in enumerate(ev["pairs"], 1):
@@ -1164,6 +1167,35 @@ class LSim(Sim):
         self.look_log.append({"stop": k, "state": state, "planned": sorted(planned),
                               "res": {n: {kk: v for kk, v in r.items() if kk not in ("img", "dets", "path", "T_ac")}
                                       for n, r in out.items()}})
+        return out
+
+    def check_look_moves(self, k: int, state: str, moves: list) -> list:
+        """The job's look moves - make_job.look_moves: the motion guard's up - over - down moves park -> look -> look
+        -> park the real robot makes (2026-10-18), its blended corners included (motionguard.blend_curves) - with
+        RoboDK's collision check (motion.Planner.free_j: MoveJ_Test every STEP_DEG + the tool-vs-arm model) in the
+        current state; the arm stays where it is. Appended to look_move_log (robodk_stamp: every one must be free)."""
+        from mauer.motionguard import blend_curves
+        P, out = self.planner, []
+        T_ft = self.np.asarray(self.job.T_flange_tcp, float)
+        with P._planning():
+            for m in moves:
+                qs = [self.np.asarray(q, float) for q in m["path"]]
+                segs = [(a, b, "move") for a, b in zip(qs, qs[1:])]
+                for i, c in enumerate(blend_curves(qs, m["blend_mm"], T_ft), 1):
+                    segs += [(a, b, f"blend {i}") for a, b in zip(c, c[1:])]
+                why = ""
+                for i, (a, b, kind) in enumerate(segs):
+                    ja, jb = [math.degrees(x) for x in a], [math.degrees(x) for x in b]
+                    if not P.free_j(ja, jb):
+                        pairs = sorted({f"{p_[0].Name()}/{p_[2].Name()}" for p_ in self.RDK.CollisionPairs()})
+                        why = f"{kind} segment {i}: {', '.join(pairs) or P.self_why(jb) or 'tool-vs-arm model'}"
+                        break
+                rec = {"stop": k, "state": state, "where": m["where"], "from": m["from"], "to": m["to"],
+                       "vias": len(qs) - 2, "time_s": m["time_s"], "ok": not why, "why": why}
+                out.append(rec)
+                print(f"   look move {state} {m['from']} -> {m['to']}: {'free' if not why else 'BLOCKED ' + why} "
+                      f"({rec['vias']} vias, ~{m['time_s']:.1f} s)", flush=True)
+        self.look_move_log += out
         return out
 
     # ── self-tests ───────────────────────────────────────────────────────────
@@ -1438,6 +1470,11 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
         pl_ok = {n: all(e["res"][n]["ok"] for e in es if n in e["res"]) for n in pl}
         w(f"- Stop {st.index} (leg {st.leg}): boards seen " + "; ".join(per) + "; planned "
           + ", ".join(f"{n} {'ok in every state' if v else 'NOT seen'}" for n, v in pl_ok.items()) + ".")
+    lm = getattr(sim, "look_move_log", [])
+    if lm:
+        w(f"- Look moves (motion guard, up - over - down, blended; 2026-10-18): {sum(r['ok'] for r in lm)} of "
+          f"{len(lm)} checks free in RoboDK (every stop at arrival, after each station trip and complete; the "
+          "station at every trip).")
     hits = sum(len(r["hits"]) for r in sim.route_log)
     w(f"- Routes: {len(sim.route_log)} ARES moves (leg change, {info['reloads']} station trips there and back) "
       f"sampled in 3D, {hits} colliding samples.")
@@ -1559,6 +1596,21 @@ def write_report(path: Path, cfg: dict, job, sim: LSim, info: dict) -> None:
         pr = sorted({p for h in r["hits"] for p in h["pairs"]})
         w(f"| {r['what']} | {r['waypoints']} | {r['samples']} | {len(r['hits'])} | {', '.join(pr) or '-'} |")
     w("")
+    if getattr(sim, "look_move_log", []):
+        w("## Look moves (RoboDK check of the moves the real robot makes)")
+        w("")
+        w("make_job.look_moves: the motion guard's look moves (park -> look -> look -> park; up from a code, over, "
+          "straight down onto the next; vias blended, URScript movej r) planned in the worst-case world, checked "
+          "here with RoboDK's collision model (MoveJ_Test 1 deg + tool-vs-arm model), the blended corners as "
+          "quadratic Bezier polylines. Time: motionguard.move_time_s at [ur] v_joint / a_joint, blended (a lower "
+          "bound).")
+        w("")
+        w("| stop | state | move | vias | ~s | RoboDK |")
+        w("|---|---|---|---|---|---|")
+        for r in sim.look_move_log:
+            w(f"| {r['stop']} | {r['state']} | {r['from']} -> {r['to']} | {r['vias']} | {r['time_s']:.1f} | "
+              f"{'free' if r['ok'] else 'BLOCKED: ' + r['why']} |")
+        w("")
     w("## Boards seen per stop (RoboDK look check)")
     w("")
     w("Planned = the job's two looks per stop (longest baseline). arrival = wall of the earlier stops, magazine full "
@@ -1648,12 +1700,18 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
         reach_table(RDK, cfg, leg_dist(cfg, lg, args.dist), leg_side(cfg, lg))
     job = build_nominal(cfg, dist=args.dist, look_vias=True)       # offline look vias (2026-10-16)
     print(job.summary(), flush=True)
+    from make_job import look_moves
+    lmoves, lwarn = look_moves(cfg, job)            # the look moves the real robot makes (2026-10-18), checked below
+    for wmsg in lwarn:
+        print(f"look moves: {wmsg}", flush=True)
     initial, events = magazine_events(job)
     if args.plan_only:
         return 0
     from mauer.laid import shift_job
     sim = LSim(RDK, cfg, it, shift_job(job, cfg), args)   # the stones on the as-laid guide pieces ([laid]); the stamp
     sim.setup()                                              # keeps the design job (the sequencer shifts it at run time)
+    sim.look_moves = lmoves
+    sim.notes += [f"look moves: {wmsg}" for wmsg in lwarn]
     RDK.Render(False)
     sim.planner.z_safe = sim.safe_z(full=True)
     # the real park pose of the job ([ur] park_q_deg, the sequencer parks there) if RoboDK finds it free, else a compact
@@ -1708,6 +1766,8 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
             RDK.Render(False)
             sim.caption(f"Halt {k + 1}/{len(job.stops)}, Schenkel {st.leg}: Kamera misst die Wandtafeln")
             sim.looks(k, "arrival", all_boards, planned, execute=True)
+            mine = [m for m in lmoves if m["where"] == f"stop {k}"]
+            sim.check_look_moves(k, "arrival", mine)
             n_trip = 0
             for i, t in enumerate(st.stones):
                 gidx = first[k] + i
@@ -1730,6 +1790,7 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
                     RDK.Render(False)
                     sim.caption(f"Halt {k + 1}/{len(job.stops)}, Schenkel {st.leg}: Kamera misst die Wandtafeln")
                     sim.looks(k, f"after trip {n_trip}", sorted(planned), planned, execute=True)
+                    sim.check_look_moves(k, f"after trip {n_trip}", mine)
                 sim.caption(f"Halt {k + 1}/{len(job.stops)}, Schenkel {st.leg}: Stein {gidx + 1}/{len(stones)} "
                             f"({'Halbstein' if t.kind == 'half' else 'Vollstein'}, Lage {t.course + 1})")
                 rec = sim.lay(t)
@@ -1742,6 +1803,7 @@ def run_l(args, cfg: dict, RDK, it: dict) -> int:
                     raise KeyboardInterrupt
             sim.park_safe()
             res = sim.looks(k, "complete", all_boards, planned, execute=False)
+            sim.check_look_moves(k, "complete", mine)
             if st.leg == job.stops[-1].leg and look_shot is None:
                 for name in ("W7", "W6", "W5"):
                     r = res.get(name)
@@ -1826,6 +1888,9 @@ def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | No
                 reasons.append(f"planned look {n} at stop {e['stop']} ({e['state']}) not seen with the job's pose")
     if getattr(sim, "park_q", None) is None:
         reasons.append("the job's park pose is not free in RoboDK")
+    for r in getattr(sim, "look_move_log", []):
+        if not r["ok"]:
+            reasons.append(f"look move {r['from']} -> {r['to']} at stop {r['stop']} ({r['state']}) blocked in RoboDK")
     if getattr(sim, "park_failures", 0):
         reasons.append(f"{sim.park_failures} park move(s) without a collision-free path (teleported)")
     reasons += [f"run note: {n}" for n in sim.notes if not n.startswith("images failed")]
@@ -1849,6 +1914,7 @@ def robodk_stamp(sim: LSim, job, args, info: dict, cfg: dict, out_dir: Path | No
         "date": time.strftime("%Y-%m-%d %H:%M"), "robodk": info.get("robodk"),
         "report": rep.relative_to(REPO).as_posix() if rep.resolve().is_relative_to(REPO) else rep.name,
         "stones": len(sim.stone_log), "transfers": len(sim.transfer_log), "routes": len(sim.route_log),
+        "look_moves": len(getattr(sim, "look_move_log", [])),
         "laid": laid_summary(cfg),
         **(git or {}),
         "checked": "every place / pick / station transfer / look / park and every ARES route with RoboDK collision "
@@ -1871,6 +1937,10 @@ def problems_of(sim: LSim, info: dict) -> list:
         if not r["ok"]:
             out.append(f"station trip {r['trip']}: station holder {r['station_slot']} -> magazine {r['slot']} failed "
                        f"({r['phase']}): {r['category']}: {r['why']} (stone put into the magazine without motion).")
+    for r in getattr(sim, "look_move_log", []):
+        if not r["ok"]:
+            out.append(f"look move {r['from']} -> {r['to']} at stop {r['stop']} ({r['state']}) blocked in RoboDK: "
+                       f"{r['why']}.")
     for r in sim.route_log:
         if r["hits"]:
             out.append(f"route {r['what']}: {len(r['hits'])} colliding samples "

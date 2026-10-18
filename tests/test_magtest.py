@@ -365,8 +365,8 @@ def test_sim_run_never_detours_via_the_park_pose_and_keeps_the_stone_clear(cfg, 
     plans = []
     orig = mg.MotionGuard.plan
 
-    def plan(self, q_from, q_to, holding=None, vias=(), column=None):
-        v = orig(self, q_from, q_to, holding, vias, column)
+    def plan(self, q_from, q_to, holding=None, vias=(), column=None, *a, **k):
+        v = orig(self, q_from, q_to, holding, vias, column, *a, **k)
         plans.append((self.park_last, self.stone_clear_mm, [np.allclose(q, self.park_q) for q in v.vias]))
         return v
     monkeypatch.setattr(mg.MotionGuard, "plan", plan)

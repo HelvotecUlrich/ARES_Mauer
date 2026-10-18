@@ -175,9 +175,14 @@ def preamble(T_flange_tcp: np.ndarray, payload_kg: float, cog_mm: Sequence[float
     return "\n".join(lines)
 
 
-def movej_q(q_rad: Sequence[float], a: float, v: float) -> str:
-    """Joint move to q [rad] with a [rad/s²], v [rad/s] (SM p.26 l.1092)."""
-    return f"movej({q_list(q_rad)}, a={_speed('a', a)}, v={_speed('v', v)})"
+def movej_q(q_rad: Sequence[float], a: float, v: float, r_mm: float = 0.0) -> str:
+    """Joint move to q [rad] with a [rad/s²], v [rad/s] (SM p.26 l.1092); r_mm > 0: blend radius [mm] (TCP), the arm
+    passes q without stopping - the radius must not overlap the next one's (the UR skips such a waypoint), see
+    mauer.motionguard.blend_radii."""
+    if not (math.isfinite(r_mm) and r_mm >= 0.0):
+        raise ValueError(f"blend radius must be >= 0 mm, got {r_mm}")
+    r = f", r={num(r_mm / 1000.0)}" if r_mm > 0.0 else ""
+    return f"movej({q_list(q_rad)}, a={_speed('a', a)}, v={_speed('v', v)}{r})"
 
 
 def movel(T_base_tcp: np.ndarray, a: float, v: float) -> str:
@@ -224,9 +229,10 @@ def ik_guard(var: str, qnear_rad: Sequence[float], reg_error: int = REG_ERROR,
 
 
 def movej_pose(T_base_tcp: np.ndarray, qnear_rad: Sequence[float], a: float, v: float, var: str = "target",
-               reg_error: int = REG_ERROR, ik_check: str = "has_solution") -> str:
+               reg_error: int = REG_ERROR, ik_check: str = "has_solution", vias: Sequence[str] = ()) -> str:
     """Joint move to a Cartesian TCP pose: IK on the controller (calibrated kinematics) with the branch nearest
-    qnear (e.g. the RoboDK plan), guarded by ik_guard (ik_check: see there).
+    qnear (e.g. the RoboDK plan), guarded by ik_guard (ik_check: see there). vias: move lines (e.g. blended movej_q)
+    run after the guard and before the final move - the guard stands before the first motion of the block.
 
     get_inverse_kin(x, qnear=...) SM p.42 l.1740 (URSim: keyword qnear works), movej SM p.26 l.1092.
     """
@@ -235,19 +241,20 @@ def movej_pose(T_base_tcp: np.ndarray, qnear_rad: Sequence[float], a: float, v: 
     return "\n".join([
         f"{var} = {pose(T_base_tcp)}",
         ik_guard(var, qnear_rad, reg_error, ik_check=ik_check),
+        *vias,
         f"movej(get_inverse_kin({var}, qnear={q}), a={_speed('a', a)}, v={_speed('v', v)})",
     ])
 
 
 def look_pose(T_base_target: np.ndarray, qnear_rad: Sequence[float], a: float, v: float, *, target: str = "flange",
               T_flange_tcp: np.ndarray | None = None, var: str = "look", reg_error: int = REG_ERROR,
-              ik_check: str = "has_solution") -> str:
+              ik_check: str = "has_solution", vias: Sequence[str] = ()) -> str:
     """Go to an image pose with a joint move (IK near qnear).
 
     target = "flange": T_base_target is T_base_flange (e.g. from vision.handeye.plan_poses); converted to the TCP
     pose with T_flange_tcp, which must be the TCP active in the block (the block's set_tcp). target = "tcp":
     T_base_target is T_base_tcp. The block wrapper waits for is_steady(); the extra camera settle time (ARES springs)
-    is run_block(settle_s=...).
+    is run_block(settle_s=...). vias: the move lines on the way there (movej_pose).
     """
     if target == "flange":
         if T_flange_tcp is None:
@@ -257,7 +264,7 @@ def look_pose(T_base_target: np.ndarray, qnear_rad: Sequence[float], a: float, v
         T_base_tcp = T_base_target
     else:
         raise ValueError(f"target must be 'flange' or 'tcp', got {target!r}")
-    return movej_pose(T_base_tcp, qnear_rad, a, v, var=var, reg_error=reg_error, ik_check=ik_check)
+    return movej_pose(T_base_tcp, qnear_rad, a, v, var=var, reg_error=reg_error, ik_check=ik_check, vias=vias)
 
 
 def gripper(action: str, do_open: int | None, do_close: int | None, pulse_s: float, wait_s: float) -> str:
