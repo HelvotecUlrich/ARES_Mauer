@@ -153,3 +153,27 @@ Planungszeit zur Laufzeit 0.1–1.7 s pro Bewegung (bisher bis 7 s); mit den Job
 Offen für den echten Lauf: Die Überschleif-Radien (`BLEND_MM` 100 mm, ASSUMPTION) und das Verhalten des CB3 beim
 Überschleifen langsam beobachten (HMI-Geschwindigkeit reduziert); die Odometrie-Felder im neuen Log mit
 `tools/tour_report.py` auswerten (Schlupf oder ungeregelte Drehung).
+
+## 5. Richtungstoleranz gelockert: `stop_tol_deg` 1.0° → 2.0° (2026-10-18)
+
+Samuel: „die Toleranz kann man noch ein bisschen lockern solange alle Steine erreichbar bleiben“.
+
+- **Reichweite**: IK-Prüfung aller Steine des C-Jobs mit ARES um ±1.0 … 3.0° gedreht, am Stopp und ±20 mm daneben: bis
+  3° fällt kein Stein heraus, der nicht schon bei ±20 mm / 1.0° fehlt (die drei Halbsteine am Rand: Bc3i0h, Bc3i9h,
+  Ac3i0h). Die Laufzeitprüfung korrigiert dort ohnehin.
+- **Nachgespielt an den echten Läufen**: 2.0° spart eine Korrektur (163318 Stopp 1, 1.36°), 2.5° zusätzlich die von
+  182116 Stopp 0 (2.50°, genau an der Grenze).
+- **Erreichbar heisst jetzt auch kollisionsfrei**: Die SimWorld mit 2.0° zeigte, dass die reine IK-Prüfung nicht
+  reicht. Seed 2 kam an Stopp 2 mit 19.7 mm / 1.01° an, alle Steine hatten IK, aber der Guard verweigerte das Setzen
+  des Ecksteins Ac0i0 (Unterarm 1 mm zu nah an einem Magazinstein) und der Lauf stoppte. Das wäre auch mit 1.0° bei
+  0.99° möglich gewesen. Die Reichweitenprüfung des Sequencers (`_unreachable`) fragt deshalb jetzt zusätzlich den
+  Motion-Guard nach der Anfahrpose jedes noch zu setzenden Steins (`MotionGuard.target_problems`, dasselbe Ziel, das
+  der Guard vor dem Setzen prüft; Mauer mit den Steinen davor, Magazin ohne deren geplante Plätze). Ein Stein mit
+  Kollision gilt als nicht erreichbar → Korrektur zum Ziel, von dem aus alle frei sind.
+- **SimWorld** (realistisch, Guard, volle Läufe mit Steinen, Seeds 1–4, beide Toleranzen): 8/8 fertig, 67/67 sitzend,
+  0 Verletzungen. Korrekturen nur wegen der Richtung: 2 (1.0°) → 0 (2.0°); Positions- und Kollisionskorrekturen
+  streuen zufällig mit dem geänderten Fahrverlauf (Summe 12 / 12). Die Kollisionsprüfung meldete nur Ac0i0, und
+  nur wenn ARES 20–34 mm neben Stopp 2 stand.
+- **RoboDK** (Stand 6a49488, 2026-10-18 17:34): 67/67 Steine, 53/53 Stationstransfers, 11 Routen ohne Kollision,
+  48/48 Blickbewegungen frei; Job gestempelt, `stamp_problems` / `route_problems` / `preflight_real` leer.
+- **Testsuite**: grün bis auf das bekannte `test_make_guides` (Führungsteile, schon vor diesen Änderungen rot).
