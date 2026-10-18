@@ -409,10 +409,12 @@ def test_l_routes_are_valid(ljob, lcfg):
     clr = lcfg["routes"]["clearance_mm"]
     dock = ljob.station.dock_in_wall
     assert not ljob.stops[0].route
-    m = ljob.stops[1].route                                                  # same leg: along the stop line (110 mm
-    segs, sp = floor.segments(m)                                             # from the plates at 840 mm; at 740 it
-    assert sp == [] and [sg.kind for sg in segs] == ["translate"] * 2       # backed off first), then the approach
-    assert segs[-1].length_mm == pytest.approx(lcfg["routes"]["min_approach_mm"])     # ([routes] min_approach_mm)
+    merged = bool(lcfg["routes"].get("merge_approach"))                     # 2026-10-16: the approach merged into
+    m = ljob.stops[1].route                                                  # the leg before it (one PLC move)
+    segs, sp = floor.segments(m)                                             # same leg: along the stop line (110 mm
+    assert sp == [] and [sg.kind for sg in segs] == ["translate"] * (1 if merged else 2)   # from the plates at 840 mm;
+    if not merged:                                                           # at 740 it backed off first), then the
+        assert segs[-1].length_mm == pytest.approx(lcfg["routes"]["min_approach_mm"])   # approach (min_approach_mm)
     assert floor.validate_route(m, obst, ares, clr) == []
     for w in m[1:-1]:                                                       # real clearance along the leg
         assert min(floor.poly_dist(ares.footprint(w), o.poly) for o in obst) >= clr - 1e-6
@@ -428,7 +430,8 @@ def test_l_routes_are_valid(ljob, lcfg):
     near = floor.rotation_distances(ares, rot.start, rot.angle_rad, obst, [floor._bbox(o.poly) for o in obst],
                                     [1e9] * len(obst), math.radians(lcfg["routes"].get("rotation_margin_deg", 0.0)))
     assert all(d >= max(clr, rc) - 1e-6 for _, d, _ in near)
-    assert segs[-1].kind == "translate" and segs[-1].length_mm < 300.0     # rotate right before the approach
+    assert segs[-1].kind == "translate" and (merged or segs[-1].length_mm < 300.0)   # rotate right before the
+    # approach (merged: the approach is part of the last translation)
     # the approach of every route to a stop is longer than the arrival standoff (the sequencer stops that far before;
     # 0 since 2026-10-16)
     so = lcfg["sequencer"]["arrival_standoff_mm"]
@@ -685,8 +688,11 @@ def test_c_routes_and_floor(ccfg, cjob):
         assert all(sg.kind == "translate" for sg in segs) and len(segs) <= 2  # one straight ahead (body +x), at least
         last = segs[-1]                                                      # [routes] min_approach_mm (2026-10-06)
         assert last.length_mm >= ccfg["routes"]["min_approach_mm"] - 1e-6
-        assert math.isclose(math.atan2(last.end.y_mm - last.start.y_mm, last.end.x_mm - last.start.x_mm),
-                            st.ares.theta_rad, abs_tol=1e-9)
+        if ccfg["routes"].get("merge_approach"):                             # 2026-10-16: the approach merged into the
+            assert len(segs) == 1                                            # leg before it - one straight PLC move
+        else:
+            assert math.isclose(math.atan2(last.end.y_mm - last.start.y_mm, last.end.x_mm - last.start.x_mm),
+                                st.ares.theta_rad, abs_tol=1e-9)
     assert math.hypot(cjob.stops[1].ares.x_mm - cjob.stops[0].ares.x_mm,
                       cjob.stops[1].ares.y_mm - cjob.stops[0].ares.y_mm) < e["d01"]  # the first move is short (main:
     # along B, 560 mm; c_acb: A -> C sideways across the inside, both stops at x = 120 mm)

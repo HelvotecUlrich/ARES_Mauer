@@ -699,8 +699,9 @@ LEG_CHANGE_LEGS = ["stop 0 -> stop 1 leg 0", "stop 0 -> stop 1 leg 1", "stop 0 -
                    "stop 0 -> stop 1 last leg"]                                # L at 840 mm, floor station (2026-10-06)
 STATION_LEGS = ["stop 1 -> station leg 0", "stop 1 -> station leg 1", "stop 1 -> station leg 2",
                 "stop 1 -> station last leg", "station -> stop 1 leg 0", "station -> stop 1 leg 1",
-                "station -> stop 1 leg 2", "station -> stop 1 leg 3", "station -> stop 1 last leg"]
-# two-row station, dock 2026-10-09; rotations checked with their swept area, 150 mm rotation clearance 2026-10-16
+                "station -> stop 1 leg 2", "station -> stop 1 last leg"]
+# two-row station, dock 2026-10-09; rotations checked with their swept area, 150 mm rotation clearance 2026-10-16;
+# [routes] merge_approach 2026-10-16: the approach of the return is merged into the leg before it (one leg less)
 
 
 def _leg_names(why: str, route) -> list[str]:
